@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Modal, Form, Input, InputNumber } from "antd";
+import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Modal, Form, Input, InputNumber, Tabs } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
@@ -20,6 +20,12 @@ export type Cage = {
 type CageStats = {
   avgWeight: number;
   mortality: number;
+};
+
+type WeightEntry = {
+  frontWeights: number[];
+  middleWeights: number[];
+  backWeights: number[];
 };
 
 const BRAND = "#008822";
@@ -190,14 +196,12 @@ export default function BuildingCage() {
   const [isMortalityModalOpen, setIsMortalityModalOpen] = useState(false);
   const [activeCageId, setActiveCageId] = useState<string | null>(null);
   const [mortalityDraft, setMortalityDraft] = useState<number>(0);
-  const [weightOverrides, setWeightOverrides] = useState<
-    Record<string, Record<string, { front: number; middle: number; back: number }>>
-  >({});
+  const [weightOverrides, setWeightOverrides] = useState<Record<string, Record<string, WeightEntry>>>({});
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
-  const [weightDraft, setWeightDraft] = useState<{ front: number; middle: number; back: number }>({
-    front: 0,
-    middle: 0,
-    back: 0,
+  const [weightDraft, setWeightDraft] = useState<WeightEntry>({
+    frontWeights: [0],
+    middleWeights: [0],
+    backWeights: [0],
   });
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
@@ -236,7 +240,9 @@ export default function BuildingCage() {
         const override = mortalityOverrides[selectedDate]?.[cage.id];
         const weightOverride = weightOverrides[selectedDate]?.[cage.id];
         const weightTotal = weightOverride
-          ? weightOverride.front + weightOverride.middle + weightOverride.back
+          ? weightOverride.frontWeights.reduce((sum, w) => sum + w, 0) +
+            weightOverride.middleWeights.reduce((sum, w) => sum + w, 0) +
+            weightOverride.backWeights.reduce((sum, w) => sum + w, 0)
           : base.avgWeight;
         return {
           ...base,
@@ -247,7 +253,9 @@ export default function BuildingCage() {
       const override = mortalityOverrides[selectedDate]?.[cage.id];
       const weightOverride = weightOverrides[selectedDate]?.[cage.id];
       const weightTotal = weightOverride
-        ? weightOverride.front + weightOverride.middle + weightOverride.back
+        ? weightOverride.frontWeights.reduce((sum, w) => sum + w, 0) +
+          weightOverride.middleWeights.reduce((sum, w) => sum + w, 0) +
+          weightOverride.backWeights.reduce((sum, w) => sum + w, 0)
         : cage.avgWeight;
       return {
         avgWeight: weightTotal,
@@ -272,9 +280,9 @@ export default function BuildingCage() {
     const existing = weightOverrides[selectedDate]?.[cageId];
     setWeightDraft(
       existing ?? {
-        front: 0,
-        middle: 0,
-        back: 0,
+        frontWeights: [0],
+        middleWeights: [0],
+        backWeights: [0],
       }
     );
     setIsWeightModalOpen(true);
@@ -310,11 +318,29 @@ export default function BuildingCage() {
 
   const handleUpdateWeight = () => {
     if (!activeCageId) return;
-    if (weightDraft.front <= 0 || weightDraft.middle <= 0 || weightDraft.back <= 0) return;
+    const frontWeights = weightDraft.frontWeights.map((w) => Math.max(0, Number(w) || 0));
+    const middleWeights = weightDraft.middleWeights.map((w) => Math.max(0, Number(w) || 0));
+    const backWeights = weightDraft.backWeights.map((w) => Math.max(0, Number(w) || 0));
+    const frontTotal = frontWeights.reduce((sum, w) => sum + w, 0);
+    const middleTotal = middleWeights.reduce((sum, w) => sum + w, 0);
+    const backTotal = backWeights.reduce((sum, w) => sum + w, 0);
+    if (
+      frontWeights.length === 0 ||
+      frontWeights.some((w) => w <= 0) ||
+      middleWeights.length === 0 ||
+      middleWeights.some((w) => w <= 0) ||
+      backWeights.length === 0 ||
+      backWeights.some((w) => w <= 0) ||
+      frontTotal <= 0 ||
+      middleTotal <= 0 ||
+      backTotal <= 0
+    ) {
+      return;
+    }
     const clean = {
-      front: Math.max(0, Number(weightDraft.front) || 0),
-      middle: Math.max(0, Number(weightDraft.middle) || 0),
-      back: Math.max(0, Number(weightDraft.back) || 0),
+      frontWeights,
+      middleWeights,
+      backWeights,
     };
     setWeightOverrides((prev) => {
       const next = { ...prev };
@@ -329,7 +355,16 @@ export default function BuildingCage() {
   };
 
   const isWeightValid =
-    weightDraft.front > 0 && weightDraft.middle > 0 && weightDraft.back > 0;
+    weightDraft.frontWeights.length > 0 &&
+    weightDraft.frontWeights.every((w) => w > 0) &&
+    weightDraft.middleWeights.length > 0 &&
+    weightDraft.middleWeights.every((w) => w > 0) &&
+    weightDraft.backWeights.length > 0 &&
+    weightDraft.backWeights.every((w) => w > 0);
+  const totalFrontWeight = weightDraft.frontWeights.reduce((sum, w) => sum + w, 0);
+  const totalMiddleWeight = weightDraft.middleWeights.reduce((sum, w) => sum + w, 0);
+  const totalBackWeight = weightDraft.backWeights.reduce((sum, w) => sum + w, 0);
+  const totalWeight = totalFrontWeight + totalMiddleWeight + totalBackWeight;
 
   const totals = useMemo(() => {
     const totalAvgWeight = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).avgWeight, 0);
@@ -567,62 +602,219 @@ export default function BuildingCage() {
             Update Avg. Weight
           </Title>
           <div className="text-slate-500 text-sm mt-1">
-            Enter front, middle, and back weights (g).
+            Enter individual chicken weights by section (g).
           </div>
         </div>
 
         <div className="bg-slate-50 rounded-lg p-3 space-y-3">
-          <div>
-            <div className="text-[11px] text-slate-500 mb-2">Front Weight (g)</div>
-            <InputNumber
-              min={0}
-              step={0.01}
-              precision={2}
-              stringMode
-              value={weightDraft.front}
-              onChange={(v) => setWeightDraft((prev) => ({ ...prev, front: Number(v) || 0 }))}
-              inputMode="decimal"
-              className="!w-full"
-              styles={{ input: { fontSize: 16 } }}
-            />
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-500 mb-2">Middle Weight (g)</div>
-            <InputNumber
-              min={0}
-              step={0.01}
-              precision={2}
-              stringMode
-              value={weightDraft.middle}
-              onChange={(v) => setWeightDraft((prev) => ({ ...prev, middle: Number(v) || 0 }))}
-              inputMode="decimal"
-              className="!w-full"
-              styles={{ input: { fontSize: 16 } }}
-            />
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-500 mb-2">Back Weight (g)</div>
-            <InputNumber
-              min={0}
-              step={0.01}
-              precision={2}
-              stringMode
-              value={weightDraft.back}
-              onChange={(v) => setWeightDraft((prev) => ({ ...prev, back: Number(v) || 0 }))}
-              inputMode="decimal"
-              className="!w-full"
-              styles={{ input: { fontSize: 16 } }}
-            />
-          </div>
+          <Tabs
+            items={[
+              {
+                key: "front",
+                label: "Front",
+                children: (
+                  <div>
+                    <div className="text-[11px] text-slate-500 mb-2">Front Chicken Weights (g)</div>
+                    <div className="space-y-2">
+                      {weightDraft.frontWeights.map((weight, index) => (
+                        <div key={`front-weight-${index}`} className="flex items-center gap-2">
+                          <div className="w-10 text-center text-xs font-semibold text-slate-600">
+                            #{index + 1}
+                          </div>
+                          <InputNumber
+                            min={0}
+                            step={0.01}
+                            precision={2}
+                            stringMode
+                            value={weight}
+                            onChange={(v) =>
+                              setWeightDraft((prev) => ({
+                                ...prev,
+                                frontWeights: prev.frontWeights.map((w, i) => (i === index ? Number(v) || 0 : w)),
+                              }))
+                            }
+                            inputMode="decimal"
+                            className="!w-full"
+                            styles={{ input: { fontSize: 16 } }}
+                          />
+                          <Button
+                            onClick={() =>
+                              setWeightDraft((prev) => ({
+                                ...prev,
+                                frontWeights:
+                                  prev.frontWeights.length === 1
+                                    ? prev.frontWeights
+                                    : prev.frontWeights.filter((_, i) => i !== index),
+                              }))
+                            }
+                            disabled={weightDraft.frontWeights.length === 1}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        onClick={() =>
+                          setWeightDraft((prev) => ({
+                            ...prev,
+                            frontWeights: [...prev.frontWeights, 0],
+                          }))
+                        }
+                        icon={<PlusOutlined />}
+                      >
+                        Add Chicken
+                      </Button>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-700 mt-2">
+                      Total Front Weight: {totalFrontWeight.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} g
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: "middle",
+                label: "Middle",
+                children: (
+                  <div>
+                    <div className="text-[11px] text-slate-500 mb-2">Middle Chicken Weights (g)</div>
+                    <div className="space-y-2">
+                      {weightDraft.middleWeights.map((weight, index) => (
+                        <div key={`middle-weight-${index}`} className="flex items-center gap-2">
+                          <div className="w-10 text-center text-xs font-semibold text-slate-600">
+                            #{index + 1}
+                          </div>
+                          <InputNumber
+                            min={0}
+                            step={0.01}
+                            precision={2}
+                            stringMode
+                            value={weight}
+                            onChange={(v) =>
+                              setWeightDraft((prev) => ({
+                                ...prev,
+                                middleWeights: prev.middleWeights.map((w, i) => (i === index ? Number(v) || 0 : w)),
+                              }))
+                            }
+                            inputMode="decimal"
+                            className="!w-full"
+                            styles={{ input: { fontSize: 16 } }}
+                          />
+                          <Button
+                            onClick={() =>
+                              setWeightDraft((prev) => ({
+                                ...prev,
+                                middleWeights:
+                                  prev.middleWeights.length === 1
+                                    ? prev.middleWeights
+                                    : prev.middleWeights.filter((_, i) => i !== index),
+                              }))
+                            }
+                            disabled={weightDraft.middleWeights.length === 1}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        onClick={() =>
+                          setWeightDraft((prev) => ({
+                            ...prev,
+                            middleWeights: [...prev.middleWeights, 0],
+                          }))
+                        }
+                        icon={<PlusOutlined />}
+                      >
+                        Add Chicken
+                      </Button>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-700 mt-2">
+                      Total Middle Weight: {totalMiddleWeight.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} g
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: "back",
+                label: "Back",
+                children: (
+                  <div>
+                    <div className="text-[11px] text-slate-500 mb-2">Back Chicken Weights (g)</div>
+                    <div className="space-y-2">
+                      {weightDraft.backWeights.map((weight, index) => (
+                        <div key={`back-weight-${index}`} className="flex items-center gap-2">
+                          <div className="w-10 text-center text-xs font-semibold text-slate-600">
+                            #{index + 1}
+                          </div>
+                          <InputNumber
+                            min={0}
+                            step={0.01}
+                            precision={2}
+                            stringMode
+                            value={weight}
+                            onChange={(v) =>
+                              setWeightDraft((prev) => ({
+                                ...prev,
+                                backWeights: prev.backWeights.map((w, i) => (i === index ? Number(v) || 0 : w)),
+                              }))
+                            }
+                            inputMode="decimal"
+                            className="!w-full"
+                            styles={{ input: { fontSize: 16 } }}
+                          />
+                          <Button
+                            onClick={() =>
+                              setWeightDraft((prev) => ({
+                                ...prev,
+                                backWeights:
+                                  prev.backWeights.length === 1
+                                    ? prev.backWeights
+                                    : prev.backWeights.filter((_, i) => i !== index),
+                              }))
+                            }
+                            disabled={weightDraft.backWeights.length === 1}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        onClick={() =>
+                          setWeightDraft((prev) => ({
+                            ...prev,
+                            backWeights: [...prev.backWeights, 0],
+                          }))
+                        }
+                        icon={<PlusOutlined />}
+                      >
+                        Add Chicken
+                      </Button>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-700 mt-2">
+                      Total Back Weight: {totalBackWeight.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} g
+                    </div>
+                  </div>
+                ),
+              },
+            ]}
+          />
           <div className="text-sm font-semibold text-slate-800">
-            Total: {(weightDraft.front + weightDraft.middle + weightDraft.back).toLocaleString(undefined, {
+            Total: {totalWeight.toLocaleString(undefined, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })} g
           </div>
           {!isWeightValid && (
             <div className="text-xs text-red-500 mt-2">
-              Front, middle, and back weights are required.
+              All front, middle, and back chicken weights are required.
             </div>
           )}
         </div>
