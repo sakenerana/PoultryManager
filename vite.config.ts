@@ -5,4 +5,7 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
   ],
+  build: {
+    chunkSizeWarningLimit: 1500, // sets the limit to 1500 KiB
+  },
 })
