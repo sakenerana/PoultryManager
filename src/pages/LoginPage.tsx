@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button, Checkbox, Divider, Dropdown, Input, Typography } from "antd";
 import { AppleFilled, FacebookOutlined, DownOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";

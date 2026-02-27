@@ -1,6 +1,6 @@
 // LandingPage.tsx
 import React, { useState } from "react";
-import { Menu, RefreshCw, Package, DollarSign, FileText } from "lucide-react";
+import { Menu, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router";
 
 type TileKey = "inventory" | "harvest" | "reports";
