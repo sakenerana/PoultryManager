@@ -138,6 +138,8 @@ export default function ReportPage() {
           className="!text-white hover:!text-white/90"
           onClick={() => console.log("sign out")}
         />
+        {/* divider */}
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
       <Content className="px-4 py-4">
@@ -150,121 +152,121 @@ export default function ReportPage() {
             <div className="text-xs font-semibold text-slate-500">{displayDate}</div>
           </div>
 
-        <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-3 mb-4">
-          <div className="text-[11px] text-slate-500 mb-2">Date Filter</div>
-          <div className="flex items-center gap-2">
-            {period === "week" && (
-              <DatePicker
-                picker="week"
-                className="!w-full"
-                style={{ fontSize: 16 }}
-                styles={{ input: { fontSize: 16 } }}
-                onChange={(d) => setDate(d ? d.format("YYYY-[W]WW") : "")}
-              />
-            )}
-            {period === "month" && (
-              <DatePicker
-                picker="month"
-                className="!w-full"
-                style={{ fontSize: 16 }}
-                styles={{ input: { fontSize: 16 } }}
-                onChange={(d) => setDate(d ? d.format("YYYY-MM") : "")}
-              />
-            )}
-            {period === "year" && (
-              <DatePicker
-                picker="year"
-                className="!w-full"
-                style={{ fontSize: 16 }}
-                styles={{ input: { fontSize: 16 } }}
-                onChange={(d) => setDate(d ? d.format("YYYY") : "")}
-              />
-            )}
-            <button
-              type="button"
-              className="h-10 px-4 rounded-lg bg-[#008822] text-white text-sm font-semibold"
-            >
-              Apply
-            </button>
+          <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-3 mb-4">
+            <div className="text-[11px] text-slate-500 mb-2">Date Filter</div>
+            <div className="flex items-center gap-2">
+              {period === "week" && (
+                <DatePicker
+                  picker="week"
+                  className="!w-full"
+                  style={{ fontSize: 16 }}
+                  styles={{ input: { fontSize: 16 } }}
+                  onChange={(d) => setDate(d ? d.format("YYYY-[W]WW") : "")}
+                />
+              )}
+              {period === "month" && (
+                <DatePicker
+                  picker="month"
+                  className="!w-full"
+                  style={{ fontSize: 16 }}
+                  styles={{ input: { fontSize: 16 } }}
+                  onChange={(d) => setDate(d ? d.format("YYYY-MM") : "")}
+                />
+              )}
+              {period === "year" && (
+                <DatePicker
+                  picker="year"
+                  className="!w-full"
+                  style={{ fontSize: 16 }}
+                  styles={{ input: { fontSize: 16 } }}
+                  onChange={(d) => setDate(d ? d.format("YYYY") : "")}
+                />
+              )}
+              <button
+                type="button"
+                className="h-10 px-4 rounded-lg bg-[#008822] text-white text-sm font-semibold"
+              >
+                Apply
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {[
-            { key: "week", label: "Week" },
-            { key: "month", label: "Month" },
-            { key: "year", label: "Year" },
-          ].map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => setPeriod(p.key as Period)}
-              className={[
-                "h-10 rounded-lg text-sm font-semibold border",
-                period === p.key
-                  ? "bg-[#008822] text-white border-[#008822]"
-                  : "bg-white text-slate-600 border-slate-200",
-              ].join(" ")}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 mb-4">
-          <StatCard
-            title="Load Birds"
-            total={data.load.total}
-            done={data.load.done}
-            pending={data.load.pending}
-            accent={BRAND}
-          />
-          <StatCard
-            title="Harvest"
-            total={data.harvest.total}
-            done={data.harvest.done}
-            pending={data.harvest.pending}
-            accent="#0f7aa8"
-          />
-        </div>
-
-        <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-4">
-          <div className="text-sm font-semibold text-slate-800 mb-3">Trend</div>
-          <div className="space-y-3">
-            {data.trend.map((row) => (
-              <div key={row.label} className="flex items-center gap-3">
-                <div className="w-10 text-xs font-semibold text-slate-500">{row.label}</div>
-                <div className="flex-1">
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full"
-                      style={{ width: `${Math.min(100, (row.load / data.load.total) * 120)}%`, backgroundColor: BRAND }}
-                    />
-                  </div>
-                </div>
-                <div className="text-xs text-slate-500 w-16 text-right">{row.load.toLocaleString()}</div>
-              </div>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            {[
+              { key: "week", label: "Week" },
+              { key: "month", label: "Month" },
+              { key: "year", label: "Year" },
+            ].map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPeriod(p.key as Period)}
+                className={[
+                  "h-10 rounded-lg text-sm font-semibold border",
+                  period === p.key
+                    ? "bg-[#008822] text-white border-[#008822]"
+                    : "bg-white text-slate-600 border-slate-200",
+                ].join(" ")}
+              >
+                {p.label}
+              </button>
             ))}
           </div>
 
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <div className="text-xs text-slate-500 mb-2">Statuses</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700">
-                Loading
-              </span>
-              <span className="px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700">
-                Growing
-              </span>
-              <span className="px-2 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-800">
-                Harvesting
-              </span>
-              <span className="px-2 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-700">
-                Ready
-              </span>
+          <div className="grid grid-cols-1 gap-3 mb-4">
+            <StatCard
+              title="Load Birds"
+              total={data.load.total}
+              done={data.load.done}
+              pending={data.load.pending}
+              accent={BRAND}
+            />
+            <StatCard
+              title="Harvest"
+              total={data.harvest.total}
+              done={data.harvest.done}
+              pending={data.harvest.pending}
+              accent="#0f7aa8"
+            />
+          </div>
+
+          <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-4">
+            <div className="text-sm font-semibold text-slate-800 mb-3">Trend</div>
+            <div className="space-y-3">
+              {data.trend.map((row) => (
+                <div key={row.label} className="flex items-center gap-3">
+                  <div className="w-10 text-xs font-semibold text-slate-500">{row.label}</div>
+                  <div className="flex-1">
+                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full"
+                        style={{ width: `${Math.min(100, (row.load / data.load.total) * 120)}%`, backgroundColor: BRAND }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500 w-16 text-right">{row.load.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="text-xs text-slate-500 mb-2">Statuses</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700">
+                  Loading
+                </span>
+                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700">
+                  Growing
+                </span>
+                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-800">
+                  Harvesting
+                </span>
+                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-700">
+                  Ready
+                </span>
+              </div>
             </div>
           </div>
-        </div>
         </div>
       </Content>
     </Layout>

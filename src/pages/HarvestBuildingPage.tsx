@@ -1,9 +1,9 @@
-// BuildingOverviewPage.tsx
+// HarvestBuildingPage.tsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout, Typography, Card, Button, Tag, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
-import dayjs, { Dayjs } from "dayjs";
+import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 
 const { Header, Content } = Layout;
@@ -17,8 +17,6 @@ type Building = {
   total: number;
   avgWeight: number;
   mortality: number;
-  thinning: number;
-  takeOut: number;
 };
 
 type BuildingStats = {
@@ -27,35 +25,33 @@ type BuildingStats = {
   avgWeight: number;
   status: "Loading" | "Growing" | "Harvesting" | "Ready";
   mortality: number;
-  thinning: number;
-  takeOut: number;
 };
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 
 const BUILDINGS: Building[] = [
-  { id: "1", name: "Building 1", days: 28, total: 1200, avgWeight: 1850, mortality: 14, thinning: 35, takeOut: 18 },
-  { id: "2", name: "Building 2", days: 41, total: 980, avgWeight: 1725, mortality: 9, thinning: 42, takeOut: 20 },
-  { id: "3", name: "Building 3", days: 52, total: 1500, avgWeight: 1920, mortality: 7, thinning: 50, takeOut: 27 },
-  { id: "4", name: "Building 4", days: 32, total: 800, avgWeight: 1680, mortality: 12, thinning: 28, takeOut: 14 },
-  { id: "5", name: "Building 5", days: 22, total: 1100, avgWeight: 1790, mortality: 10, thinning: 31, takeOut: 16 },
+  { id: "1", name: "Building 1", days: 28, total: 1200, avgWeight: 1850, mortality: 14 },
+  { id: "2", name: "Building 2", days: 41, total: 980, avgWeight: 1725, mortality: 9 },
+  { id: "3", name: "Building 3", days: 52, total: 1500, avgWeight: 1920, mortality: 7 },
+  { id: "4", name: "Building 4", days: 32, total: 800, avgWeight: 1680, mortality: 12 },
+  { id: "5", name: "Building 5", days: 22, total: 1100, avgWeight: 1790, mortality: 10 },
 ];
 
 const MOCK_STATS_BY_DATE: Record<string, Record<string, BuildingStats>> = {
   "2026-02-27": {
-    "1": { days: 28, total: 1200, avgWeight: 1850, status: "Loading", mortality: 14, thinning: 35, takeOut: 18 },
-    "2": { days: 41, total: 980, avgWeight: 1725, status: "Growing", mortality: 9, thinning: 42, takeOut: 20 },
-    "3": { days: 52, total: 1500, avgWeight: 1920, status: "Harvesting", mortality: 7, thinning: 50, takeOut: 27 },
-    "4": { days: 32, total: 800, avgWeight: 1680, status: "Ready", mortality: 12, thinning: 28, takeOut: 14 },
-    "5": { days: 22, total: 1100, avgWeight: 1790, status: "Growing", mortality: 10, thinning: 31, takeOut: 16 },
+    "1": { days: 28, total: 1200, avgWeight: 1850, status: "Loading", mortality: 14 },
+    "2": { days: 41, total: 980, avgWeight: 1725, status: "Growing", mortality: 9 },
+    "3": { days: 52, total: 1500, avgWeight: 1920, status: "Harvesting", mortality: 7 },
+    "4": { days: 32, total: 800, avgWeight: 1680, status: "Ready", mortality: 12 },
+    "5": { days: 22, total: 1100, avgWeight: 1790, status: "Growing", mortality: 10 },
   },
   "2026-02-28": {
-    "1": { days: 29, total: 1185, avgWeight: 1835, status: "Growing", mortality: 16, thinning: 37, takeOut: 19 },
-    "2": { days: 42, total: 960, avgWeight: 1710, status: "Harvesting", mortality: 11, thinning: 44, takeOut: 22 },
-    "3": { days: 53, total: 1480, avgWeight: 1900, status: "Ready", mortality: 9, thinning: 52, takeOut: 28 },
-    "4": { days: 33, total: 790, avgWeight: 1670, status: "Loading", mortality: 13, thinning: 29, takeOut: 15 },
-    "5": { days: 23, total: 1085, avgWeight: 1775, status: "Growing", mortality: 12, thinning: 33, takeOut: 17 },
+    "1": { days: 29, total: 1185, avgWeight: 1835, status: "Growing", mortality: 16 },
+    "2": { days: 42, total: 960, avgWeight: 1710, status: "Harvesting", mortality: 11 },
+    "3": { days: 53, total: 1480, avgWeight: 1900, status: "Ready", mortality: 9 },
+    "4": { days: 33, total: 790, avgWeight: 1670, status: "Loading", mortality: 13 },
+    "5": { days: 23, total: 1085, avgWeight: 1775, status: "Growing", mortality: 12 },
   },
 };
 
@@ -162,7 +158,6 @@ function BuildingRow({
                   {stats.days} Days
                 </Tag>
               </div>
-              {/* <div className="text-xs text-slate-500 mt-1 truncate">{b.category}</div> */}
             </div>
 
             {/* Load button: compact on mobile */}
@@ -189,29 +184,13 @@ function BuildingRow({
 
           {/* Stats Grid */}
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
-            <StatPill
-              label="Total Birds"
-              value={stats.total.toLocaleString()}
-            />
-            <StatPill
-              label="Avg. Weight"
-              value={`${stats.avgWeight.toLocaleString()} g`}
-            />
+            <StatPill label="Total Birds" value={stats.total.toLocaleString()} />
+            <StatPill label="Avg. Weight" value={`${stats.avgWeight.toLocaleString()} g`} />
             <StatPill label="Status" value={<StatusBadge status={stats.status} />} />
             <StatPill
               label="Mortality"
               value={stats.mortality.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
-            />
-            <StatPill
-              label="Thinning"
-              value={stats.thinning.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-            />
-            <StatPill
-              label="Take Out"
-              value={stats.takeOut.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
             />
           </div>
         </div>
@@ -223,7 +202,7 @@ function BuildingRow({
   );
 }
 
-export default function BuildingOverviewPage() {
+export default function HarvestBuildingPage() {
   const navigate = useNavigate();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -234,12 +213,6 @@ export default function BuildingOverviewPage() {
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [addForm] = Form.useForm();
-  const handleDateChange = (date: Dayjs | null) => {
-    const nextDate = date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
-    setSelectedDate(nextDate);
-    setToastMessage(`Filtered date: ${dayjs(nextDate).format("MMM D, YYYY")}`);
-    setIsToastOpen(true);
-  };
 
   const handleSignOut = () => {
     // TODO: wire up auth sign out logic here
@@ -266,8 +239,6 @@ export default function BuildingOverviewPage() {
         total: 0,
         avgWeight: 0,
         mortality: 0,
-        thinning: 0,
-        takeOut: 0,
       };
       setBuildings((prev) => [...prev, newBuilding]);
       handleCloseAdd();
@@ -289,8 +260,6 @@ export default function BuildingOverviewPage() {
         avgWeight: building.avgWeight,
         status: "Growing",
         mortality: building.mortality,
-        thinning: building.thinning,
-        takeOut: building.takeOut,
       };
     };
   }, [selectedDate]);
@@ -314,10 +283,7 @@ export default function BuildingOverviewPage() {
             onClick={() => navigate(-1)}
             aria-label="Back"
           />
-          <Divider
-            type="vertical"
-            className="!m-0 !h-5 !border-white/60"
-          />
+          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Button
             type="text"
             icon={<HomeOutlined />}
@@ -325,21 +291,12 @@ export default function BuildingOverviewPage() {
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
           />
-          <Divider
-            type="vertical"
-            className="!m-0 !h-5 !border-white/60"
-          />
+          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className={["!m-0 !text-white", isMobile ? "!text-base" : ""].join(" ")}>
-            Building
+            Harvest Building
           </Title>
         </div>
-        <Button
-          type="text"
-          icon={<LogoutOutlined />}
-          className="!text-white hover:!text-white/90"
-          onClick={handleSignOut}
-        />
-        {/* divider */}
+        <Button type="text" icon={<LogoutOutlined />} className="!text-white hover:!text-white/90" onClick={handleSignOut} />
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
@@ -359,7 +316,7 @@ export default function BuildingOverviewPage() {
             size={isMobile ? "middle" : "large"}
             placeholder="Select date"
             defaultValue={dayjs()}
-            onChange={handleDateChange}
+            onChange={(date) => setSelectedDate(date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"))}
             style={{ fontSize: 16 }}
             styles={{ input: { fontSize: 16 } }}
           />
@@ -390,7 +347,7 @@ export default function BuildingOverviewPage() {
           </div>
         </div>
 
-        {/* Floating Add Button - full width on mobile */}
+        {/* Floating Add Button */}
         {isTodaySelected && (
           <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
             <Button
@@ -457,7 +414,6 @@ export default function BuildingOverviewPage() {
         type="success"
         onClose={() => setIsToastOpen(false)}
       />
-
     </Layout>
   );
 }

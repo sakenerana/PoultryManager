@@ -5,7 +5,7 @@ import BuildingOverviewPage from "./pages/BuildingPage";
 import BuildingLoadPage from "./pages/BuildingLoadPage";
 import BuildingCage from "./pages/BuildingCage";
 import ReportPage from "./pages/ReportPage";
-import BuildingHarvestPage from "./pages/BuildingHarvestPage";
+import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 
 function App() {
   return (
@@ -16,7 +16,7 @@ function App() {
         <Route path="/buildings" element={<BuildingOverviewPage />} />
         <Route path="/building-load/:id" element={<BuildingLoadPage />} />
         <Route path="/building-cage/:id" element={<BuildingCage />} />
-        <Route path="/harvest" element={<BuildingHarvestPage />} />
+        <Route path="/harvest" element={<HarvestBuildingPage />} />
         <Route path="/reports" element={<ReportPage />} />
 
         {/* Redirect unknown routes */}

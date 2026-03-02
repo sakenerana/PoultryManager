@@ -1,8 +1,11 @@
 {
   "name": "Flocks",
   "short_name": "Flocks",
-  "start_url": "/",
-  "display": "standalone",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "id": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "icons": [

@@ -110,7 +110,7 @@ export default function LandingPage() {
                 </div>
 
                 {/* divider */}
-                <div className="absolute bottom-0 left-0 w-full h-1 bg-white/30" />
+                <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
             </header>
 
             {/* CONTENT */}
@@ -137,7 +137,7 @@ export default function LandingPage() {
                         >
                             {/* icon card */}
                             <div className="flex justify-center">
-                                <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl shadow-inner">
+                                <div className="bg-[#ffa600]/40 p-3 sm:p-4 rounded-2xl shadow-inner">
                                     {tile.icon}
                                 </div>
                             </div>
@@ -168,7 +168,7 @@ export default function LandingPage() {
                     "fixed bottom-6 right-6 z-50",
                     "rounded-full px-6 py-3",
                     "text-white font-semibold",
-                    "bg-[#008822] hover:bg-[#006e1b]",
+                    "bg-[#ffa600] hover:bg-[#006e1b]",
                     "shadow-xl shadow-[#008822]/25",
                     "flex items-center gap-2",
                     "transition active:scale-95",
