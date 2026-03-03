@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Button, Checkbox, Divider, Dropdown, Input, Typography } from "antd";
-import { AppleFilled, FacebookOutlined, DownOutlined } from "@ant-design/icons";
+import { Button, Checkbox, Dropdown, Input, Typography } from "antd";
+import { DownOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 
 const { Title, Text } = Typography;
@@ -14,7 +14,7 @@ const LANGS: Lang[] = [
 
 export default function LoginPage() {
   const [lang, setLang] = useState<Lang>(LANGS[0]);
-  const [loginWithPhone, setLoginWithPhone] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const navigate = useNavigate();
 
@@ -45,7 +45,7 @@ export default function LoginPage() {
 
           <div className="relative z-10">
             <div className="text-2xl xl:text-3xl font-semibold tracking-wide">
-              GPM
+              Poultry Manager
             </div>
             <div className="mt-6 text-4xl xl:text-6xl font-bold leading-tight">
               Welcome Back <span className="inline-block animate-wave">👋</span>
@@ -80,7 +80,7 @@ export default function LoginPage() {
               {/* Logo for mobile - visible only on mobile */}
               <div className="lg:hidden text-center mb-6">
                 <div className="text-2xl font-semibold text-[#008822]">
-                  GPM
+                  GGDC Poultry Manager
                 </div>
                 <Text className="text-gray-500 text-sm">
                   Sign in to your account
@@ -132,40 +132,15 @@ export default function LoginPage() {
                   </div>
 
                   <div className="space-y-5">
-                    {/* Social login buttons */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button
-                        size="large"
-                        icon={<FacebookOutlined />}
-                        className="!h-12 !rounded-lg !border-[#008822]/25 !text-[#008822] !font-semibold hover:!bg-[#008822]/5 !text-base"
-                        block
-                      >
-                        Facebook
-                      </Button>
-
-                      <Button
-                        size="large"
-                        icon={<AppleFilled />}
-                        className="!h-12 !rounded-lg !bg-gray-900 !text-white !border-gray-900 hover:!bg-gray-800 !text-base"
-                        block
-                      >
-                        Apple
-                      </Button>
-                    </div>
-
-                    <Divider plain className="!my-6">
-                      <span className="text-gray-400 text-sm">or continue with email</span>
-                    </Divider>
-
                     {/* Login form */}
                     <div className="space-y-4">
                       <div>
                         <Text className="text-sm font-medium text-gray-700 block mb-1">
-                          {loginWithPhone ? "Phone number" : "Email address"}
+                          Email address
                         </Text>
                         <Input
                           size="large"
-                          placeholder={loginWithPhone ? "+1 (555) 000-9999" : "name@example.com"}
+                          placeholder="name@example.com"
                           className="!h-12 !rounded-lg !border-gray-300 hover:!border-[#008822]/60 focus:!border-[#008822] focus:!shadow-none !text-base"
                         />
                       </div>
@@ -191,12 +166,12 @@ export default function LoginPage() {
 
                       <div className="flex items-center justify-between">
                         <Checkbox
-                          checked={loginWithPhone}
-                          onChange={(e) => setLoginWithPhone(e.target.checked)}
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
                           className="text-sm"
                         >
                           <span className="text-gray-600">
-                            Use phone instead
+                            Remember Me
                           </span>
                         </Checkbox>
                       </div>
@@ -216,9 +191,8 @@ export default function LoginPage() {
                         <button
                           type="button"
                           className="text-[#008822] hover:text-[#006e1b] font-semibold"
-                          onClick={() => navigate("/register")}
                         >
-                          Register
+                          Contact Administrator
                         </button>
                       </div>
                     </div>
@@ -229,7 +203,7 @@ export default function LoginPage() {
               {/* Mobile footer */}
               <div className="mt-8 text-center lg:hidden">
                 <Text className="text-gray-400 text-xs">
-                  © 2024 123POULTRY. All rights reserved.
+                  © 2026 GGDC Poultry Manager. All rights reserved.
                 </Text>
               </div>
             </div>

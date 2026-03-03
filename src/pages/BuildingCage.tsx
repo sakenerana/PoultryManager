@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Modal, Drawer, Form, Input, InputNumber, Tabs } from "antd";
+import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
@@ -148,9 +148,9 @@ function CageRow({
           style={{ backgroundColor: `${PRIMARY}22` }}
         >
           <img
-            src="/img/cage.svg"
+            src="/img/cage2.svg"
             alt="Cage"
-            className={isMobile ? "h-4 w-4" : "h-5 w-5"}
+            className={isMobile ? "h-5 w-5" : "h-5 w-5"}
           />
         </div>
 

@@ -62,7 +62,7 @@ function StatCard({
 }) {
   const donePct = total === 0 ? 0 : Math.round((done / total) * 100);
   return (
-    <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-4">
+    <div className="rounded-sm bg-white shadow-sm border border-slate-100 p-4">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-800">{title}</div>
         <div className="text-xs font-semibold text-slate-500">{total.toLocaleString()}</div>
@@ -152,7 +152,7 @@ export default function ReportPage() {
             <div className="text-xs font-semibold text-slate-500">{displayDate}</div>
           </div>
 
-          <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-3 mb-4">
+          <div className="rounded-sm bg-white shadow-sm border border-slate-100 p-3 mb-4">
             <div className="text-[11px] text-slate-500 mb-2">Date Filter</div>
             <div className="flex items-center gap-2">
               {period === "week" && (
@@ -184,7 +184,7 @@ export default function ReportPage() {
               )}
               <button
                 type="button"
-                className="h-10 px-4 rounded-lg bg-[#008822] text-white text-sm font-semibold"
+                className="h-10 px-4 rounded-sm bg-[#008822] text-white text-sm font-semibold"
               >
                 Apply
               </button>
@@ -202,7 +202,7 @@ export default function ReportPage() {
                 type="button"
                 onClick={() => setPeriod(p.key as Period)}
                 className={[
-                  "h-10 rounded-lg text-sm font-semibold border",
+                  "h-10 rounded-sm text-sm font-semibold border",
                   period === p.key
                     ? "bg-[#008822] text-white border-[#008822]"
                     : "bg-white text-slate-600 border-slate-200",
@@ -230,7 +230,7 @@ export default function ReportPage() {
             />
           </div>
 
-          <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-4">
+          <div className="rounded-sm bg-white shadow-sm border border-slate-100 p-4">
             <div className="text-sm font-semibold text-slate-800 mb-3">Trend</div>
             <div className="space-y-3">
               {data.trend.map((row) => (
@@ -252,16 +252,16 @@ export default function ReportPage() {
             <div className="mt-4 pt-4 border-t border-slate-100">
               <div className="text-xs text-slate-500 mb-2">Statuses</div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700">
+                <span className="px-2 py-1 rounded-sm text-xs font-semibold bg-emerald-50 text-emerald-700">
                   Loading
                 </span>
-                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700">
+                <span className="px-2 py-1 rounded-sm text-xs font-semibold bg-blue-50 text-blue-700">
                   Growing
                 </span>
-                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-800">
+                <span className="px-2 py-1 rounded-sm text-xs font-semibold bg-amber-50 text-amber-800">
                   Harvesting
                 </span>
-                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-700">
+                <span className="px-2 py-1 rounded-sm text-xs font-semibold bg-slate-100 text-slate-700">
                   Ready
                 </span>
               </div>

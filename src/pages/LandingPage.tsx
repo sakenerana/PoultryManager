@@ -1,9 +1,9 @@
 // LandingPage.tsx
 import React, { useState } from "react";
 import { Menu, RefreshCw } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 
-type TileKey = "inventory" | "harvest" | "reports";
+type TileKey = "inventory" | "harvest" | "reports" | "userAccess" | "settings";
 
 type Tile = {
     key: TileKey;
@@ -57,6 +57,32 @@ const tiles: Tile[] = [
         largeText: "Reports",
         link: "/reports",
     },
+    {
+        key: "userAccess",
+        title: "Accounts",
+        accent: "text-[#008822]",
+        icon: <img
+            src="/img/accounts.svg"
+            alt="Accounts"
+            className="h-10 w-10"
+        />,
+        largeText: "Accounts",
+        link: "/accounts",
+    },
+    {
+        key: "settings",
+        title: "Settings",
+        accent: "text-[#008822]",
+        icon: (
+            <img
+                src="/img/settings.svg"
+                alt="Settings"
+                className="h-10 w-10"
+            />
+        ),
+        largeText: "Settings",
+        link: "/settings",
+    },
 ];
 
 export default function LandingPage() {
@@ -66,10 +92,10 @@ export default function LandingPage() {
     const headerHeight = 64;
 
     const handleTileClick = (tile: Tile) => {
-    setActive(tile.key);
-    navigate(tile.link);
-    console.log("clicked:", tile.key);
-};
+        setActive(tile.key);
+        navigate(tile.link);
+        console.log("clicked:", tile.key);
+    };
 
     const handleSync = async () => {
         if (syncing) return;
@@ -101,9 +127,14 @@ export default function LandingPage() {
                         <Menu size={22} />
                     </button>
 
-                    <h1 className="text-lg font-semibold tracking-wide">
-                        GGDC Poultry Manager
-                    </h1>
+                    <div className="text-center leading-tight">
+                        <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-white/75 font-medium">
+                            Operations Dashboard
+                        </p>
+                        <h1 className="text-lg sm:text-xl font-bold tracking-tight">
+                            GGDC Poultry Manager
+                        </h1>
+                    </div>
 
                     {/* spacer to keep title centered */}
                     <div className="h-10 w-10" />
@@ -142,14 +173,15 @@ export default function LandingPage() {
                                 </div>
                             </div>
 
-                            {/* big title */}
-                            <div
-                                className={[
-                                    "mt-2 text-center text-2xl sm:text-4xl font-extrabold tracking-tight pt-3 sm:pt-5",
-                                    tile.accent,
-                                ].join(" ")}
-                            >
-                                {tile.largeText}
+                            <div className="mt-3 sm:mt-4 text-center">
+                                <div
+                                    className={[
+                                        "text-[22px] sm:text-[34px] font-bold tracking-tight leading-none",
+                                        tile.accent,
+                                    ].join(" ")}
+                                >
+                                    {tile.largeText}
+                                </div>
                             </div>
 
                             {/* subtle bottom gradient accent */}
@@ -166,8 +198,8 @@ export default function LandingPage() {
                 disabled={syncing}
                 className={[
                     "fixed bottom-6 right-6 z-50",
-                    "rounded-full px-6 py-3",
-                    "text-white font-semibold",
+                    "rounded-full px-4 py-2",
+                    "text-sm text-white font-semibold",
                     "bg-[#ffa600] hover:bg-[#006e1b]",
                     "shadow-xl shadow-[#008822]/25",
                     "flex items-center gap-2",
@@ -176,7 +208,7 @@ export default function LandingPage() {
                 ].join(" ")}
             >
                 <RefreshCw
-                    size={18}
+                    size={15}
                     className={syncing ? "animate-spin" : ""}
                 />
                 {syncing ? "Syncing..." : "Sync data"}

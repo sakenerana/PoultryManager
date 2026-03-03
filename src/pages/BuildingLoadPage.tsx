@@ -31,14 +31,6 @@ export default function BuildingLoadPage() {
 
   const hasTodayRecord = todayTotal > 0;
 
-  const recentWindowStart = useMemo(() => {
-    return dayjs().startOf("day").subtract(1, "day");
-  }, []);
-  const recentEntries = useMemo(() => {
-    return historyEntries.filter((entry) => dayjs(entry.date).diff(recentWindowStart, "day") >= 0);
-  }, [historyEntries, recentWindowStart]);
-  const isLocked = recentEntries.length >= 2;
-
   const history = useMemo(() => {
     return [...historyEntries].reverse();
   }, [historyEntries]);
@@ -46,6 +38,7 @@ export default function BuildingLoadPage() {
   const grandTotal = useMemo(() => {
     return historyEntries.reduce((sum, entry) => sum + entry.total, 0);
   }, [historyEntries]);
+  const isCompleted = historyEntries.length >= 2;
 
   const handleSaveOrUpdate = () => {
     const parsed = Number(totalInput);
@@ -64,7 +57,7 @@ export default function BuildingLoadPage() {
   };
 
   const isTotalValid =
-    !isLocked && totalInput.trim() !== "" && Number.isFinite(Number(totalInput)) && Number(totalInput) >= 0;
+    !isCompleted && totalInput.trim() !== "" && Number.isFinite(Number(totalInput)) && Number(totalInput) >= 0;
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -109,6 +102,7 @@ export default function BuildingLoadPage() {
           className="!text-white hover:!text-white/90"
           onClick={() => console.log("sign out")}
         />
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
       <Content className={["flex-1 flex", isMobile ? "px-3 py-3 pb-10" : "px-4 py-4"].join(" ")}>
@@ -147,17 +141,14 @@ export default function BuildingLoadPage() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm p-4 mt-auto">
-            {!isLocked && (
-              <>
-                <div className="text-[11px] text-slate-500 mb-2">Total Birds Loaded</div>
-                <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
-                  placeholder="Enter total count"
-                  value={totalInput}
-                  onChange={(e) => setTotalInput(e.target.value)}
-                  inputMode="numeric"
-                />
-              </>
+            {!isCompleted && (
+              <input
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
+                placeholder="Enter total count"
+                value={totalInput}
+                onChange={(e) => setTotalInput(e.target.value)}
+                inputMode="numeric"
+              />
             )}
             <button
               type="button"
@@ -165,7 +156,7 @@ export default function BuildingLoadPage() {
               onClick={handleSaveOrUpdate}
               disabled={!isTotalValid}
             >
-              {isLocked ? "Completed" : hasTodayRecord ? "Update" : "Save"}
+              {isCompleted ? "Completed" : hasTodayRecord ? "Update" : "Save"}
             </button>
           </div>
         </div>
