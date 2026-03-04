@@ -1,10 +1,15 @@
 // BuildingOverviewPage.tsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout, Typography, Card, Button, Tag, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import NotificationToast from "../components/NotificationToast";
+import { signOutAndRedirect } from "../utils/auth";
+import { addBuilding, loadBuildings } from "../controller/buildingCrud";
+import type { BuildingRecord } from "../type/building.type";
+import { useAuth } from "../context/AuthContext";
+import supabase from "../utils/supabase";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -33,14 +38,36 @@ type BuildingStats = {
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
-const BUILDINGS: Building[] = [
-  { id: "1", name: "Building 1", days: 28, total: 1200, avgWeight: 1850, mortality: 14, thinning: 35, takeOut: 18 },
-  { id: "2", name: "Building 2", days: 41, total: 980, avgWeight: 1725, mortality: 9, thinning: 42, takeOut: 20 },
-  { id: "3", name: "Building 3", days: 52, total: 1500, avgWeight: 1920, mortality: 7, thinning: 50, takeOut: 27 },
-  { id: "4", name: "Building 4", days: 32, total: 800, avgWeight: 1680, mortality: 12, thinning: 28, takeOut: 14 },
-  { id: "5", name: "Building 5", days: 22, total: 1100, avgWeight: 1790, mortality: 10, thinning: 31, takeOut: 16 },
-];
+type UserAccess = {
+  role: "Admin" | "Supervisor" | "Staff" | null;
+  buildingId: number | null;
+  isActive: boolean;
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error && typeof error === "object") {
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+    if ("error_description" in error && typeof error.error_description === "string") {
+      return error.error_description;
+    }
+  }
+  return "Unknown error";
+};
+
+const mapRecordToBuilding = (record: BuildingRecord): Building => ({
+  id: record.id,
+  name: record.name,
+  days: 0,
+  total: 0,
+  avgWeight: 0,
+  mortality: 0,
+  thinning: 0,
+  takeOut: 0,
+});
 
 const MOCK_STATS_BY_DATE: Record<string, Record<string, BuildingStats>> = {
   "2026-02-27": {
@@ -108,12 +135,14 @@ function BuildingRow({
   isMobile,
   stats,
   canLoad,
+  selectedDate,
 }: {
   b: Building;
   onOpen: () => void;
   isMobile: boolean;
   stats: BuildingStats;
   canLoad: boolean;
+  selectedDate: string;
 }) {
   const navigate = useNavigate();
   return (
@@ -174,7 +203,7 @@ function BuildingRow({
                 onClick={(e) => {
                   e.stopPropagation();
                   console.log("open data for", b.id);
-                  navigate(`/building-load/${b.id}`);
+                  navigate(`/building-load/${b.id}?date=${selectedDate}`);
                 }}
                 className={[
                   "!font-medium shadow-sm !rounded-md",
@@ -225,15 +254,81 @@ function BuildingRow({
 
 export default function BuildingOverviewPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
-  const [buildings, setBuildings] = useState<Building[]>(BUILDINGS);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [addForm] = Form.useForm();
+
+  const resolveUserAccess = async (): Promise<UserAccess> => {
+    if (!user?.id) return { role: null, buildingId: null, isActive: false };
+
+    const { data, error } = await supabase
+      .from(USERS_TABLE)
+      .select("role, building_id, status")
+      .eq("user_uuid", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || "Failed to load user access.");
+    }
+
+    if (!data) {
+      return { role: null, buildingId: null, isActive: false };
+    }
+
+    const normalizedRole =
+      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+
+    return {
+      role: normalizedRole,
+      buildingId: data.building_id ?? null,
+      isActive: data.status !== "Inactive",
+    };
+  };
+
+  const fetchBuildings = async () => {
+    try {
+      setIsLoading(true);
+      const access = await resolveUserAccess();
+      const data = await loadBuildings();
+      const mapped = data.map(mapRecordToBuilding);
+
+      if (!access.isActive) {
+        setBuildings([]);
+        return;
+      }
+
+      if (access.role === "Staff") {
+        if (access.buildingId == null) {
+          setBuildings([]);
+          return;
+        }
+        setBuildings(mapped.filter((building) => Number(building.id) === access.buildingId));
+        return;
+      }
+
+      setBuildings(mapped);
+    } catch (error) {
+      setToastMessage(`Failed to load buildings: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchBuildings();
+  }, [user?.id]);
+
   const handleDateChange = (date: Dayjs | null) => {
     const nextDate = date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
     setSelectedDate(nextDate);
@@ -242,8 +337,7 @@ export default function BuildingOverviewPage() {
   };
 
   const handleSignOut = () => {
-    // TODO: wire up auth sign out logic here
-    console.log("sign out");
+    void signOutAndRedirect(navigate);
   };
   const handleOpenAdd = () => {
     const nextIndex = buildings.length + 1;
@@ -258,23 +352,15 @@ export default function BuildingOverviewPage() {
   const handleSubmitAdd = async () => {
     try {
       const values = await addForm.validateFields();
-      const nextId = (Math.max(0, ...buildings.map((b) => Number(b.id) || 0)) + 1).toString();
-      const newBuilding: Building = {
-        id: nextId,
-        name: values.name,
-        days: 0,
-        total: 0,
-        avgWeight: 0,
-        mortality: 0,
-        thinning: 0,
-        takeOut: 0,
-      };
-      setBuildings((prev) => [...prev, newBuilding]);
+      await addBuilding({ name: values.name });
+      await fetchBuildings();
       handleCloseAdd();
       setToastMessage(`Successfully added ${values.name}`);
       setIsToastOpen(true);
-    } catch {
-      // validation errors handled by antd
+    } catch (error) {
+      if (error && typeof error === "object" && "errorFields" in error) return;
+      setToastMessage(`Failed to add building: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
     }
   };
 
@@ -287,7 +373,7 @@ export default function BuildingOverviewPage() {
         days: building.days,
         total: building.total,
         avgWeight: building.avgWeight,
-        status: "Growing",
+        status: "Ready",
         mortality: building.mortality,
         thinning: building.thinning,
         takeOut: building.takeOut,
@@ -358,7 +444,7 @@ export default function BuildingOverviewPage() {
             className={isMobile ? "!w-full" : "!w-[220px]"}
             size={isMobile ? "middle" : "large"}
             placeholder="Select date"
-            defaultValue={dayjs()}
+            value={dayjs(selectedDate)}
             onChange={handleDateChange}
             style={{ fontSize: 16 }}
             styles={{ input: { fontSize: 16 } }}
@@ -376,18 +462,25 @@ export default function BuildingOverviewPage() {
           <Divider className={isMobile ? "!my-2" : "!my-3"} />
 
           {/* Use gap, not space-y, for consistent spacing */}
-          <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
-            {buildings.map((b) => (
-              <BuildingRow
-                key={b.id}
-                b={b}
-                stats={getStatsForBuilding(b)}
-                isMobile={isMobile}
-                onOpen={() => navigate(`/building-cage/${b.id}`)}
-                canLoad={isTodaySelected}
-              />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="text-sm text-slate-500 py-6">Loading buildings...</div>
+          ) : buildings.length === 0 ? (
+            <div className="text-sm text-slate-500 py-6">No buildings found for this date.</div>
+          ) : (
+            <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+              {buildings.map((b) => (
+                <BuildingRow
+                  key={b.id}
+                  b={b}
+                  stats={getStatsForBuilding(b)}
+                  isMobile={isMobile}
+                  onOpen={() => navigate(`/building-cage/${b.id}`)}
+                  canLoad={isTodaySelected}
+                  selectedDate={selectedDate}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Floating Add Button - full width on mobile */}

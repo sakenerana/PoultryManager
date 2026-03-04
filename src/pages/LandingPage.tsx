@@ -1,7 +1,9 @@
 // LandingPage.tsx
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Menu, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import supabase from "../utils/supabase";
 
 type TileKey = "inventory" | "harvest" | "reports" | "userAccess" | "settings";
 
@@ -85,11 +87,60 @@ const tiles: Tile[] = [
     },
 ];
 
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+type AppRole = "Admin" | "Supervisor" | "Staff" | null;
+
 export default function LandingPage() {
     const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<TileKey | null>(null);
+    const [role, setRole] = useState<AppRole>(null);
     const navigate = useNavigate();
+    const { user } = useAuth();
     const headerHeight = 64;
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadRole = async () => {
+            if (!user?.id) {
+                if (isMounted) setRole(null);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from(USERS_TABLE)
+                .select("role")
+                .eq("user_uuid", user.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (error) {
+                console.error("Failed to load user role:", error.message);
+                if (isMounted) setRole(null);
+                return;
+            }
+
+            if (!isMounted) return;
+            if (data?.role === "Admin" || data?.role === "Supervisor") {
+                setRole(data.role);
+            } else if (data?.role === "Staff") {
+                setRole("Staff");
+            } else {
+                setRole(null);
+            }
+        };
+
+        void loadRole();
+        return () => {
+            isMounted = false;
+        };
+    }, [user?.id]);
+
+    const visibleTiles = useMemo(() => {
+        if (role === "Admin" || role === "Supervisor") return tiles;
+        return tiles.filter((tile) => tile.key !== "userAccess");
+    }, [role]);
 
     const handleTileClick = (tile: Tile) => {
         setActive(tile.key);
@@ -147,7 +198,7 @@ export default function LandingPage() {
             {/* CONTENT */}
             <main className="flex-1 px-4 py-4">
                 <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                    {tiles.map((tile) => (
+                    {visibleTiles.map((tile) => (
                         <button
                             key={tile.key}
                             type="button"

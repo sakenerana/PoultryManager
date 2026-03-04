@@ -13,9 +13,15 @@ import {
   Tag,
   Drawer,
   Empty,
+  Spin,
 } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined, UserAddOutlined } from "@ant-design/icons";
 import NotificationToast from "../components/NotificationToast";
+import { signOutAndRedirect } from "../utils/auth";
+import { loadBuildings } from "../controller/buildingCrud";
+import type { Role, Status, UserAccount } from "../type/user.types";
+import type { BuildingRecord } from "../type/building.type";
+import { addUser, loadUsers, updateUser } from "../controller/userCrud";
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -23,24 +29,9 @@ const { useBreakpoint } = Grid;
 
 const PRIMARY = "#008822";
 const ACCENT = "#ffa600";
-const STORAGE_KEY = "ggdc_accounts";
-
-type Role = "Admin" | "Staff";
-type Status = "Active" | "Inactive";
-
-type UserAccount = {
-  id: string;
-  fullName: string;
-  email: string;
-  password: string;
-  buildingAccess: string;
-  role: Role;
-  status: Status;
-  createdAt: string;
-};
-
 const roleColors: Record<Role, string> = {
   Admin: "red",
+  Supervisor: "blue",
   Staff: "green",
 };
 
@@ -49,23 +40,9 @@ const statusColors: Record<Status, string> = {
   Inactive: "default",
 };
 
-const BUILDING_OPTIONS = [
-  { label: "Building 1", value: "Building 1" },
-  { label: "Building 2", value: "Building 2" },
-  { label: "Building 3", value: "Building 3" },
-  { label: "Building 4", value: "Building 4" },
-];
-
 function initialsOf(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "U";
-}
-
-function createUserId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function AccountsPage() {
@@ -73,52 +50,80 @@ export default function AccountsPage() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const [form] = Form.useForm();
+  const selectedRole = Form.useWatch("role", form) as Role | undefined;
 
   const [users, setUsers] = useState<UserAccount[]>([]);
+  const [buildings, setBuildings] = useState<BuildingRecord[]>([]);
   const [highlightedUserId, setHighlightedUserId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const userListRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  const refreshFromSupabase = async (showLoading = false) => {
+    if (showLoading) setIsLoadingUsers(true);
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Array<UserAccount & { role?: string; password?: string; buildingAccess?: string | string[] }>;
-      if (Array.isArray(parsed)) {
-        const normalized = parsed.map((user) => ({
-          ...user,
-          role: (user.role === "Admin" ? "Admin" : "Staff") as Role,
-          password: typeof user.password === "string" ? user.password : "",
-          buildingAccess: Array.isArray(user.buildingAccess)
-            ? user.buildingAccess[0] ?? ""
-            : typeof user.buildingAccess === "string"
-              ? user.buildingAccess
-              : "",
-        }));
-        setUsers(normalized);
-      }
+      const [userData, buildingData] = await Promise.all([loadUsers(), loadBuildings()]);
+      setUsers(userData);
+      setBuildings(buildingData);
     } catch {
-      // Keep empty list when parsing fails.
+      setToastType("error");
+      setToastMessage("Unable to load users/buildings from Supabase.");
+      setIsToastOpen(true);
+    } finally {
+      setIsLoadingUsers(false);
     }
+  };
+
+  useEffect(() => {
+    void refreshFromSupabase(true);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-  }, [users]);
+    if (selectedRole === "Staff") return;
+    form.setFieldValue("buildingId", undefined);
+  }, [selectedRole, form]);
 
   const totals = useMemo(() => {
     const active = users.filter((u) => u.status === "Active").length;
     const admins = users.filter((u) => u.role === "Admin").length;
-    return { total: users.length, active, admins };
+    const supervisors = users.filter((u) => u.role === "Supervisor").length;
+    return { total: users.length, active, admins, supervisors };
   }, [users]);
+
+  const buildingOptions = useMemo(
+    () =>
+      buildings
+        .map((building) => {
+          const id = Number(building.id);
+          if (!Number.isFinite(id)) return null;
+          return { label: building.name, value: id };
+        })
+        .filter((option): option is { label: string; value: number } => option !== null),
+    [buildings]
+  );
+
+  const buildingNameById = useMemo(
+    () =>
+      new Map(
+        buildingOptions.map((option) => [option.value, option.label] as const)
+      ),
+    [buildingOptions]
+  );
 
   const openAdd = () => {
     setEditingUserId(null);
-    form.setFieldsValue({ role: "Staff", status: "Active", buildingAccess: undefined });
+    form.setFieldsValue({
+      role: "Staff",
+      status: "Active",
+      buildingId: undefined,
+      email: "",
+      password: "",
+      confirmPassword: "",
+    });
     setIsAddOpen(true);
   };
 
@@ -126,10 +131,7 @@ export default function AccountsPage() {
     setEditingUserId(user.id);
     form.setFieldsValue({
       fullName: user.fullName,
-      email: user.email,
-      password: "",
-      confirmPassword: "",
-      buildingAccess: user.buildingAccess ?? [],
+      buildingId: user.buildingId ?? undefined,
       role: user.role,
       status: user.status,
     });
@@ -145,35 +147,16 @@ export default function AccountsPage() {
   const handleAddUser = async () => {
     try {
       const values = await form.validateFields();
-      const email = String(values.email).trim().toLowerCase();
-      const enteredPassword = String(values.password ?? "");
-      const exists = users.some(
-        (user) => user.email.toLowerCase() === email && user.id !== editingUserId
-      );
-
-      if (exists) {
-        setToastType("error");
-        setToastMessage("Email already exists.");
-        setIsToastOpen(true);
-        return;
-      }
+      const buildingId = values.role === "Staff" ? Number(values.buildingId) : null;
 
       if (editingUserId) {
-        setUsers((prev) =>
-          prev.map((user) =>
-            user.id === editingUserId
-              ? {
-                  ...user,
-                  fullName: String(values.fullName).trim(),
-                  email: String(values.email).trim(),
-                  password: enteredPassword ? enteredPassword : user.password,
-                  buildingAccess: String(values.buildingAccess ?? ""),
-                  role: values.role as Role,
-                  status: values.status as Status,
-                }
-              : user
-          )
-        );
+        await updateUser(editingUserId, {
+          fullName: String(values.fullName),
+          buildingId,
+          role: values.role as Role,
+          status: values.status as Status,
+        });
+        await refreshFromSupabase();
         setHighlightedUserId(editingUserId);
         closeAdd();
         setToastType("success");
@@ -183,18 +166,15 @@ export default function AccountsPage() {
           userListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 100);
       } else {
-        const newUser: UserAccount = {
-          id: createUserId(),
-          fullName: String(values.fullName).trim(),
-          email: String(values.email).trim(),
-          password: enteredPassword,
-          buildingAccess: String(values.buildingAccess ?? ""),
-          role: values.role as Role,
-          status: values.status as Status,
-          createdAt: new Date().toISOString(),
-        };
-
-        setUsers((prev) => [newUser, ...prev]);
+      const newUser = await addUser({
+        fullName: String(values.fullName),
+        email: String(values.email),
+        password: String(values.password),
+        buildingId,
+        role: values.role as Role,
+        status: values.status as Status,
+      });
+        await refreshFromSupabase();
         setHighlightedUserId(newUser.id);
         closeAdd();
         setToastType("success");
@@ -204,11 +184,23 @@ export default function AccountsPage() {
           userListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 100);
       }
-    } catch {
+    } catch (error) {
       setToastType("error");
-      setToastMessage("Unable to add user. Please check the form and try again.");
+      const fallbackMessage = editingUserId ? "Unable to update user." : "Unable to add user.";
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "message" in error &&
+        typeof (error as { message?: string }).message === "string"
+          ? (error as { message: string }).message
+          : fallbackMessage;
+      setToastMessage(message);
       setIsToastOpen(true);
     }
+  };
+
+  const handleSignOut = () => {
+    void signOutAndRedirect(navigate);
   };
 
   return (
@@ -247,7 +239,7 @@ export default function AccountsPage() {
           type="text"
           icon={<LogoutOutlined />}
           className="!text-white hover:!text-white/90"
-          onClick={() => console.log("sign out")}
+          onClick={handleSignOut}
         />
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
@@ -255,19 +247,31 @@ export default function AccountsPage() {
       <Content className={isMobile ? "px-2 py-2 pb-24" : "px-4 py-4"}>
         <div className="max-w-[430px] mx-auto">
           <div className={isMobile ? "space-y-3" : "rounded-[28px] bg-slate-50 shadow-xl p-3 space-y-3"}>
-            <Card className="!rounded-sm !border-0 shadow-sm">
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-slate-100 p-2">
-                  <div className="text-[10px] text-slate-500">Total</div>
-                  <div className="text-lg font-bold text-slate-900">{totals.total}</div>
+            <Card className="!rounded-sm !border-0 shadow-sm" bodyStyle={{ padding: 12 }}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Overview</div>
+                  <div className="text-sm font-bold text-slate-900 mt-0.5">Accounts Summary</div>
                 </div>
-                <div className="rounded-xl bg-emerald-50 p-2">
-                  <div className="text-[10px] text-emerald-700">Users</div>
-                  <div className="text-lg font-bold text-emerald-700">{totals.active}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Updated live</div>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+                  <div className="text-[11px] text-slate-500">Total Accounts</div>
+                  <div className="text-xl leading-none font-bold text-slate-900 mt-1">{totals.total}</div>
                 </div>
-                <div className="rounded-xl bg-red-50 p-2">
-                  <div className="text-[10px] text-red-700">Admins</div>
-                  <div className="text-lg font-bold text-red-700">{totals.admins}</div>
+                <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2">
+                  <div className="text-[11px] text-emerald-700">Active Users</div>
+                  <div className="text-xl leading-none font-bold text-emerald-700 mt-1">{totals.active}</div>
+                </div>
+                <div className="rounded-lg bg-red-50 border border-red-100 p-2">
+                  <div className="text-[11px] text-red-700">Admins</div>
+                  <div className="text-xl leading-none font-bold text-red-700 mt-1">{totals.admins}</div>
+                </div>
+                <div className="rounded-lg bg-blue-50 border border-blue-100 p-2">
+                  <div className="text-[11px] text-blue-700">Supervisors</div>
+                  <div className="text-xl leading-none font-bold text-blue-700 mt-1">{totals.supervisors}</div>
                 </div>
               </div>
             </Card>
@@ -275,7 +279,15 @@ export default function AccountsPage() {
             <div ref={userListRef} className="px-1 mt-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">User List</div>
               <div className="space-y-2">
-                {users.length === 0 && (
+                {isLoadingUsers && (
+                  <Card className="!rounded-sm !border-0 shadow-sm">
+                    <div className="py-6 flex justify-center">
+                      <Spin />
+                    </div>
+                  </Card>
+                )}
+
+                {!isLoadingUsers && users.length === 0 && (
                   <Card className="!rounded-sm !border-0 shadow-sm">
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -293,11 +305,11 @@ export default function AccountsPage() {
                   </Card>
                 )}
 
-                {users.map((user) => (
+                {!isLoadingUsers && users.map((user) => (
                   <Card
                     key={user.id}
                     className={[
-                      "!rounded-2xl !border-0 shadow-sm transition-all !mt-2 cursor-pointer",
+                      "!rounded-sm !border-0 shadow-sm transition-all !mt-2 cursor-pointer",
                       highlightedUserId === user.id ? "!ring-2 !ring-[#008822]/40" : "",
                     ].join(" ")}
                     bodyStyle={{ padding: 12 }}
@@ -316,14 +328,16 @@ export default function AccountsPage() {
                           </Tag>
                         </div>
 
-                        <div className="text-xs text-slate-500 truncate">{user.email}</div>
+                        {user.userUuid && (
+                          <div className="text-[11px] text-slate-400 truncate">UUID: {user.userUuid}</div>
+                        )}
                         <div className="mt-2">
-                          {!user.buildingAccess && (
-                            <Tag className="!mr-0">No Building Access</Tag>
+                          {user.buildingId === null && (
+                            <Tag className="!mr-0">All Building Access</Tag>
                           )}
-                          {user.buildingAccess && (
+                          {user.buildingId !== null && (
                             <Tag className="!mr-0" color="geekblue">
-                              {user.buildingAccess}
+                              {buildingNameById.get(user.buildingId) ?? `Building ${user.buildingId}`}
                             </Tag>
                           )}
                         </div>
@@ -383,57 +397,57 @@ export default function AccountsPage() {
             <Input size="large" placeholder="e.g., Juan Dela Cruz" />
           </Form.Item>
 
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[
-              { required: true, message: "Please enter email" },
-              { type: "email", message: "Please enter a valid email address" },
-            ]}
-          >
-            <Input size="large" placeholder="e.g., jdelacruz@ggdc.com" />
-          </Form.Item>
+          {!editingUserId && (
+            <>
+              <Form.Item
+                label="Email"
+                name="email"
+                rules={[
+                  { required: true, message: "Please enter email" },
+                  { type: "email", message: "Please enter a valid email address" },
+                ]}
+              >
+                <Input size="large" placeholder="e.g., juan@email.com" />
+              </Form.Item>
 
-          <Form.Item
-            label="Password"
-            name="password"
-            rules={[
-              {
-                required: !editingUserId,
-                message: "Please enter password",
-              },
-              {
-                validator: (_, value) => {
-                  if (!value) return Promise.resolve();
-                  return String(value).length >= 6
-                    ? Promise.resolve()
-                    : Promise.reject(new Error("Password must be at least 6 characters"));
-                },
-              },
-            ]}
-          >
-            <Input.Password size="large" placeholder={editingUserId ? "Leave blank to keep current password" : "Enter password"} />
-          </Form.Item>
+              <Form.Item
+                label="Password"
+                name="password"
+                rules={[
+                  { required: true, message: "Please enter password" },
+                  {
+                    validator: (_, value) => {
+                      if (!value) return Promise.resolve();
+                      return String(value).length >= 6
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Password must be at least 6 characters"));
+                    },
+                  },
+                ]}
+              >
+                <Input.Password size="large" placeholder="Enter password" />
+              </Form.Item>
 
-          <Form.Item
-            label="Confirm Password"
-            name="confirmPassword"
-            dependencies={["password"]}
-            rules={[
-              ({ getFieldValue }) => ({
-                validator: (_, value) => {
-                  const password = getFieldValue("password");
-                  if (!password && !value) return Promise.resolve();
-                  if (!value) return Promise.reject(new Error("Please confirm password"));
-                  return value === password
-                    ? Promise.resolve()
-                    : Promise.reject(new Error("Passwords do not match"));
-                },
-              }),
-            ]}
-          >
-            <Input.Password size="large" placeholder={editingUserId ? "Confirm new password" : "Confirm password"} />
-          </Form.Item>
+              <Form.Item
+                label="Confirm Password"
+                name="confirmPassword"
+                dependencies={["password"]}
+                rules={[
+                  { required: true, message: "Please confirm password" },
+                  ({ getFieldValue }) => ({
+                    validator: (_, value) => {
+                      if (!value) return Promise.resolve();
+                      return value === getFieldValue("password")
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Passwords do not match"));
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password size="large" placeholder="Confirm password" />
+              </Form.Item>
+            </>
+          )}
 
           <Form.Item
             label="Role"
@@ -444,22 +458,25 @@ export default function AccountsPage() {
               size="large"
               options={[
                 { label: "Admin", value: "Admin" },
+                { label: "Supervisor", value: "Supervisor" },
                 { label: "Staff", value: "Staff" },
               ]}
             />
           </Form.Item>
 
-          <Form.Item
-            label="Building Access"
-            name="buildingAccess"
-            rules={[{ required: true, message: "Please choose building access" }]}
-          >
-            <Select
-              size="large"
-              options={BUILDING_OPTIONS}
-              placeholder="Select building access"
-            />
-          </Form.Item>
+          {selectedRole === "Staff" && (
+            <Form.Item
+              label="Building Access"
+              name="buildingId"
+              rules={[{ required: true, message: "Please choose building access" }]}
+            >
+              <Select
+                size="large"
+                options={buildingOptions}
+                placeholder="Select building access"
+              />
+            </Form.Item>
+          )}
 
           <Form.Item
             label="Status"

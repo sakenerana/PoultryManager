@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Checkbox, Dropdown, Input, Typography } from "antd";
 import { DownOutlined } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const { Title, Text } = Typography;
 
@@ -13,10 +14,29 @@ const LANGS: Lang[] = [
 ];
 
 export default function LoginPage() {
-  const [lang, setLang] = useState<Lang>(LANGS[0]);
-  const [rememberMe, setRememberMe] = useState(false);
-
   const navigate = useNavigate();
+  const location = useLocation();
+  const [lang, setLang] = useState<Lang>(LANGS[0]);
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem("ggdc_remember_me") === "true");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { signInWithPassword } = useAuth();
+
+  useEffect(() => {
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const searchParams = new URLSearchParams(location.search);
+    const isRecoveryFlow =
+      hashParams.get("type") === "recovery" ||
+      hashParams.has("access_token") ||
+      hashParams.has("error") ||
+      searchParams.has("code");
+
+    if (!isRecoveryFlow) return;
+
+    navigate(`/reset-password${location.search}${location.hash}`, { replace: true });
+  }, [location.hash, location.search, navigate]);
 
   const menuItems = useMemo(
     () =>
@@ -32,6 +52,26 @@ export default function LoginPage() {
       })),
     []
   );
+
+  const handleSignIn = async () => {
+    const cleanedEmail = email.trim();
+    if (!cleanedEmail || !password) {
+      setErrorMessage("Email and password are required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage("");
+    const { error } = await signInWithPassword({
+      email: cleanedEmail,
+      password,
+      rememberMe,
+    });
+    if (error) {
+      setErrorMessage(error);
+    }
+    setIsSubmitting(false);
+  };
 
   return (
     <div className="min-h-screen w-full bg-slate-100">
@@ -141,6 +181,8 @@ export default function LoginPage() {
                         <Input
                           size="large"
                           placeholder="name@example.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
                           className="!h-12 !rounded-lg !border-gray-300 hover:!border-[#008822]/60 focus:!border-[#008822] focus:!shadow-none !text-base"
                         />
                       </div>
@@ -153,16 +195,24 @@ export default function LoginPage() {
                           <button
                             type="button"
                             className="text-sm text-[#008822] hover:text-[#006e1b] font-medium"
+                            onClick={() => navigate("/forgot-password")}
                           >
-                            Forgot?
+                            Forgot Password?
                           </button>
                         </div>
                         <Input.Password
                           size="large"
                           placeholder="Enter your password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          onPressEnter={handleSignIn}
                           className="!h-12 !rounded-lg !border-gray-300 hover:!border-[#008822]/60 focus:!border-[#008822] focus:!shadow-none !text-base"
                         />
                       </div>
+
+                      {errorMessage && (
+                        <div className="text-sm text-red-600">{errorMessage}</div>
+                      )}
 
                       <div className="flex items-center justify-between">
                         <Checkbox
@@ -181,7 +231,8 @@ export default function LoginPage() {
                         block
                         size="large"
                         className="!h-12 !rounded-lg !bg-[#008822] hover:!bg-[#006e1b] !border-none !font-semibold !text-base shadow-sm !mt-6"
-                        onClick={() => navigate("/landing-page")}
+                        onClick={handleSignIn}
+                        loading={isSubmitting}
                       >
                         Sign In
                       </Button>

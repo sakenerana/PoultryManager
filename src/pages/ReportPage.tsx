@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import { Layout, Button, Divider, Grid, Typography, DatePicker } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { signOutAndRedirect } from "../utils/auth";
 
 type Period = "week" | "month" | "year";
 
@@ -101,6 +102,10 @@ export default function ReportPage() {
     return dayjs(date).format("MMMM D, YYYY");
   }, [date, period]);
 
+  const handleSignOut = () => {
+    void signOutAndRedirect(navigate);
+  };
+
   return (
     <Layout className="min-h-screen bg-slate-100">
       <Header
@@ -136,7 +141,7 @@ export default function ReportPage() {
           type="text"
           icon={<LogoutOutlined />}
           className="!text-white hover:!text-white/90"
-          onClick={() => console.log("sign out")}
+          onClick={handleSignOut}
         />
         {/* divider */}
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />

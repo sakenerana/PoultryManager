@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
+import { signOutAndRedirect } from "../utils/auth";
+import { addSubBuilding, loadSubBuildingsByBuildingIdAndDate } from "../controller/subbuildingsCrud";
+import type { SubBuildingRecord } from "../type/subbuildings.type";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -36,17 +39,27 @@ type EditableMetric = "mortality" | "thinning" | "takeOut";
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 
-export const CAGES: Cage[] = [
-  { id: "1", buildingId: "1", name: "Cage 1", avgWeight: 1850, mortality: 14, thinning: 8, takeOut: 4 },
-  { id: "2", buildingId: "1", name: "Cage 2", avgWeight: 3214, mortality: 18, thinning: 10, takeOut: 5 },
-  { id: "3", buildingId: "2", name: "Cage 3", avgWeight: 1920, mortality: 7, thinning: 7, takeOut: 3 },
-  { id: "4", buildingId: "2", name: "Cage 4", avgWeight: 1680, mortality: 12, thinning: 9, takeOut: 4 },
-  { id: "5", buildingId: "3", name: "Cage 5", avgWeight: 1790, mortality: 10, thinning: 8, takeOut: 4 },
-  { id: "3", buildingId: "1", name: "Cage 3", avgWeight: 1725, mortality: 9, thinning: 6, takeOut: 3 },
-  { id: "4", buildingId: "2", name: "Cage 4", avgWeight: 1920, mortality: 7, thinning: 7, takeOut: 3 },
-  { id: "5", buildingId: "2", name: "Cage 5", avgWeight: 1680, mortality: 12, thinning: 9, takeOut: 4 },
-  { id: "6", buildingId: "3", name: "Cage 6", avgWeight: 1790, mortality: 10, thinning: 8, takeOut: 4 },
-];
+const mapSubBuildingToCage = (record: SubBuildingRecord): Cage => ({
+  id: record.id,
+  buildingId: String(record.buildingId ?? ""),
+  name: record.name,
+  avgWeight: 0,
+  mortality: 0,
+  thinning: 0,
+  takeOut: 0,
+});
+
+const getErrorMessage = (error: unknown): string => {
+  if (error && typeof error === "object") {
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+    if ("error_description" in error && typeof error.error_description === "string") {
+      return error.error_description;
+    }
+  }
+  return "Unknown error";
+};
 
 const MOCK_STATS_BY_DATE: Record<string, Record<string, CageStats>> = {
   "2026-02-27": {
@@ -215,7 +228,8 @@ export default function BuildingCage() {
   const { id } = useParams();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
-  const [cages, setCages] = useState<Cage[]>(CAGES);
+  const [cages, setCages] = useState<Cage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
   const [metricOverrides, setMetricOverrides] = useState<Record<EditableMetric, Record<string, Record<string, number>>>>({
@@ -244,6 +258,30 @@ export default function BuildingCage() {
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [addForm] = Form.useForm();
+
+  const fetchCagesByDate = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) {
+      setCages([]);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const data = await loadSubBuildingsByBuildingIdAndDate(buildingId, selectedDate);
+      setCages(data.map(mapSubBuildingToCage));
+    } catch (error) {
+      setToastMessage(`Failed to load cages: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchCagesByDate();
+  }, [id, selectedDate]);
+
   const handleDateChange = (date: dayjs.Dayjs | null) => {
     const nextDate = date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
     setSelectedDate(nextDate);
@@ -252,8 +290,7 @@ export default function BuildingCage() {
   };
 
   const handleSignOut = () => {
-    // TODO: wire up auth sign out logic here
-    console.log("sign out");
+    void signOutAndRedirect(navigate);
   };
   const handleOpenAdd = () => {
     const nextIndex = filteredCages.length + 1;
@@ -268,22 +305,21 @@ export default function BuildingCage() {
   const handleSubmitAdd = async () => {
     try {
       const values = await addForm.validateFields();
-      const nextId = (Math.max(0, ...cages.map((cage) => Number(cage.id) || 0)) + 1).toString();
-      const newCage: Cage = {
-        id: nextId,
-        buildingId: id ?? "1",
-        name: values.name,
-        avgWeight: 0,
-        mortality: 0,
-        thinning: 0,
-        takeOut: 0,
-      };
-      setCages((prev) => [...prev, newCage]);
+      const buildingId = Number(id);
+      if (!Number.isFinite(buildingId)) {
+        setToastMessage("Invalid building ID.");
+        setIsToastOpen(true);
+        return;
+      }
+      await addSubBuilding({ buildingId, name: values.name });
+      await fetchCagesByDate();
       handleCloseAdd();
       setToastMessage(`Successfully added ${values.name}`);
       setIsToastOpen(true);
-    } catch {
-      // validation errors handled by antd
+    } catch (error) {
+      if (error && typeof error === "object" && "errorFields" in error) return;
+      setToastMessage(`Failed to add cage: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
     }
   };
 
@@ -325,10 +361,7 @@ export default function BuildingCage() {
     };
   }, [selectedDate, metricOverrides, weightOverrides]);
 
-  const filteredCages = useMemo(() => {
-    if (!id) return cages;
-    return cages.filter((cage) => cage.buildingId === id);
-  }, [id, cages]);
+  const filteredCages = useMemo(() => cages, [cages]);
 
   const metricMeta: Record<EditableMetric, { title: string; helper: string; label: string; success: string }> = {
     mortality: {
@@ -511,7 +544,7 @@ export default function BuildingCage() {
             className={isMobile ? "!w-full" : "!w-[220px]"}
             size={isMobile ? "middle" : "large"}
             placeholder="Select date"
-            defaultValue={dayjs()}
+            value={dayjs(selectedDate)}
             onChange={handleDateChange}
             style={{ fontSize: 16 }}
             styles={{ input: { fontSize: 16 } }}
@@ -540,21 +573,27 @@ export default function BuildingCage() {
           </div>
 
           {/* Use gap, not space-y, for consistent spacing */}
-          <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
-            {filteredCages.map((c, index) => (
-              <CageRow
-                key={c.id}
-                c={c}
-                stats={getStatsForCage(c)}
-                isMobile={isMobile}
-                displayName={`Cage ${index + 1}`}
-                onMortalityClick={(cageId, current) => openMetricModal("mortality", cageId, current)}
-                onThinningClick={(cageId, current) => openMetricModal("thinning", cageId, current)}
-                onTakeOutClick={(cageId, current) => openMetricModal("takeOut", cageId, current)}
-                onWeightClick={openWeightModal}
-              />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="text-sm text-slate-500 py-6">Loading cages...</div>
+          ) : filteredCages.length === 0 ? (
+            <div className="text-sm text-slate-500 py-6">No cages found for this date.</div>
+          ) : (
+            <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+              {filteredCages.map((c, index) => (
+                <CageRow
+                  key={c.id}
+                  c={c}
+                  stats={getStatsForCage(c)}
+                  isMobile={isMobile}
+                  displayName={c.name || `Cage ${index + 1}`}
+                  onMortalityClick={(cageId, current) => openMetricModal("mortality", cageId, current)}
+                  onThinningClick={(cageId, current) => openMetricModal("thinning", cageId, current)}
+                  onTakeOutClick={(cageId, current) => openMetricModal("takeOut", cageId, current)}
+                  onWeightClick={openWeightModal}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Floating Add Button */}

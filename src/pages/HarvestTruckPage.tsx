@@ -4,6 +4,7 @@ import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Fo
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
+import { signOutAndRedirect } from "../utils/auth";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -205,7 +206,7 @@ export default function HarvestTruckPage() {
     Number(loadFormValues?.birdsLoad) > 0;
 
   const handleSignOut = () => {
-    console.log("sign out");
+    void signOutAndRedirect(navigate);
   };
 
   const handleDateChange = (date: dayjs.Dayjs | null) => {

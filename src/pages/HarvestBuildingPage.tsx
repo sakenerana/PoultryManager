@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Layout, Typography, Card, Button, Tag, Divider, Grid, DatePicker } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import { signOutAndRedirect } from "../utils/auth";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -204,8 +205,7 @@ export default function HarvestBuildingPage() {
   const buildings = BUILDINGS;
 
   const handleSignOut = () => {
-    // TODO: wire up auth sign out logic here
-    console.log("sign out");
+    void signOutAndRedirect(navigate);
   };
 
   const getStatsForBuilding = useMemo(() => {
