@@ -5,8 +5,22 @@ import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
-import { addSubBuilding, loadSubBuildingsByBuildingIdAndDate } from "../controller/subbuildingsCrud";
+import { loadSubBuildingsByBuildingId } from "../controller/subbuildingsCrud";
 import type { SubBuildingRecord } from "../type/subbuildings.type";
+import supabase from "../utils/supabase";
+import {
+  addBodyWeightLog,
+  loadBodyWeightLogsByBuildingId,
+  loadBodyWeightLogsByBuildingIdAndDate,
+  updateBodyWeightLog,
+} from "../controller/bodyWeightCrud";
+import {
+  addGrowLog,
+  addGrowReductionTransaction,
+  loadGrowReductionTransactionsByGrowId,
+  loadGrowLogsByGrowId,
+  updateGrowReductionTransaction,
+} from "../controller/growLogsCrud";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -35,9 +49,27 @@ type WeightEntry = {
   backWeights: number[];
 };
 type EditableMetric = "mortality" | "thinning" | "takeOut";
+type GrowLogPreview = {
+  createdAt: string;
+  mortality: number;
+  thinning: number;
+  takeOut: number;
+} | null;
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
+const SUBBUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_SUBBUILDINGS_TABLE ?? "Subbuildings";
+const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+
+const toNumberArray = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [0];
+  const mapped = value
+    .map((item) => Number(item))
+    .filter((n) => Number.isFinite(n))
+    .map((n) => Math.max(0, n));
+  return mapped.length > 0 ? mapped : [0];
+};
 
 const mapSubBuildingToCage = (record: SubBuildingRecord): Cage => ({
   id: record.id,
@@ -59,23 +91,6 @@ const getErrorMessage = (error: unknown): string => {
     }
   }
   return "Unknown error";
-};
-
-const MOCK_STATS_BY_DATE: Record<string, Record<string, CageStats>> = {
-  "2026-02-27": {
-    "1": { avgWeight: 1850, mortality: 14, thinning: 8, takeOut: 4 },
-    "2": { avgWeight: 1725, mortality: 9, thinning: 6, takeOut: 3 },
-    "3": { avgWeight: 1920, mortality: 7, thinning: 7, takeOut: 3 },
-    "4": { avgWeight: 1680, mortality: 12, thinning: 9, takeOut: 4 },
-    "5": { avgWeight: 1790, mortality: 10, thinning: 8, takeOut: 4 },
-  },
-  "2026-02-28": {
-    "1": { avgWeight: 1835, mortality: 16, thinning: 9, takeOut: 4 },
-    "2": { avgWeight: 1710, mortality: 11, thinning: 7, takeOut: 3 },
-    "3": { avgWeight: 1900, mortality: 9, thinning: 8, takeOut: 4 },
-    "4": { avgWeight: 1670, mortality: 13, thinning: 10, takeOut: 5 },
-    "5": { avgWeight: 1775, mortality: 12, thinning: 9, takeOut: 4 },
-  },
 };
 
 function StatPill({
@@ -133,6 +148,7 @@ function CageRow({
   isMobile,
   stats,
   displayName,
+  hideMetrics,
 }: {
   c: Cage;
   onMortalityClick: (cageId: string, current: number) => void;
@@ -142,6 +158,7 @@ function CageRow({
   isMobile: boolean;
   stats: CageStats;
   displayName: string;
+  hideMetrics: boolean;
 }) {
   return (
     <Card
@@ -185,33 +202,33 @@ function CageRow({
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
             <StatPill
               label="Avg. Weight"
-              value={`${stats.avgWeight.toLocaleString(undefined, {
+              value={hideMetrics ? "-" : `${stats.avgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })} g`}
               rightIcon={<span className="text-slate-400 text-base leading-none">›</span>}
-              onClick={() => onWeightClick(c.id)}
+              onClick={hideMetrics ? undefined : () => onWeightClick(c.id)}
             />
             <StatPill
               label="Mortality"
-              value={stats.mortality.toLocaleString()}
+              value={hideMetrics ? "-" : stats.mortality.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               rightIcon={<span className="text-slate-400 text-base leading-none">›</span>}
-              onClick={() => onMortalityClick(c.id, stats.mortality)}
+              onClick={hideMetrics ? undefined : () => onMortalityClick(c.id, stats.mortality)}
             />
             <StatPill
               label="Thinning"
-              value={stats.thinning.toLocaleString()}
+              value={hideMetrics ? "-" : stats.thinning.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
               rightIcon={<span className="text-slate-400 text-base leading-none">›</span>}
-              onClick={() => onThinningClick(c.id, stats.thinning)}
+              onClick={hideMetrics ? undefined : () => onThinningClick(c.id, stats.thinning)}
             />
             <StatPill
               label="Take Out"
-              value={stats.takeOut.toLocaleString()}
+              value={hideMetrics ? "-" : stats.takeOut.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
               rightIcon={<span className="text-slate-400 text-base leading-none">›</span>}
-              onClick={() => onTakeOutClick(c.id, stats.takeOut)}
+              onClick={hideMetrics ? undefined : () => onTakeOutClick(c.id, stats.takeOut)}
             />
           </div>
         </div>
@@ -257,9 +274,11 @@ export default function BuildingCage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [isLatestGrowHarvested, setIsLatestGrowHarvested] = useState(false);
+  const [growLogPreview, setGrowLogPreview] = useState<GrowLogPreview>(null);
   const [addForm] = Form.useForm();
 
-  const fetchCagesByDate = async () => {
+  const fetchCagesByBuildingId = async () => {
     const buildingId = Number(id);
     if (!Number.isFinite(buildingId)) {
       setCages([]);
@@ -268,7 +287,7 @@ export default function BuildingCage() {
 
     try {
       setIsLoading(true);
-      const data = await loadSubBuildingsByBuildingIdAndDate(buildingId, selectedDate);
+      const data = await loadSubBuildingsByBuildingId(buildingId);
       setCages(data.map(mapSubBuildingToCage));
     } catch (error) {
       setToastMessage(`Failed to load cages: ${getErrorMessage(error)}`);
@@ -279,7 +298,59 @@ export default function BuildingCage() {
   };
 
   useEffect(() => {
-    void fetchCagesByDate();
+    void fetchCagesByBuildingId();
+  }, [id]);
+
+  const fetchBodyWeightLogsByDate = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) return;
+
+    try {
+      const logs = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
+      let logsForDisplay = logs;
+
+      if (logsForDisplay.length === 0) {
+        const allLogs = await loadBodyWeightLogsByBuildingId(buildingId);
+        const selectedDayEnd = dayjs(selectedDate).add(1, "day").startOf("day").valueOf();
+        const latestByCage: Record<string, (typeof allLogs)[number]> = {};
+
+        allLogs
+          .filter((row) => dayjs(row.createdAt).valueOf() < selectedDayEnd)
+          .forEach((row) => {
+            if (row.subbuildingId == null) return;
+            const cageId = String(row.subbuildingId);
+            const previous = latestByCage[cageId];
+            if (!previous || dayjs(row.createdAt).isAfter(dayjs(previous.createdAt))) {
+              latestByCage[cageId] = row;
+            }
+          });
+
+        logsForDisplay = Object.values(latestByCage);
+      }
+
+      const byCage: Record<string, WeightEntry> = {};
+
+      logsForDisplay.forEach((row) => {
+        if (row.subbuildingId == null) return;
+        byCage[String(row.subbuildingId)] = {
+          frontWeights: toNumberArray(row.frontWeight),
+          middleWeights: toNumberArray(row.middleWeight),
+          backWeights: toNumberArray(row.backWeight),
+        };
+      });
+
+      setWeightOverrides((prev) => ({
+        ...prev,
+        [selectedDate]: byCage,
+      }));
+    } catch (error) {
+      setToastMessage(`Failed to load body weights: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    void fetchBodyWeightLogsByDate();
   }, [id, selectedDate]);
 
   const handleDateChange = (date: dayjs.Dayjs | null) => {
@@ -311,8 +382,21 @@ export default function BuildingCage() {
         setIsToastOpen(true);
         return;
       }
-      await addSubBuilding({ buildingId, name: values.name });
-      await fetchCagesByDate();
+
+      const { error } = await supabase
+        .from(SUBBUILDINGS_TABLE)
+        .insert([
+          {
+            building_id: buildingId,
+            name: String(values.name ?? "").trim(),
+          },
+        ]);
+
+      if (error) {
+        throw error;
+      }
+
+      await fetchCagesByBuildingId();
       handleCloseAdd();
       setToastMessage(`Successfully added ${values.name}`);
       setIsToastOpen(true);
@@ -325,24 +409,6 @@ export default function BuildingCage() {
 
   const getStatsForCage = useMemo(() => {
     return (cage: Cage): CageStats => {
-      if (selectedDate && MOCK_STATS_BY_DATE[selectedDate]?.[cage.id]) {
-        const base = MOCK_STATS_BY_DATE[selectedDate][cage.id];
-        const mortalityOverride = metricOverrides.mortality[selectedDate]?.[cage.id];
-        const thinningOverride = metricOverrides.thinning[selectedDate]?.[cage.id];
-        const takeOutOverride = metricOverrides.takeOut[selectedDate]?.[cage.id];
-        const weightOverride = weightOverrides[selectedDate]?.[cage.id];
-        const weightTotal = weightOverride
-          ? weightOverride.frontWeights.reduce((sum, w) => sum + w, 0) +
-          weightOverride.middleWeights.reduce((sum, w) => sum + w, 0) +
-          weightOverride.backWeights.reduce((sum, w) => sum + w, 0)
-          : base.avgWeight;
-        return {
-          avgWeight: weightTotal,
-          mortality: mortalityOverride ?? base.mortality,
-          thinning: thinningOverride ?? base.thinning,
-          takeOut: takeOutOverride ?? base.takeOut,
-        };
-      }
       const mortalityOverride = metricOverrides.mortality[selectedDate]?.[cage.id];
       const thinningOverride = metricOverrides.thinning[selectedDate]?.[cage.id];
       const takeOutOverride = metricOverrides.takeOut[selectedDate]?.[cage.id];
@@ -417,39 +483,477 @@ export default function BuildingCage() {
     setActiveCageId(null);
   };
 
-  const handleUpdateMetric = () => {
+  const isSameSelectedDate = (dateTime: string): boolean =>
+    dayjs(dateTime).format("YYYY-MM-DD") === selectedDate;
+
+  const resolveGrowForDate = async (
+    buildingId: number,
+    date: string
+  ): Promise<{ id: number; totalAnimals: number; isHarvested: boolean } | null> => {
+    const endOfDay = dayjs(date).add(1, "day").startOf("day").toISOString();
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("id, total_animals, status, is_harvested")
+      .eq("building_id", buildingId)
+      .lt("created_at", endOfDay)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    const idValue = data?.id;
+    if (typeof idValue !== "number") return null;
+    const totalAnimals =
+      typeof data?.total_animals === "number" && Number.isFinite(data.total_animals)
+        ? Math.max(0, Math.floor(data.total_animals))
+        : 0;
+    const isHarvested =
+      data?.is_harvested === true ||
+      (typeof data?.status === "string" && data.status.toLowerCase() === "harvested");
+    return { id: idValue, totalAnimals, isHarvested };
+  };
+
+  const resolveLatestGrowStatus = async (
+    buildingId: number
+  ): Promise<{ isHarvested: boolean; status: string } | null> => {
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("status, is_harvested")
+      .eq("building_id", buildingId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+    const status = typeof data.status === "string" ? data.status : "";
+    const isHarvested =
+      data.is_harvested === true || status.toLowerCase() === "harvested";
+    return { isHarvested, status };
+  };
+
+  const syncEditabilityFromLatestGrow = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) {
+      setIsLatestGrowHarvested(false);
+      return;
+    }
+
+    try {
+      const latest = await resolveLatestGrowStatus(buildingId);
+      if (!latest) {
+        setIsLatestGrowHarvested(false);
+        return;
+      }
+      const normalized = latest.status.toLowerCase();
+      const isEditableByStatus = normalized === "loading" || normalized === "growing";
+      setIsLatestGrowHarvested(!isEditableByStatus || latest.isHarvested);
+    } catch (error) {
+      setToastMessage(`Failed to load latest grow status: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    void syncEditabilityFromLatestGrow();
+  }, [id]);
+
+  const fetchReductionMetricsByDate = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) return;
+
+    try {
+      const { data: growRows, error: growRowsError } = await supabase
+        .from(GROWS_TABLE)
+        .select("id")
+        .eq("building_id", buildingId);
+
+      if (growRowsError) throw growRowsError;
+
+      const growIds = ((growRows ?? []) as Array<{ id: number | null }>).flatMap((row) =>
+        typeof row.id === "number" ? [row.id] : []
+      );
+
+      if (growIds.length === 0) {
+        setGrowLogPreview(null);
+        setMetricOverrides((prev) => ({
+          ...prev,
+          mortality: { ...prev.mortality, [selectedDate]: {} },
+          thinning: { ...prev.thinning, [selectedDate]: {} },
+          takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        }));
+        setMetricRemarksByType((prev) => ({
+          ...prev,
+          mortality: { ...prev.mortality, [selectedDate]: {} },
+          thinning: { ...prev.thinning, [selectedDate]: {} },
+          takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        }));
+        return;
+      }
+
+      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
+      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+      const { data: selectedDayGrowLogRow, error: selectedDayGrowLogError } = await supabase
+        .from(GROW_LOGS_TABLE)
+        .select("id, created_at, grow_id, subbuilding_id, actual_total_animals, mortality, thinning, take_out")
+        .in("grow_id", growIds)
+        .gte("created_at", selectedDayStart)
+        .lt("created_at", selectedDayEnd)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (selectedDayGrowLogError) throw selectedDayGrowLogError;
+
+      let matchedGrowLogRow = selectedDayGrowLogRow;
+      if (!matchedGrowLogRow) {
+        const { data: previousGrowLogRow, error: previousGrowLogError } = await supabase
+          .from(GROW_LOGS_TABLE)
+          .select("id, created_at, grow_id, subbuilding_id, actual_total_animals, mortality, thinning, take_out")
+          .in("grow_id", growIds)
+          .lt("created_at", selectedDayStart)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (previousGrowLogError) throw previousGrowLogError;
+        matchedGrowLogRow = previousGrowLogRow;
+      }
+
+      const selectedDayGrowLog = matchedGrowLogRow
+        ? {
+          createdAt: matchedGrowLogRow.created_at,
+          growId: matchedGrowLogRow.grow_id,
+          mortality: matchedGrowLogRow.mortality,
+          thinning: matchedGrowLogRow.thinning,
+          takeOut: matchedGrowLogRow.take_out,
+        }
+        : null;
+
+      if (!selectedDayGrowLog) {
+        setGrowLogPreview(null);
+        setMetricOverrides((prev) => ({
+          ...prev,
+          mortality: { ...prev.mortality, [selectedDate]: {} },
+          thinning: { ...prev.thinning, [selectedDate]: {} },
+          takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        }));
+        setMetricRemarksByType((prev) => ({
+          ...prev,
+          mortality: { ...prev.mortality, [selectedDate]: {} },
+          thinning: { ...prev.thinning, [selectedDate]: {} },
+          takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        }));
+        return;
+      }
+      const mortalityByCage: Record<string, number> = {};
+      const thinningByCage: Record<string, number> = {};
+      const takeOutByCage: Record<string, number> = {};
+      const mortalityRemarksByCage: Record<string, string> = {};
+      const thinningRemarksByCage: Record<string, string> = {};
+      const takeOutRemarksByCage: Record<string, string> = {};
+      const effectiveDate = dayjs(selectedDayGrowLog.createdAt).format("YYYY-MM-DD");
+      const effectiveGrowId = selectedDayGrowLog.growId;
+      if (typeof selectedDayGrowLog.growId === "number") {
+        const reductions = await loadGrowReductionTransactionsByGrowId(selectedDayGrowLog.growId);
+        const selectedDayRows = reductions.filter(
+          (row) => dayjs(row.createdAt).format("YYYY-MM-DD") === effectiveDate
+        );
+        const latestByCageAndType: Record<string, (typeof selectedDayRows)[number]> = {};
+
+        selectedDayRows.forEach((row) => {
+          if (row.subbuildingId == null || !row.reductionType) return;
+          const key = `${row.subbuildingId}-${row.reductionType}`;
+          const previous = latestByCageAndType[key];
+          if (!previous || dayjs(row.createdAt).isAfter(dayjs(previous.createdAt))) {
+            latestByCageAndType[key] = row;
+          }
+        });
+
+        Object.values(latestByCageAndType).forEach((row) => {
+          if (row.subbuildingId == null || !row.reductionType) return;
+          const cageId = String(row.subbuildingId);
+          const remarks = row.remarks ?? "";
+          if (row.reductionType === "mortality") {
+            mortalityRemarksByCage[cageId] = remarks;
+          } else if (row.reductionType === "thinning") {
+            thinningRemarksByCage[cageId] = remarks;
+          } else if (row.reductionType === "take_out") {
+            takeOutRemarksByCage[cageId] = remarks;
+          }
+        });
+      }
+      if (typeof effectiveGrowId === "number") {
+        const effectiveStart = `${effectiveDate}T00:00:00+00:00`;
+        const effectiveEnd = `${dayjs(effectiveDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+        const { data: growLogRows, error: growLogRowsError } = await supabase
+          .from(GROW_LOGS_TABLE)
+          .select("created_at, subbuilding_id, mortality, thinning, take_out")
+          .eq("grow_id", effectiveGrowId)
+          .gte("created_at", effectiveStart)
+          .lt("created_at", effectiveEnd)
+          .order("created_at", { ascending: false });
+
+        if (growLogRowsError) throw growLogRowsError;
+
+        const latestByCage: Record<string, { mortality: number; thinning: number; takeOut: number }> = {};
+        ((growLogRows ?? []) as Array<{
+          created_at: string;
+          subbuilding_id: number | null;
+          mortality: number | null;
+          thinning: number | null;
+          take_out: number | null;
+        }>).forEach((row) => {
+          if (row.subbuilding_id == null) return;
+          const cageId = String(row.subbuilding_id);
+          if (latestByCage[cageId]) return;
+          latestByCage[cageId] = {
+            mortality: Math.max(0, Math.floor(row.mortality ?? 0)),
+            thinning: Math.max(0, Math.floor(row.thinning ?? 0)),
+            takeOut: Math.max(0, Math.floor(row.take_out ?? 0)),
+          };
+        });
+
+        Object.entries(latestByCage).forEach(([cageId, stats]) => {
+          mortalityByCage[cageId] = stats.mortality;
+          thinningByCage[cageId] = stats.thinning;
+          takeOutByCage[cageId] = stats.takeOut;
+        });
+      }
+
+      if (Object.keys(mortalityByCage).length === 0 && Object.keys(thinningByCage).length === 0 && Object.keys(takeOutByCage).length === 0) {
+        const mortalityFromGrowLog = Math.max(0, Math.floor(selectedDayGrowLog.mortality ?? 0));
+        const thinningFromGrowLog = Math.max(0, Math.floor(selectedDayGrowLog.thinning ?? 0));
+        const takeOutFromGrowLog = Math.max(0, Math.floor(selectedDayGrowLog.takeOut ?? 0));
+        const cageIds = cages.map((c) => c.id);
+        if (cageIds.length > 0) {
+          const distribute = (total: number): Record<string, number> => {
+            const base = Math.floor(total / cageIds.length);
+            const remainder = total % cageIds.length;
+            return cageIds.reduce<Record<string, number>>((acc, cageId, index) => {
+              acc[cageId] = base + (index < remainder ? 1 : 0);
+              return acc;
+            }, {});
+          };
+          Object.assign(mortalityByCage, distribute(mortalityFromGrowLog));
+          Object.assign(thinningByCage, distribute(thinningFromGrowLog));
+          Object.assign(takeOutByCage, distribute(takeOutFromGrowLog));
+        }
+      }
+
+      setGrowLogPreview({
+        createdAt: selectedDayGrowLog.createdAt,
+        mortality: Object.values(mortalityByCage).reduce((sum, value) => sum + value, 0),
+        thinning: Object.values(thinningByCage).reduce((sum, value) => sum + value, 0),
+        takeOut: Object.values(takeOutByCage).reduce((sum, value) => sum + value, 0),
+      });
+
+      setMetricOverrides((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: mortalityByCage },
+        thinning: { ...prev.thinning, [selectedDate]: thinningByCage },
+        takeOut: { ...prev.takeOut, [selectedDate]: takeOutByCage },
+      }));
+
+      setMetricRemarksByType((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: mortalityRemarksByCage },
+        thinning: { ...prev.thinning, [selectedDate]: thinningRemarksByCage },
+        takeOut: { ...prev.takeOut, [selectedDate]: takeOutRemarksByCage },
+      }));
+    } catch (error) {
+      setGrowLogPreview(null);
+      setToastMessage(`Failed to load reduction metrics: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    void fetchReductionMetricsByDate();
+  }, [id, selectedDate, cages]);
+
+  const handleUpdateMetric = async () => {
+    if (isLatestGrowHarvested) {
+      setToastMessage("Cage is not editable. Latest grow status is not Loading/Growing.");
+      setIsToastOpen(true);
+      return;
+    }
     if (!activeCageId) return;
     if (!isTodaySelected) return;
     if (metricDraft <= 0) return;
+
+    const buildingId = Number(id);
+    const subbuildingId = Number(activeCageId);
+    if (!Number.isFinite(buildingId) || !Number.isFinite(subbuildingId)) {
+      setToastMessage("Invalid building/cage ID.");
+      setIsToastOpen(true);
+      return;
+    }
+
     const value = Math.max(0, Math.floor(metricDraft || 0));
-    setMetricOverrides((prev) => {
-      const next = { ...prev };
-      const selectedMetric = { ...next[activeMetric] };
-      const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
-      day[activeCageId] = value;
-      selectedMetric[selectedDate] = day;
-      next[activeMetric] = selectedMetric;
-      return next;
-    });
-    setMetricRemarksByType((prev) => {
-      const next = { ...prev };
-      const selectedMetric = { ...next[activeMetric] };
-      const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
-      day[activeCageId] = metricRemarksDraft.trim();
-      selectedMetric[selectedDate] = day;
-      next[activeMetric] = selectedMetric;
-      return next;
-    });
-    closeMetricModal();
-    setToastMessage(metricMeta[activeMetric].success);
-    setIsToastOpen(true);
+    const reductionType = activeMetric === "takeOut" ? "take_out" : activeMetric;
+
+    try {
+      const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
+      if (!latestGrow) {
+        setToastMessage("No grow record found for this building/date.");
+        setIsToastOpen(true);
+        return;
+      }
+      const growId = latestGrow.id;
+      const growLogs = await loadGrowLogsByGrowId(growId);
+      const reductions = await loadGrowReductionTransactionsByGrowId(growId);
+
+      const selectedDayReductions = reductions.filter((row) => isSameSelectedDate(row.createdAt));
+
+      const existingReductionTx =
+        selectedDayReductions.find(
+          (row) => row.subbuildingId === subbuildingId && row.reductionType === reductionType
+        ) ?? null;
+
+      const selectedDayTotals = selectedDayReductions.reduce(
+        (acc, row) => {
+          const key = row.reductionType;
+          const count = row.animalCount ?? 0;
+          if (key === "mortality") acc.mortality += count;
+          if (key === "thinning") acc.thinning += count;
+          if (key === "take_out") acc.takeOut += count;
+          return acc;
+        },
+        { mortality: 0, thinning: 0, takeOut: 0 }
+      );
+      const selectedCageTotals = selectedDayReductions
+        .filter((row) => row.subbuildingId === subbuildingId)
+        .reduce(
+          (acc, row) => {
+            const key = row.reductionType;
+            const count = row.animalCount ?? 0;
+            if (key === "mortality") acc.mortality += count;
+            if (key === "thinning") acc.thinning += count;
+            if (key === "take_out") acc.takeOut += count;
+            return acc;
+          },
+          { mortality: 0, thinning: 0, takeOut: 0 }
+        );
+
+      const previousValueForThisTx = existingReductionTx?.animalCount ?? 0;
+      if (reductionType === "mortality") {
+        selectedDayTotals.mortality = Math.max(
+          0,
+          selectedDayTotals.mortality - previousValueForThisTx + value
+        );
+        selectedCageTotals.mortality = Math.max(
+          0,
+          selectedCageTotals.mortality - previousValueForThisTx + value
+        );
+      } else if (reductionType === "thinning") {
+        selectedDayTotals.thinning = Math.max(
+          0,
+          selectedDayTotals.thinning - previousValueForThisTx + value
+        );
+        selectedCageTotals.thinning = Math.max(
+          0,
+          selectedCageTotals.thinning - previousValueForThisTx + value
+        );
+      } else {
+        selectedDayTotals.takeOut = Math.max(
+          0,
+          selectedDayTotals.takeOut - previousValueForThisTx + value
+        );
+        selectedCageTotals.takeOut = Math.max(
+          0,
+          selectedCageTotals.takeOut - previousValueForThisTx + value
+        );
+      }
+
+      const totalReductionFromOtherDays = growLogs
+        .filter((row) => !isSameSelectedDate(row.createdAt))
+        .reduce(
+          (sum, row) => sum + (row.mortality ?? 0) + (row.thinning ?? 0) + (row.takeOut ?? 0),
+          0
+        );
+
+      const totalReductionWithSelectedDay =
+        totalReductionFromOtherDays +
+        selectedDayTotals.mortality +
+        selectedDayTotals.thinning +
+        selectedDayTotals.takeOut;
+
+      const actualTotalAnimals = Math.max(0, latestGrow.totalAnimals - totalReductionWithSelectedDay);
+
+      const savedGrowLog = await addGrowLog({
+        growId,
+        subbuildingId,
+        mortality: selectedCageTotals.mortality,
+        thinning: selectedCageTotals.thinning,
+        takeOut: selectedCageTotals.takeOut,
+        actualTotalAnimals,
+      });
+
+      if (existingReductionTx) {
+        await updateGrowReductionTransaction(existingReductionTx.id, {
+          growLogId: Number(savedGrowLog.id),
+          animalCount: value,
+          remarks: metricRemarksDraft.trim() || null,
+        });
+      } else {
+        await addGrowReductionTransaction({
+          buildingId,
+          subbuildingId,
+          growId,
+          growLogId: Number(savedGrowLog.id),
+          animalCount: value,
+          reductionType,
+          remarks: metricRemarksDraft.trim() || null,
+        });
+      }
+
+      setMetricOverrides((prev) => {
+        const next = { ...prev };
+        const selectedMetric = { ...next[activeMetric] };
+        const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
+        day[activeCageId] = value;
+        selectedMetric[selectedDate] = day;
+        next[activeMetric] = selectedMetric;
+        return next;
+      });
+      setMetricRemarksByType((prev) => {
+        const next = { ...prev };
+        const selectedMetric = { ...next[activeMetric] };
+        const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
+        day[activeCageId] = metricRemarksDraft.trim();
+        selectedMetric[selectedDate] = day;
+        next[activeMetric] = selectedMetric;
+        return next;
+      });
+
+      closeMetricModal();
+      setToastMessage(metricMeta[activeMetric].success);
+      setIsToastOpen(true);
+    } catch (error) {
+      setToastMessage(`Failed to save ${metricMeta[activeMetric].title.toLowerCase()}: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
   };
 
   const isMetricValid = metricDraft > 0;
 
-  const handleUpdateWeight = () => {
+  const handleUpdateWeight = async () => {
+    if (isLatestGrowHarvested) {
+      setToastMessage("Cage is not editable. Latest grow status is not Loading/Growing.");
+      setIsToastOpen(true);
+      return;
+    }
     if (!activeCageId) return;
     if (!isTodaySelected) return;
+    const buildingId = Number(id);
+    const subbuildingId = Number(activeCageId);
+    if (!Number.isFinite(buildingId) || !Number.isFinite(subbuildingId)) {
+      setToastMessage("Invalid building/cage ID.");
+      setIsToastOpen(true);
+      return;
+    }
+
     const frontWeights = weightDraft.frontWeights.map((w) => Math.max(0, Number(w) || 0));
     const middleWeights = weightDraft.middleWeights.map((w) => Math.max(0, Number(w) || 0));
     const backWeights = weightDraft.backWeights.map((w) => Math.max(0, Number(w) || 0));
@@ -458,16 +962,49 @@ export default function BuildingCage() {
       middleWeights,
       backWeights,
     };
-    setWeightOverrides((prev) => {
-      const next = { ...prev };
-      const day = next[selectedDate] ? { ...next[selectedDate] } : {};
-      day[activeCageId] = clean;
-      next[selectedDate] = day;
-      return next;
-    });
-    closeWeightModal();
-    setToastMessage("Average weight updated successfully.");
-    setIsToastOpen(true);
+
+    const avgWeight =
+      clean.frontWeights.reduce((sum, w) => sum + w, 0) +
+      clean.middleWeights.reduce((sum, w) => sum + w, 0) +
+      clean.backWeights.reduce((sum, w) => sum + w, 0);
+
+    try {
+      const logs = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
+      const existing = logs.find((row) => row.subbuildingId === subbuildingId);
+
+      if (existing) {
+        await updateBodyWeightLog(existing.id, {
+          avgWeight,
+          frontWeight: clean.frontWeights,
+          middleWeight: clean.middleWeights,
+          backWeight: clean.backWeights,
+        });
+      } else {
+        await addBodyWeightLog({
+          buildingId,
+          subbuildingId,
+          avgWeight,
+          frontWeight: clean.frontWeights,
+          middleWeight: clean.middleWeights,
+          backWeight: clean.backWeights,
+        });
+      }
+
+      setWeightOverrides((prev) => {
+        const next = { ...prev };
+        const day = next[selectedDate] ? { ...next[selectedDate] } : {};
+        day[activeCageId] = clean;
+        next[selectedDate] = day;
+        return next;
+      });
+
+      closeWeightModal();
+      setToastMessage("Average weight saved successfully.");
+      setIsToastOpen(true);
+    } catch (error) {
+      setToastMessage(`Failed to save average weight: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
   };
 
   const totalFrontWeight = weightDraft.frontWeights.reduce((sum, w) => sum + w, 0);
@@ -549,6 +1086,17 @@ export default function BuildingCage() {
             style={{ fontSize: 16 }}
             styles={{ input: { fontSize: 16 } }}
           />
+          <div className="mt-2 text-xs text-slate-600">
+            Filtered Date: <span className="font-semibold text-slate-800">{dayjs(selectedDate).format("MMMM D, YYYY")}</span>
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            GrowLogs:{" "}
+            <span className="font-semibold text-slate-800">
+              {growLogPreview
+                ? `${dayjs(growLogPreview.createdAt).format("MMMM D, YYYY h:mm A")}${dayjs(growLogPreview.createdAt).format("YYYY-MM-DD") !== selectedDate ? " (latest previous)" : ""} (M:${growLogPreview.mortality}, T:${growLogPreview.thinning}, O:${growLogPreview.takeOut})`
+                : "No record on selected date"}
+            </span>
+          </div>
         </div>
 
         {/* Active Cages Section */}
@@ -561,22 +1109,11 @@ export default function BuildingCage() {
 
           <Divider className={isMobile ? "!my-2" : "!my-3"} />
 
-          <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex items-center justify-between text-sm">
-            <div className="text-slate-600">
-              Total Avg. Weight:{" "}
-              <span className="font-semibold text-slate-900">{totals.totalAvgWeight.toLocaleString()} g</span>
-            </div>
-            <div className="text-slate-600">
-              Total Mortality:{" "}
-              <span className="font-semibold text-slate-900">{totals.totalMortality.toLocaleString()}</span>
-            </div>
-          </div>
-
           {/* Use gap, not space-y, for consistent spacing */}
           {isLoading ? (
             <div className="text-sm text-slate-500 py-6">Loading cages...</div>
           ) : filteredCages.length === 0 ? (
-            <div className="text-sm text-slate-500 py-6">No cages found for this date.</div>
+            <div className="text-sm text-slate-500 py-6">No cages found for this building.</div>
           ) : (
             <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
               {filteredCages.map((c, index) => (
@@ -586,6 +1123,7 @@ export default function BuildingCage() {
                   stats={getStatsForCage(c)}
                   isMobile={isMobile}
                   displayName={c.name || `Cage ${index + 1}`}
+                  hideMetrics={isLatestGrowHarvested}
                   onMortalityClick={(cageId, current) => openMetricModal("mortality", cageId, current)}
                   onThinningClick={(cageId, current) => openMetricModal("thinning", cageId, current)}
                   onTakeOutClick={(cageId, current) => openMetricModal("takeOut", cageId, current)}

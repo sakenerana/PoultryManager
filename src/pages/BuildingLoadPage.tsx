@@ -30,7 +30,7 @@ export default function BuildingLoadPage() {
     [selectedDate]
   );
   const [historyEntries, setHistoryEntries] = useState<
-    Array<{ date: string; dateTime: string; total: number }>
+    Array<{ date: string; dateTime: string; status: string; total: number }>
   >([]);
   const [totalInput, setTotalInput] = useState("");
   const [isToastOpen, setIsToastOpen] = useState(false);
@@ -38,17 +38,18 @@ export default function BuildingLoadPage() {
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [isSaving, setIsSaving] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [latestGrowStatus, setLatestGrowStatus] = useState<string>("");
-  const [latestGrowIsHarvested, setLatestGrowIsHarvested] = useState(false);
 
   const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
   const LOAD_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TABLE ?? "Load";
   const LOAD_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TRANSACTIONS_TABLE ?? "LoadTransactions";
 
+  const entriesForSelectedDate = useMemo(
+    () => historyEntries.filter((entry) => entry.date === selectedDate),
+    [historyEntries, selectedDate]
+  );
   const todayTotal = useMemo(() => {
-    const entriesToday = historyEntries.filter((entry) => entry.date === selectedDate);
-    return entriesToday.length > 0 ? entriesToday[entriesToday.length - 1].total : 0;
-  }, [historyEntries, selectedDate]);
+    return entriesForSelectedDate.length > 0 ? entriesForSelectedDate[entriesForSelectedDate.length - 1].total : 0;
+  }, [entriesForSelectedDate]);
 
   const hasTodayRecord = todayTotal > 0;
 
@@ -59,10 +60,9 @@ export default function BuildingLoadPage() {
   const grandTotal = useMemo(() => {
     return historyEntries.reduce((sum, entry) => sum + entry.total, 0);
   }, [historyEntries]);
-  const isReadyStatus = latestGrowStatus === "Ready";
-  const isCompleted = historyEntries.length >= 2 && !isReadyStatus && !latestGrowIsHarvested;
+  const isCompleted = history.length >= 2;
 
-  const fetchHistoryByDate = async () => {
+  const fetchHistoryByStatus = async () => {
     const buildingId = Number(id);
     if (!Number.isFinite(buildingId)) {
       setHistoryEntries([]);
@@ -71,52 +71,73 @@ export default function BuildingLoadPage() {
 
     setIsHistoryLoading(true);
     try {
-      const startOfDay = dayjs(selectedDate).startOf("day").toISOString();
-      const endOfDay = dayjs(selectedDate).add(1, "day").startOf("day").toISOString();
-
-      const { data, error } = await supabase
+      const { data: grows, error: growsError } = await supabase
         .from(GROWS_TABLE)
-        .select("id, created_at, total_animals, status")
+        .select("id, status")
         .eq("building_id", buildingId)
         .in("status", ["Loading", "Growing"])
-        .gte("created_at", startOfDay)
-        .lt("created_at", endOfDay)
         .order("created_at", { ascending: true });
 
-      if (error) {
-        throw new Error(error.message || "Failed to load history logs.");
+      if (growsError) {
+        throw new Error(growsError.message || "Failed to load grows for history.");
+      }
+
+      const growRows = (grows ?? []) as Array<{ id: number; status?: string | null }>;
+      const growIds = growRows.map((row) => row.id);
+      if (growIds.length === 0) {
+        setHistoryEntries([]);
+        return;
+      }
+
+      const growStatusMap = new Map<number, string>();
+      growRows.forEach((row) => {
+        growStatusMap.set(row.id, row.status ?? "");
+      });
+
+      const { data: loads, error: loadsError } = await supabase
+        .from(LOAD_TABLE)
+        .select("id, grow_id")
+        .in("grow_id", growIds);
+
+      if (loadsError) {
+        throw new Error(loadsError.message || "Failed to load related loads for history.");
+      }
+
+      const loadRows = (loads ?? []) as Array<{ id: number; grow_id: number | null }>;
+      const loadIds = loadRows.map((row) => row.id);
+      if (loadIds.length === 0) {
+        setHistoryEntries([]);
+        return;
+      }
+
+      const loadGrowMap = new Map<number, number | null>();
+      loadRows.forEach((row) => {
+        loadGrowMap.set(row.id, row.grow_id ?? null);
+      });
+
+      const { data: loadTransactions, error: loadTransactionsError } = await supabase
+        .from(LOAD_TRANSACTIONS_TABLE)
+        .select("created_at, load_id, animal_count")
+        .in("load_id", loadIds)
+        .order("created_at", { ascending: true });
+
+      if (loadTransactionsError) {
+        throw new Error(loadTransactionsError.message || "Failed to load history transactions.");
       }
 
       const mapped =
-        (data ?? []).map((row: { created_at: string; total_animals: number | null }) => ({
-          date: dayjs(row.created_at).format("YYYY-MM-DD"),
-          dateTime: dayjs(row.created_at).format("MMMM D, YYYY h:mm A"),
-          total: row.total_animals ?? 0,
-        })) ?? [];
+        ((loadTransactions ?? []) as Array<{ created_at: string; load_id: number | null; animal_count?: number | null }>).map((row) => {
+          const growId = row.load_id != null ? loadGrowMap.get(row.load_id) ?? null : null;
+          const status = growId != null ? growStatusMap.get(growId) ?? "" : "";
+          return {
+            date: dayjs(row.created_at).format("YYYY-MM-DD"),
+            dateTime: dayjs(row.created_at).format("MMMM D, YYYY h:mm A"),
+            status,
+            total: row.animal_count ?? 0,
+          };
+        }) ?? [];
 
       setHistoryEntries(mapped);
-      const latestRow = data && data.length > 0 ? data[data.length - 1] : null;
-      setLatestGrowStatus(typeof latestRow?.status === "string" ? latestRow.status : "");
-
-      const { data: latestAnyGrow, error: latestAnyGrowError } = await supabase
-        .from(GROWS_TABLE)
-        .select("status, is_harvested, created_at")
-        .eq("building_id", buildingId)
-        .gte("created_at", startOfDay)
-        .lt("created_at", endOfDay)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latestAnyGrowError) {
-        throw new Error(latestAnyGrowError.message || "Failed to check harvested status.");
-      }
-
-      const isHarvested =
-        latestAnyGrow?.is_harvested === true ||
-        (typeof latestAnyGrow?.status === "string" &&
-          latestAnyGrow.status.toLowerCase() === "harvested");
-      setLatestGrowIsHarvested(isHarvested);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to load history logs. Please try again.";
@@ -124,15 +145,13 @@ export default function BuildingLoadPage() {
       setToastMessage(message);
       setIsToastOpen(true);
       setHistoryEntries([]);
-      setLatestGrowStatus("");
-      setLatestGrowIsHarvested(false);
     } finally {
       setIsHistoryLoading(false);
     }
   };
 
   useEffect(() => {
-    void fetchHistoryByDate();
+    void fetchHistoryByStatus();
   }, [id, selectedDate]);
 
   const handleSaveOrUpdate = async () => {
@@ -151,49 +170,63 @@ export default function BuildingLoadPage() {
     setIsSaving(true);
 
     try {
-      const startOfDay = dayjs(selectedDate).startOf("day").toISOString();
-      const endOfDay = dayjs(selectedDate).add(1, "day").startOf("day").toISOString();
-      const { data: existingGrows, error: existingGrowsError } = await supabase
+      const { data: activeGrow, error: activeGrowError } = await supabase
         .from(GROWS_TABLE)
-        .select("id, created_at, status, is_harvested")
+        .select("id, status")
         .eq("building_id", buildingId)
-        .gte("created_at", startOfDay)
-        .lt("created_at", endOfDay)
-        .order("created_at", { ascending: true });
+        .in("status", ["Loading", "Growing"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (existingGrowsError) {
-        throw new Error(existingGrowsError.message || "Failed to check existing transactions.");
+      if (activeGrowError) {
+        throw new Error(activeGrowError.message || "Failed to check existing transactions.");
       }
 
-      const hasHarvestedStatus =
-        (existingGrows ?? []).some(
-          (row: { status?: string | null; is_harvested?: boolean | null }) =>
-            row.is_harvested === true ||
-            (typeof row.status === "string" && row.status.toLowerCase() === "harvested")
-        );
-
-      if ((existingGrows?.length ?? 0) >= 2 && !hasHarvestedStatus) {
-        setToastType("error");
-        setToastMessage("Only 2 transactions are allowed for this building and date.");
-        setIsToastOpen(true);
-        return;
+      const growUpsertPayload: Record<string, unknown> = {
+        building_id: buildingId,
+        status: typeof activeGrow?.status === "string" ? activeGrow.status : "Loading",
+        is_harvested: false,
+      };
+      if (activeGrow?.id != null) {
+        growUpsertPayload.id = activeGrow.id;
       }
 
       const { data: grow, error: growError } = await supabase
         .from(GROWS_TABLE)
-        .insert([
-          {
-            building_id: buildingId,
-            total_animals: total,
-            status: "Loading",
-            is_harvested: false,
-          },
-        ])
+        .upsert([growUpsertPayload])
         .select()
         .single();
 
       if (growError || !grow?.id) {
-        throw new Error(growError?.message || "Failed to insert grow record.");
+        throw new Error(growError?.message || "Failed to upsert grow record.");
+      }
+
+      const { data: loadsBeforeInsert, error: loadsBeforeInsertError } = await supabase
+        .from(LOAD_TABLE)
+        .select("id")
+        .eq("grow_id", grow.id);
+
+      if (loadsBeforeInsertError) {
+        throw new Error(loadsBeforeInsertError.message || "Failed to check load records.");
+      }
+
+      const loadIdsBeforeInsert = (loadsBeforeInsert ?? []).map((row: { id: number }) => row.id);
+      const { data: existingTransactions, error: existingTransactionsError } = await supabase
+        .from(LOAD_TRANSACTIONS_TABLE)
+        .select("id")
+        .in("load_id", loadIdsBeforeInsert.length > 0 ? loadIdsBeforeInsert : [-1]);
+
+      if (existingTransactionsError) {
+        throw new Error(existingTransactionsError.message || "Failed to check existing load transactions.");
+      }
+
+      const transactionCountBeforeInsert = (existingTransactions ?? []).length;
+      if (transactionCountBeforeInsert >= 2) {
+        setToastType("error");
+        setToastMessage("Only 2 load transactions are allowed for this grow.");
+        setIsToastOpen(true);
+        return;
       }
 
       const { data: load, error: loadError } = await supabase
@@ -212,59 +245,65 @@ export default function BuildingLoadPage() {
         throw new Error(loadError?.message || "Failed to insert load record.");
       }
 
-      const loadTransactionsPayload = [
-        {
-          load_id: load.id,
-          animal_count: total,
-        },
-      ];
-
       const { error: txError } = await supabase
         .from(LOAD_TRANSACTIONS_TABLE)
-        .insert(loadTransactionsPayload);
+        .insert([
+          {
+            load_id: load.id,
+            animal_count: total,
+          },
+        ]);
 
       if (txError) {
         throw new Error(txError.message || "Failed to insert load transactions.");
       }
 
-      const { data: growsAfterSave, error: growsAfterSaveError } = await supabase
+      const { data: loadsForGrow, error: loadsForGrowError } = await supabase
+        .from(LOAD_TABLE)
+        .select("id")
+        .eq("grow_id", grow.id);
+
+      if (loadsForGrowError) {
+        throw new Error(loadsForGrowError.message || "Failed to load related loads for grow.");
+      }
+
+      const loadIds = (loadsForGrow ?? []).map((row: { id: number }) => row.id);
+
+      const { data: loadTransactions, error: loadTransactionsError } = await supabase
+        .from(LOAD_TRANSACTIONS_TABLE)
+        .select("animal_count")
+        .in("load_id", loadIds.length > 0 ? loadIds : [-1]);
+
+      if (loadTransactionsError) {
+        throw new Error(loadTransactionsError.message || "Failed to compute total animals from load transactions.");
+      }
+
+      const summedTotal = (loadTransactions ?? []).reduce(
+        (sum: number, row: { animal_count?: number | null }) => sum + (row.animal_count ?? 0),
+        0
+      );
+
+      const { error: growTotalError } = await supabase
         .from(GROWS_TABLE)
-        .select("id, created_at, status")
-        .eq("building_id", buildingId)
-        .gte("created_at", startOfDay)
-        .lt("created_at", endOfDay)
-        .order("created_at", { ascending: true });
+        .update({ total_animals: summedTotal })
+        .eq("id", grow.id);
 
-      if (growsAfterSaveError) {
-        throw new Error(growsAfterSaveError.message || "Failed to reload transactions.");
+      if (growTotalError) {
+        throw new Error(growTotalError.message || "Failed to update grow total_animals.");
       }
 
-      const loadingRows =
-        (growsAfterSave ?? []).filter(
-          (row: { id: number; status?: string | null }) => row.status === "Loading"
-        ) ?? [];
+      const transactionCountAfterInsert = transactionCountBeforeInsert + 1;
+      const nextGrowStatus = transactionCountAfterInsert === 2 ? "Growing" : "Loading";
+      const { error: growStatusError } = await supabase
+        .from(GROWS_TABLE)
+        .update({ status: nextGrowStatus })
+        .eq("id", grow.id);
 
-      if (loadingRows.length === 1 && loadingRows[0]?.id != null) {
-        const { error: growStatusError } = await supabase
-          .from(GROWS_TABLE)
-          .update({ status: "Loading" })
-          .eq("id", loadingRows[0].id);
-        if (growStatusError) {
-          throw new Error(growStatusError.message || "Failed to update first transaction status.");
-        }
-      } else if (loadingRows.length >= 2) {
-        const idsToUpdate = loadingRows.map((row: { id: number }) => row.id);
-        const { error: growStatusError } = await supabase
-          .from(GROWS_TABLE)
-          .update({ status: "Growing" })
-          .in("id", idsToUpdate);
-
-        if (growStatusError) {
-          throw new Error(growStatusError.message || "Failed to update transaction statuses.");
-        }
+      if (growStatusError) {
+        throw new Error(growStatusError.message || "Failed to update grow status.");
       }
 
-      await fetchHistoryByDate();
+      await fetchHistoryByStatus();
       setTotalInput("");
       setToastType("success");
       setToastMessage(`Building load ${actionLabel} successfully.`);
