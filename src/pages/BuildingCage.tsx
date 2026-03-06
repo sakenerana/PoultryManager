@@ -59,6 +59,7 @@ type GrowLogPreview = {
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const SUBBUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_SUBBUILDINGS_TABLE ?? "Subbuildings";
+const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 
@@ -135,6 +136,42 @@ function StatPill({
         </div>
         {rightIcon}
       </div>
+    </div>
+  );
+}
+
+function ChickenState({
+  title,
+  subtitle,
+  fullScreen,
+  titleClassName,
+  subtitleClassName,
+}: {
+  title: string;
+  subtitle: string;
+  fullScreen?: boolean;
+  titleClassName?: string;
+  subtitleClassName?: string;
+}) {
+  return (
+    <div
+      className={[
+        "flex flex-col items-center justify-center text-center",
+        fullScreen ? "min-h-[calc(100vh-90px)]" : "py-8",
+      ].join(" ")}
+    >
+      <img
+        src="/img/happyrun.gif"
+        alt="Chicken loading"
+        className="h-24 w-24 object-cover rounded-full"
+        onError={(e) => {
+          const target = e.currentTarget;
+          target.onerror = null;
+          target.src = "/img/chicken-bird.svg";
+        }}
+      />
+      <div className={["mt-3 text-sm font-semibold", titleClassName ?? "text-slate-700"].join(" ")}>{title}</div>
+      <div className={["mt-1 text-xs", subtitleClassName ?? "text-slate-500"].join(" ")}>{subtitle}</div>
     </div>
   );
 }
@@ -274,9 +311,33 @@ export default function BuildingCage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [selectedBuildingName, setSelectedBuildingName] = useState<string>("");
   const [isLatestGrowHarvested, setIsLatestGrowHarvested] = useState(false);
   const [growLogPreview, setGrowLogPreview] = useState<GrowLogPreview>(null);
   const [addForm] = Form.useForm();
+
+  const fetchSelectedBuildingName = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) {
+      setSelectedBuildingName("");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(BUILDINGS_TABLE)
+        .select("name")
+        .eq("id", buildingId)
+        .maybeSingle();
+
+      if (error) throw error;
+      setSelectedBuildingName(typeof data?.name === "string" ? data.name : "");
+    } catch (error) {
+      setToastMessage(`Failed to load building name: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+      setSelectedBuildingName("");
+    }
+  };
 
   const fetchCagesByBuildingId = async () => {
     const buildingId = Number(id);
@@ -299,6 +360,10 @@ export default function BuildingCage() {
 
   useEffect(() => {
     void fetchCagesByBuildingId();
+  }, [id]);
+
+  useEffect(() => {
+    void fetchSelectedBuildingName();
   }, [id]);
 
   const fetchBodyWeightLogsByDate = async () => {
@@ -969,11 +1034,20 @@ export default function BuildingCage() {
       clean.backWeights.reduce((sum, w) => sum + w, 0);
 
     try {
+      const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
+      if (!latestGrow) {
+        setToastMessage("No grow record found for this building/date.");
+        setIsToastOpen(true);
+        return;
+      }
+      const growId = latestGrow.id;
+
       const logs = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
       const existing = logs.find((row) => row.subbuildingId === subbuildingId);
 
       if (existing) {
         await updateBodyWeightLog(existing.id, {
+          growId,
           avgWeight,
           frontWeight: clean.frontWeights,
           middleWeight: clean.middleWeights,
@@ -983,6 +1057,7 @@ export default function BuildingCage() {
         await addBodyWeightLog({
           buildingId,
           subbuildingId,
+          growId,
           avgWeight,
           frontWeight: clean.frontWeights,
           middleWeight: clean.middleWeights,
@@ -1067,75 +1142,94 @@ export default function BuildingCage() {
       </Header>
 
       <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
-        {/* Date Filter */}
-        <div
-          className={[
-            "bg-white shadow-sm",
-            isMobile ? "rounded-lg px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
-          ].join(" ")}
-        >
-          <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
-            Date
-          </div>
-          <DatePicker
-            className={isMobile ? "!w-full" : "!w-[220px]"}
-            size={isMobile ? "middle" : "large"}
-            placeholder="Select date"
-            value={dayjs(selectedDate)}
-            onChange={handleDateChange}
-            style={{ fontSize: 16 }}
-            styles={{ input: { fontSize: 16 } }}
+        {isLoading ? (
+          <ChickenState
+            title="Loading..."
+            subtitle=""
+            fullScreen
+            titleClassName="text-[#008822]"
+            subtitleClassName="text-[#008822]/80"
           />
-          <div className="mt-2 text-xs text-slate-600">
-            Filtered Date: <span className="font-semibold text-slate-800">{dayjs(selectedDate).format("MMMM D, YYYY")}</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-600">
-            GrowLogs:{" "}
-            <span className="font-semibold text-slate-800">
-              {growLogPreview
-                ? `${dayjs(growLogPreview.createdAt).format("MMMM D, YYYY h:mm A")}${dayjs(growLogPreview.createdAt).format("YYYY-MM-DD") !== selectedDate ? " (latest previous)" : ""} (M:${growLogPreview.mortality}, T:${growLogPreview.thinning}, O:${growLogPreview.takeOut})`
-                : "No record on selected date"}
-            </span>
-          </div>
-        </div>
-
-        {/* Active Cages Section */}
-        <div>
-          <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3"].join(" ")}>
-            <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
-              Active Cages ({filteredCages.length})
+        ) : filteredCages.length === 0 ? (
+          <ChickenState
+            title="No data yet"
+            subtitle="No cages found for this building."
+            fullScreen
+          />
+        ) : (
+          <>
+            {/* Date Filter */}
+            <div
+              className={[
+                "bg-white shadow-sm",
+                isMobile ? "rounded-lg px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
+              ].join(" ")}
+            >
+              <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
+                Date
+              </div>
+              <DatePicker
+                className={isMobile ? "!w-full" : "!w-[220px]"}
+                size={isMobile ? "middle" : "large"}
+                placeholder="Select date"
+                value={dayjs(selectedDate)}
+                onChange={handleDateChange}
+                style={{ fontSize: 16 }}
+                styles={{ input: { fontSize: 16 } }}
+              />
+              <div className="mt-2 text-xs text-slate-600">
+                Filtered Date: <span className="font-semibold text-slate-800">{dayjs(selectedDate).format("MMMM D, YYYY")}</span>
+              </div>
+              <div className="mt-1 text-xs text-slate-600">
+                GrowLogs:{" "}
+                <span className="font-semibold text-slate-800">
+                  {growLogPreview
+                    ? `${dayjs(growLogPreview.createdAt).format("MMMM D, YYYY h:mm A")}${dayjs(growLogPreview.createdAt).format("YYYY-MM-DD") !== selectedDate ? " (latest previous)" : ""} (M:${growLogPreview.mortality}, T:${growLogPreview.thinning}, O:${growLogPreview.takeOut})`
+                    : "No record on selected date"}
+                </span>
+              </div>
             </div>
-          </div>
 
-          <Divider className={isMobile ? "!my-2" : "!my-3"} />
+            {/* Active Cages Section */}
+            <div>
+              <div
+                className={[
+                  "bg-[#ffa6001f] flex items-center justify-between gap-2",
+                  isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3",
+                ].join(" ")}
+              >
+                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
+                  Active Cages ({filteredCages.length})
+                </div>
+                <div className={["text-slate-600 text-right", isMobile ? "text-[11px]" : "text-xs"].join(" ")}>
+                  Building: <span className="font-semibold text-slate-800">{selectedBuildingName || "-"}</span>
+                </div>
+              </div>
 
-          {/* Use gap, not space-y, for consistent spacing */}
-          {isLoading ? (
-            <div className="text-sm text-slate-500 py-6">Loading cages...</div>
-          ) : filteredCages.length === 0 ? (
-            <div className="text-sm text-slate-500 py-6">No cages found for this building.</div>
-          ) : (
-            <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
-              {filteredCages.map((c, index) => (
-                <CageRow
-                  key={c.id}
-                  c={c}
-                  stats={getStatsForCage(c)}
-                  isMobile={isMobile}
-                  displayName={c.name || `Cage ${index + 1}`}
-                  hideMetrics={isLatestGrowHarvested}
-                  onMortalityClick={(cageId, current) => openMetricModal("mortality", cageId, current)}
-                  onThinningClick={(cageId, current) => openMetricModal("thinning", cageId, current)}
-                  onTakeOutClick={(cageId, current) => openMetricModal("takeOut", cageId, current)}
-                  onWeightClick={openWeightModal}
-                />
-              ))}
+              <Divider className={isMobile ? "!my-2" : "!my-3"} />
+
+              <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+                {filteredCages.map((c, index) => (
+                  <CageRow
+                    key={c.id}
+                    c={c}
+                    stats={getStatsForCage(c)}
+                    isMobile={isMobile}
+                    displayName={c.name || `Cage ${index + 1}`}
+                    hideMetrics={isLatestGrowHarvested}
+                    onMortalityClick={(cageId, current) => openMetricModal("mortality", cageId, current)}
+                    onThinningClick={(cageId, current) => openMetricModal("thinning", cageId, current)}
+                    onTakeOutClick={(cageId, current) => openMetricModal("takeOut", cageId, current)}
+                    onWeightClick={openWeightModal}
+                  />
+                ))}
+              </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         {/* Floating Add Button */}
-        {isTodaySelected && (
+        {isTodaySelected && filteredCages.length > 0 && !isLoading && (
           <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
             <Button
               type="primary"

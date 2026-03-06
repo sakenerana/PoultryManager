@@ -1,10 +1,21 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
+import supabase from "../utils/supabase";
+import {
+  addHarvest,
+  addHarvestTruck,
+  deleteHarvestTruck,
+  getHarvestById,
+  loadHarvests,
+  loadHarvestTrucks,
+  updateHarvest,
+  updateHarvestTruck,
+} from "../controller/harvestCrud";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -13,6 +24,7 @@ const { useBreakpoint } = Grid;
 type Truck = {
   status: "Loading" | "Completed";
   id: string;
+  harvestId: number | null;
   name: string;
   dateTime: string;
   plateNo: string;
@@ -24,6 +36,15 @@ type Truck = {
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
+const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "Failed to add truck.";
+}
 
 const parseTruckDate = (value: string) => {
   const withTime = dayjs(value, "YYYY-MM-DD HH:mm", true);
@@ -37,42 +58,6 @@ const computeAvgWeight = (truck: Truck) => {
   if (truck.birdsLoad <= 0) return null;
   return (truck.weightLoad - truck.weightNoLoad) / truck.birdsLoad;
 };
-
-const TRUCKS: Truck[] = [
-  {
-    status: "Loading",
-    id: "1",
-    name: "Truck 1",
-    dateTime: "2026-03-03 08:30",
-    plateNo: "ABC-1234",
-    weightNoLoad: 3750,
-    birdsLoad: 850,
-    weightLoad: 6520,
-    isLoaded: true,
-  },
-  {
-    status: "Completed",
-    id: "2",
-    name: "Truck 2",
-    dateTime: "2026-03-03 09:15",
-    plateNo: "DEF-4567",
-    weightNoLoad: 3920,
-    birdsLoad: 900,
-    weightLoad: 6880,
-    isLoaded: true,
-  },
-  {
-    status: "Completed",
-    id: "3",
-    name: "Truck 3",
-    dateTime: "2026-03-03 10:00",
-    plateNo: "GHI-7890",
-    weightNoLoad: 3600,
-    birdsLoad: 780,
-    weightLoad: 6215,
-    isLoaded: true,
-  },
-];
 
 function StatPill({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -97,6 +82,38 @@ function StatusBadge({ status }: { status: Truck["status"] }) {
       <span className={["h-2 w-2 rounded-full", style.dot].join(" ")} />
       <span className={style.text}>{status}</span>
     </span>
+  );
+}
+
+function ChickenState({
+  title,
+  subtitle,
+  fullScreen,
+}: {
+  title: string;
+  subtitle: string;
+  fullScreen?: boolean;
+}) {
+  return (
+    <div
+      className={[
+        "flex flex-col items-center justify-center text-center",
+        fullScreen ? "min-h-[calc(100vh-90px)]" : "py-8",
+      ].join(" ")}
+    >
+      <img
+        src="/img/happyrun.gif"
+        alt="Chicken loading"
+        className="h-24 w-24 object-cover rounded-full"
+        onError={(e) => {
+          const target = e.currentTarget;
+          target.onerror = null;
+          target.src = "/img/chicken-bird.svg";
+        }}
+      />
+      <div className="mt-3 text-sm font-semibold text-[#008822]">{title}</div>
+      <div className="mt-1 text-xs text-[#008822]/80">{subtitle}</div>
+    </div>
   );
 }
 
@@ -187,13 +204,19 @@ function TruckRow({
 
 export default function HarvestTruckPage() {
   const navigate = useNavigate();
+  const { id: buildingIdParam } = useParams<{ id: string }>();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
-  const [trucks, setTrucks] = useState<Truck[]>(TRUCKS);
+  const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSavingAdd, setIsSavingAdd] = useState(false);
   const [isLoadDrawerOpen, setIsLoadDrawerOpen] = useState(false);
+  const [isSavingLoad, setIsSavingLoad] = useState(false);
   const [activeTruckId, setActiveTruckId] = useState<string | null>(null);
+  const [activeHarvestRemaining, setActiveHarvestRemaining] = useState<number | null>(null);
+  const [activeTruckPreviousBirdsLoad, setActiveTruckPreviousBirdsLoad] = useState(0);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [addForm] = Form.useForm();
@@ -226,6 +249,71 @@ export default function HarvestTruckPage() {
     return { totalBirdsLoad, totalWeightLoad };
   }, [filteredTrucks]);
 
+  const fetchTrucksFromSupabase = async () => {
+    const buildingId = Number(buildingIdParam);
+    if (!Number.isFinite(buildingId) || buildingId <= 0) {
+      setTrucks([]);
+      return;
+    }
+
+    setIsLoadingTrucks(true);
+    try {
+      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
+      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
+      const harvests = await loadHarvests({ buildingId, limit: 500 });
+      if (harvests.length === 0) {
+        setTrucks([]);
+        return;
+      }
+
+      const byHarvest = await Promise.all(
+        harvests.map((harvest) =>
+          loadHarvestTrucks({
+            harvestId: Number(harvest.id),
+            createdFrom: selectedDayStart,
+            createdTo: selectedDayEnd,
+            ascending: false,
+            limit: 500,
+          })
+        )
+      );
+
+      const merged = byHarvest
+        .flat()
+        .map<Truck>((row) => {
+          const normalizedStatus = (row.status ?? "").toLowerCase();
+          const status: Truck["status"] = normalizedStatus === "completed" || normalizedStatus === "complete"
+            ? "Completed"
+            : "Loading";
+          return {
+            id: row.id,
+            harvestId: row.harvestId,
+            name: row.name || "Truck",
+            dateTime: dayjs(row.createdAt).format("YYYY-MM-DD HH:mm"),
+            plateNo: row.plateNo || "",
+            weightNoLoad: Number(row.weightNoLoad) || 0,
+            birdsLoad: Number(row.animalsLoaded) || 0,
+            weightLoad: Number(row.weightWithLoad) || 0,
+            status,
+            isLoaded: status === "Completed",
+          };
+        })
+        .sort((a, b) => parseTruckDate(b.dateTime).valueOf() - parseTruckDate(a.dateTime).valueOf());
+
+      setTrucks(merged);
+    } catch (error) {
+      console.error("Failed to load trucks from Supabase:", error);
+      setTrucks([]);
+    } finally {
+      setIsLoadingTrucks(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchTrucksFromSupabase();
+  }, [buildingIdParam, selectedDate]);
+
   const handleOpenAdd = () => {
     const nextIndex = filteredTrucks.length + 1;
     addForm.setFieldsValue({
@@ -243,31 +331,97 @@ export default function HarvestTruckPage() {
   };
 
   const handleSubmitAdd = async () => {
+    let createdTruckId: string | null = null;
+    setIsSavingAdd(true);
     try {
       const values = await addForm.validateFields();
-      const nextId = (Math.max(0, ...trucks.map((truck) => Number(truck.id) || 0)) + 1).toString();
-      const newTruck: Truck = {
-        status: "Loading",
-        id: nextId,
+      const buildingId = Number(buildingIdParam);
+      if (!Number.isFinite(buildingId) || buildingId <= 0) {
+        throw new Error("Invalid building id.");
+      }
+
+      // 1) Insert to HarvestTrucks first, default status = Loading.
+      const createdTruck = await addHarvestTruck({
+        harvestId: null,
         name: values.name,
-        dateTime: `${dayjs(values.dateTime).format("YYYY-MM-DD")} ${dayjs().format("HH:mm")}`,
         plateNo: values.plateNo,
         weightNoLoad: Number(values.weightNoLoad) || 0,
-        birdsLoad: 0,
-        weightLoad: 0,
-        isLoaded: false,
-      };
-      setTrucks((prev) => [...prev, newTruck]);
+        weightWithLoad: 0,
+        animalsLoaded: 0,
+        status: "Loading",
+      });
+      createdTruckId = createdTruck.id;
+
+      // 2) Upsert Harvests with default status = Loading.
+      const { data: growRows, error: growError } = await supabase
+        .from(GROWS_TABLE)
+        .select("id, total_animals, created_at")
+        .eq("building_id", buildingId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (growError) throw growError;
+      const grow = (growRows?.[0] ?? null) as { id: number; total_animals: number | null } | null;
+
+      const growId = grow ? Number(grow.id) : null;
+      const totalAnimals = Math.max(0, Math.floor(Number(grow?.total_animals ?? 0)));
+
+      const existingHarvests = await loadHarvests({
+        ...(growId !== null ? { growId } : { buildingId }),
+        limit: 1,
+      });
+      const harvestRecord = existingHarvests.length > 0
+        ? await updateHarvest(existingHarvests[0].id, {
+            buildingId,
+            growId,
+            totalAnimals,
+            status: "Loading",
+          })
+        : await addHarvest({
+            buildingId,
+            growId,
+            totalAnimals,
+            status: "Loading",
+          });
+
+      // Keep relation after Harvest is available.
+      await updateHarvestTruck(createdTruck.id, {
+        harvestId: Number(harvestRecord.id),
+        status: "Loading",
+      });
+
+      await fetchTrucksFromSupabase();
       handleCloseAdd();
       setToastMessage(`Successfully added ${values.name}`);
       setIsToastOpen(true);
-    } catch {
-      // validation handled by antd
+    } catch (error) {
+      if (createdTruckId) {
+        await deleteHarvestTruck(createdTruckId).catch(() => undefined);
+      }
+      const message = getErrorMessage(error);
+      console.error("Failed to add truck:", error);
+      setToastMessage(message);
+      setIsToastOpen(true);
+    } finally {
+      setIsSavingAdd(false);
     }
   };
 
   const handleOpenLoadDrawer = (truck: Truck) => {
     setActiveTruckId(truck.id);
+    setActiveTruckPreviousBirdsLoad(truck.birdsLoad || 0);
+    setActiveHarvestRemaining(null);
+
+    if (truck.harvestId !== null) {
+      void getHarvestById(truck.harvestId)
+        .then((harvest) => {
+          setActiveHarvestRemaining(harvest.totalAnimals);
+        })
+        .catch(() => {
+          setActiveHarvestRemaining(null);
+        });
+    }
+
     loadForm.setFieldsValue({
       weightLoad: truck.weightLoad || 0,
       birdsLoad: truck.birdsLoad || 0,
@@ -278,34 +432,62 @@ export default function HarvestTruckPage() {
   const handleCloseLoadDrawer = () => {
     setIsLoadDrawerOpen(false);
     setActiveTruckId(null);
+    setActiveHarvestRemaining(null);
+    setActiveTruckPreviousBirdsLoad(0);
     loadForm.resetFields();
   };
 
   const handleSubmitLoad = async () => {
+    setIsSavingLoad(true);
     try {
       if (!activeTruckId) return;
       const values = await loadForm.validateFields();
-      const payload = {
-        weightLoad: Number(values.weightLoad) || 0,
-        birdsLoad: Number(values.birdsLoad) || 0,
-        status: "Completed" as const,
-        isLoaded: true,
-      };
-      setTrucks((prev) =>
-        prev.map((truck) =>
-          truck.id === activeTruckId
-            ? {
-              ...truck,
-              ...payload,
-            }
-            : truck
-        )
-      );
+
+      const nextWeightLoad = Number(values.weightLoad) || 0;
+      const nextAnimalsLoaded = Number(values.birdsLoad) || 0;
+      const animalsLoadedDelta = nextAnimalsLoaded - activeTruckPreviousBirdsLoad;
+
+      const updatedTruck = await updateHarvestTruck(activeTruckId, {
+        weightWithLoad: nextWeightLoad,
+        animalsLoaded: nextAnimalsLoaded,
+        status: "Completed",
+      });
+
+      if (updatedTruck.harvestId !== null) {
+        const harvest = await getHarvestById(updatedTruck.harvestId);
+        const nextTotalAnimalsOut = Math.max(0, harvest.totalAnimals - animalsLoadedDelta);
+
+        const shouldMarkHarvestCompleted = nextTotalAnimalsOut <= 0;
+        const shouldUpdateTotalAnimalsOut = animalsLoadedDelta !== 0;
+
+        if (shouldUpdateTotalAnimalsOut || shouldMarkHarvestCompleted) {
+          await updateHarvest(harvest.id, {
+            ...(shouldUpdateTotalAnimalsOut ? { totalAnimals: nextTotalAnimalsOut } : {}),
+            ...(shouldMarkHarvestCompleted ? { status: "Completed" } : {}),
+          });
+        }
+
+        if (shouldMarkHarvestCompleted && harvest.growId !== null) {
+          const { error: growUpdateError } = await supabase
+            .from(GROWS_TABLE)
+            .update({
+              status: "Harvested",
+              is_harvested: true,
+            })
+            .eq("id", harvest.growId);
+
+          if (growUpdateError) throw growUpdateError;
+        }
+      }
+
+      await fetchTrucksFromSupabase();
       handleCloseLoadDrawer();
       setToastMessage("Truck loaded successfully.");
       setIsToastOpen(true);
     } catch {
       // validation handled by antd
+    } finally {
+      setIsSavingLoad(false);
     }
   };
 
@@ -351,76 +533,82 @@ export default function HarvestTruckPage() {
       </Header>
 
       <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
-        <div
-          className={[
-            "bg-white shadow-sm",
-            isMobile ? "rounded-lg px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
-          ].join(" ")}
-        >
-          <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
-            Date
-          </div>
-          <DatePicker
-            className={isMobile ? "!w-full" : "!w-[220px]"}
-            size={isMobile ? "middle" : "large"}
-            placeholder="Select date"
-            defaultValue={dayjs()}
-            onChange={handleDateChange}
-            style={{ fontSize: 16 }}
-            styles={{ input: { fontSize: 16 } }}
-          />
-        </div>
-
-        <div>
-          <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3"].join(" ")}>
-            <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
-              Active Trucks ({filteredTrucks.length})
-            </div>
-          </div>
-
-          <Divider className={isMobile ? "!my-2" : "!my-3"} />
-
-          <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex items-center justify-between text-sm">
-            <div className="text-slate-600">
-              Total Birds Load: <span className="font-semibold text-slate-900">{totals.totalBirdsLoad.toLocaleString()}</span>
-            </div>
-            <div className="text-slate-600">
-              Total Weight (Load):{" "}
-              <span className="font-semibold text-slate-900">{totals.totalWeightLoad.toLocaleString()} kg</span>
-            </div>
-          </div>
-
-          <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
-            {filteredTrucks.map((truck) => (
-              <TruckRow
-                key={truck.id}
-                truck={truck}
-                isMobile={isMobile}
-                displayName={truck.name}
-                canLoad={isTodaySelected}
-                onLoadClick={handleOpenLoadDrawer}
-              />
-            ))}
-          </div>
-        </div>
-
-        {isTodaySelected && (
-          <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-            <Button
-              type="primary"
-              size="large"
-              icon={
-                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
-                  <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
-                </span>
-              }
-              className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleOpenAdd}
+        {isLoadingTrucks ? (
+          <ChickenState title="Loading..." subtitle="" fullScreen />
+        ) : (
+          <>
+            <div
+              className={[
+                "bg-white shadow-sm",
+                isMobile ? "rounded-sm px-3 py-3 mb-3" : "rounded-sm px-4 py-4 mb-4",
+              ].join(" ")}
             >
-              Add
-            </Button>
-          </div>
+              <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
+                Date
+              </div>
+              <DatePicker
+                className={isMobile ? "!w-full" : "!w-[220px]"}
+                size={isMobile ? "middle" : "large"}
+                placeholder="Select date"
+                defaultValue={dayjs()}
+                onChange={handleDateChange}
+                style={{ fontSize: 16 }}
+                styles={{ input: { fontSize: 16 } }}
+              />
+            </div>
+
+            <div>
+              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-sm px-3 py-2" : "rounded-sm px-4 py-3"].join(" ")}>
+                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
+                  Active Trucks ({filteredTrucks.length})
+                </div>
+              </div>
+
+              <Divider className={isMobile ? "!my-2" : "!my-3"} />
+
+              <div className="bg-white rounded-sm shadow-sm p-3 mb-3 flex items-center justify-between text-sm">
+                <div className="text-slate-600">
+                  Total Birds Load: <span className="font-semibold text-slate-900">{totals.totalBirdsLoad.toLocaleString()}</span>
+                </div>
+                <div className="text-slate-600">
+                  Total Weight (Load):{" "}
+                  <span className="font-semibold text-slate-900">{totals.totalWeightLoad.toLocaleString()} kg</span>
+                </div>
+              </div>
+
+              <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+                {filteredTrucks.map((truck) => (
+                  <TruckRow
+                    key={truck.id}
+                    truck={truck}
+                    isMobile={isMobile}
+                    displayName={truck.name}
+                    canLoad={isTodaySelected}
+                    onLoadClick={handleOpenLoadDrawer}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {isTodaySelected && (
+              <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
+                      <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
+                    </span>
+                  }
+                  className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
+                  style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                  onClick={handleOpenAdd}
+                >
+                  Add
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </Content>
 
@@ -492,6 +680,8 @@ export default function HarvestTruckPage() {
               className="!w-full !rounded-lg !h-12"
               style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
               onClick={handleSubmitAdd}
+              loading={isSavingAdd}
+              disabled={isSavingAdd}
             >
               Load Truck
             </Button>
@@ -513,6 +703,12 @@ export default function HarvestTruckPage() {
           </Title>
           <div className="text-slate-500 text-sm mt-1">
             Enter load details for this truck.
+          </div>
+          <div className="text-slate-600 text-sm mt-2">
+            Remaining:{" "}
+            <span className="font-semibold text-slate-900">
+              {activeHarvestRemaining !== null ? activeHarvestRemaining.toLocaleString() : "N/A"}
+            </span>
           </div>
         </div>
 
@@ -539,6 +735,18 @@ export default function HarvestTruckPage() {
                 validator: (_, value) =>
                   Number(value) > 0 ? Promise.resolve() : Promise.reject(new Error("Value must be greater than 0")),
               },
+              {
+                validator: (_, value) => {
+                  if (activeHarvestRemaining === null) return Promise.resolve();
+                  const maxAllowed = activeHarvestRemaining + activeTruckPreviousBirdsLoad;
+                  if (Number(value) <= maxAllowed) return Promise.resolve();
+                  return Promise.reject(
+                    new Error(
+                      `Birds load cannot exceed ${maxAllowed.toLocaleString()} (remaining + current truck load).`
+                    )
+                  );
+                },
+              },
             ]}
           >
             <Input min={0} type="number" inputMode="numeric" size="large" className="!text-base" />
@@ -553,7 +761,8 @@ export default function HarvestTruckPage() {
               className="!flex-1"
               style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
               onClick={handleSubmitLoad}
-              disabled={!isLoadFormValid}
+              disabled={!isLoadFormValid || isSavingLoad}
+              loading={isSavingLoad}
             >
               Save
             </Button>

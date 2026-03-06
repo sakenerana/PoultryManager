@@ -12,8 +12,6 @@ import {
   Select,
   Tag,
   Drawer,
-  Empty,
-  Spin,
 } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined, UserAddOutlined } from "@ant-design/icons";
 import NotificationToast from "../components/NotificationToast";
@@ -43,6 +41,35 @@ const statusColors: Record<Status, string> = {
 function initialsOf(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "U";
+}
+
+function ChickenState({
+  title,
+  subtitle,
+  titleClassName,
+  subtitleClassName,
+}: {
+  title: string;
+  subtitle: string;
+  titleClassName?: string;
+  subtitleClassName?: string;
+}) {
+  return (
+    <div className="py-8 flex flex-col items-center justify-center text-center">
+      <img
+        src="/img/happyrun.gif"
+        alt="Chicken loading"
+        className="h-24 w-24 object-cover rounded-full"
+        onError={(e) => {
+          const target = e.currentTarget;
+          target.onerror = null;
+          target.src = "/img/chicken-bird.svg";
+        }}
+      />
+      <div className={["mt-3 text-sm font-semibold", titleClassName ?? "text-slate-700"].join(" ")}>{title}</div>
+      <div className={["mt-1 text-xs", subtitleClassName ?? "text-slate-500"].join(" ")}>{subtitle}</div>
+    </div>
+  );
 }
 
 export default function AccountsPage() {
@@ -281,17 +308,20 @@ export default function AccountsPage() {
               <div className="space-y-2">
                 {isLoadingUsers && (
                   <Card className="!rounded-sm !border-0 shadow-sm">
-                    <div className="py-6 flex justify-center">
-                      <Spin />
-                    </div>
+                    <ChickenState
+                      title="Loading..."
+                      subtitle="Please wait while we fetch the latest records."
+                      titleClassName="text-[#008822]"
+                      subtitleClassName="text-[#008822]/80"
+                    />
                   </Card>
                 )}
 
                 {!isLoadingUsers && users.length === 0 && (
                   <Card className="!rounded-sm !border-0 shadow-sm">
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="No users yet"
+                    <ChickenState
+                      title="No data yet"
+                      subtitle="No users yet."
                     />
                     <Button
                       type="primary"

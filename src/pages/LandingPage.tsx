@@ -3,9 +3,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Menu, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
-type TileKey = "inventory" | "harvest" | "reports" | "userAccess" | "settings";
+type TileKey =
+    | "inventory"
+    | "harvest"
+    | "reports"
+    | "userAccess"
+    | "settings"
+    | "signOut";
 
 type Tile = {
     key: TileKey;
@@ -13,7 +20,7 @@ type Tile = {
     accent: string;
     icon: React.ReactNode;
     largeText: string;
-    link: string;
+    link?: string;
 };
 
 const tiles: Tile[] = [
@@ -85,6 +92,19 @@ const tiles: Tile[] = [
         largeText: "Settings",
         link: "/settings",
     },
+    {
+        key: "signOut",
+        title: "Sign Out",
+        accent: "text-[#d97706]",
+        icon: (
+            <img
+                src="/img/logout.svg"
+                alt="Sign Out"
+                className="h-10 w-10"
+            />
+        ),
+        largeText: "Sign Out",
+    },
 ];
 
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
@@ -144,7 +164,13 @@ export default function LandingPage() {
 
     const handleTileClick = (tile: Tile) => {
         setActive(tile.key);
-        navigate(tile.link);
+        if (tile.key === "signOut") {
+            void signOutAndRedirect(navigate);
+            return;
+        }
+        if (tile.link) {
+            navigate(tile.link);
+        }
         console.log("clicked:", tile.key);
     };
 
@@ -196,8 +222,8 @@ export default function LandingPage() {
             </header>
 
             {/* CONTENT */}
-            <main className="flex-1 px-4 py-4">
-                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <main className="flex-1 px-3 py-3 sm:px-4 sm:py-4">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
                     {visibleTiles.map((tile) => (
                         <button
                             key={tile.key}
@@ -206,8 +232,8 @@ export default function LandingPage() {
                             className={[
                                 "cursor-pointer",
                                 "text-left bg-white rounded-sm shadow-sm",
-                                "p-4 sm:p-6",
-                                "min-h-[150px] sm:min-h-[230px]",
+                                "p-3 sm:p-6",
+                                "h-[clamp(118px,20vh,170px)] sm:h-[clamp(180px,24vh,230px)]",
                                 "transition-all duration-200",
                                 "hover:shadow-md hover:-translate-y-0.5",
                                 "active:translate-y-0 active:scale-[0.99]",
@@ -219,15 +245,15 @@ export default function LandingPage() {
                         >
                             {/* icon card */}
                             <div className="flex justify-center">
-                                <div className="bg-[#ffa600]/40 p-3 sm:p-4 rounded-2xl shadow-inner">
+                                <div className="bg-[#ffa600]/40 p-2.5 sm:p-4 rounded-2xl shadow-inner">
                                     {tile.icon}
                                 </div>
                             </div>
 
-                            <div className="mt-3 sm:mt-4 text-center">
+                            <div className="mt-2.5 sm:mt-4 text-center">
                                 <div
                                     className={[
-                                        "text-[22px] sm:text-[34px] font-bold tracking-tight leading-none",
+                                        "text-[20px] sm:text-[34px] font-bold tracking-tight leading-none",
                                         tile.accent,
                                     ].join(" ")}
                                 >
@@ -236,7 +262,7 @@ export default function LandingPage() {
                             </div>
 
                             {/* subtle bottom gradient accent */}
-                            <div className="mt-3 sm:mt-4 h-2 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
+                            <div className="mt-2.5 sm:mt-4 h-1.5 sm:h-2 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
                         </button>
                     ))}
                 </div>
@@ -248,6 +274,7 @@ export default function LandingPage() {
                 onClick={handleSync}
                 disabled={syncing}
                 className={[
+                    "hidden sm:flex",
                     "fixed bottom-6 right-6 z-50",
                     "rounded-full px-4 py-2",
                     "text-sm text-white font-semibold",

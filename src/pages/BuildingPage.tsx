@@ -29,8 +29,9 @@ type Building = {
 type BuildingStats = {
   days: number;
   total: number;
+  remaining: number;
   avgWeight: number;
-  status: "Loading" | "Growing" | "Harvesting" | "Ready";
+  status: "Loading" | "Growing" | "Harvested" | "Ready";
   mortality: number;
   thinning: number;
   takeOut: number;
@@ -39,6 +40,9 @@ type BuildingStats = {
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+const BODY_WEIGHT_LOGS_TABLE = import.meta.env.VITE_SUPABASE_BODY_WEIGHT_LOGS_TABLE ?? "BodyWeightLogs";
 
 type UserAccess = {
   role: "Admin" | "Supervisor" | "Staff" | null;
@@ -58,6 +62,36 @@ const getErrorMessage = (error: unknown): string => {
   return "Unknown error";
 };
 
+const toNonNegativeInt = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+};
+
+const toNonNegativeNumber = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, n);
+};
+
+const toWeightArray = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => Number(item))
+    .filter((n) => Number.isFinite(n))
+    .map((n) => Math.max(0, n));
+};
+
+const normalizeBuildingStatus = (value: unknown): BuildingStats["status"] => {
+  if (typeof value !== "string") return "Ready";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "loading") return "Loading";
+  if (normalized === "growing") return "Growing";
+  if (normalized === "harvesting" || normalized === "harvested") return "Harvested";
+  if (normalized === "ready") return "Ready";
+  return "Ready";
+};
+
 const mapRecordToBuilding = (record: BuildingRecord): Building => ({
   id: record.id,
   name: record.name,
@@ -68,23 +102,6 @@ const mapRecordToBuilding = (record: BuildingRecord): Building => ({
   thinning: 0,
   takeOut: 0,
 });
-
-const MOCK_STATS_BY_DATE: Record<string, Record<string, BuildingStats>> = {
-  "2026-02-27": {
-    "1": { days: 28, total: 1200, avgWeight: 1850, status: "Loading", mortality: 14, thinning: 35, takeOut: 18 },
-    "2": { days: 41, total: 980, avgWeight: 1725, status: "Growing", mortality: 9, thinning: 42, takeOut: 20 },
-    "3": { days: 52, total: 1500, avgWeight: 1920, status: "Harvesting", mortality: 7, thinning: 50, takeOut: 27 },
-    "4": { days: 32, total: 800, avgWeight: 1680, status: "Ready", mortality: 12, thinning: 28, takeOut: 14 },
-    "5": { days: 22, total: 1100, avgWeight: 1790, status: "Growing", mortality: 10, thinning: 31, takeOut: 16 },
-  },
-  "2026-02-28": {
-    "1": { days: 29, total: 1185, avgWeight: 1835, status: "Growing", mortality: 16, thinning: 37, takeOut: 19 },
-    "2": { days: 42, total: 960, avgWeight: 1710, status: "Harvesting", mortality: 11, thinning: 44, takeOut: 22 },
-    "3": { days: 53, total: 1480, avgWeight: 1900, status: "Ready", mortality: 9, thinning: 52, takeOut: 28 },
-    "4": { days: 33, total: 790, avgWeight: 1670, status: "Loading", mortality: 13, thinning: 29, takeOut: 15 },
-    "5": { days: 23, total: 1085, avgWeight: 1775, status: "Growing", mortality: 12, thinning: 33, takeOut: 17 },
-  },
-};
 
 function StatPill({
   label,
@@ -115,7 +132,7 @@ function StatusBadge({ status }: { status: BuildingStats["status"] }) {
   const styles: Record<BuildingStats["status"], { dot: string; text: string }> = {
     Loading: { dot: "bg-blue-500", text: "text-blue-700" },
     Growing: { dot: "bg-emerald-500", text: "text-emerald-700" },
-    Harvesting: { dot: "bg-amber-500", text: "text-amber-800" },
+    Harvested: { dot: "bg-amber-500", text: "text-amber-800" },
     Ready: { dot: "bg-slate-500", text: "text-slate-700" },
   };
 
@@ -126,6 +143,42 @@ function StatusBadge({ status }: { status: BuildingStats["status"] }) {
       <span className={["h-2 w-2 rounded-full", style.dot].join(" ")} />
       <span className={style.text}>{status}</span>
     </span>
+  );
+}
+
+function ChickenState({
+  title,
+  subtitle,
+  fullScreen,
+  titleClassName,
+  subtitleClassName,
+}: {
+  title: string;
+  subtitle: string;
+  fullScreen?: boolean;
+  titleClassName?: string;
+  subtitleClassName?: string;
+}) {
+  return (
+    <div
+      className={[
+        "flex flex-col items-center justify-center text-center",
+        fullScreen ? "min-h-[calc(100vh-90px)]" : "py-8",
+      ].join(" ")}
+    >
+      <img
+        src="/img/happyrun.gif"
+        alt="Chicken loading"
+        className="h-24 w-24 object-cover rounded-full"
+        onError={(e) => {
+          const target = e.currentTarget;
+          target.onerror = null;
+          target.src = "/img/chicken-bird.svg";
+        }}
+      />
+      <div className={["mt-3 text-sm font-semibold", titleClassName ?? "text-slate-700"].join(" ")}>{title}</div>
+      <div className={["mt-1 text-xs", subtitleClassName ?? "text-slate-500"].join(" ")}>{subtitle}</div>
+    </div>
   );
 }
 
@@ -145,6 +198,9 @@ function BuildingRow({
   selectedDate: string;
 }) {
   const navigate = useNavigate();
+  const remainingPercentage =
+    stats.total > 0 ? (stats.remaining / stats.total) * 100 : 0;
+
   return (
     <Card
       hoverable
@@ -219,12 +275,25 @@ function BuildingRow({
           {/* Stats Grid */}
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
             <StatPill
-              label="Total Birds"
-              value={stats.total.toLocaleString()}
+              label="Total Birds / Remaining"
+              value={(
+                <span>
+                  {stats.total.toLocaleString()} / {stats.remaining.toLocaleString()}{" "}
+                  <span className="text-[10px] font-medium text-slate-500">
+                    ({remainingPercentage.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}%)
+                  </span>
+                </span>
+              )}
             />
             <StatPill
               label="Avg. Weight"
-              value={`${stats.avgWeight.toLocaleString()} g`}
+              value={`${stats.avgWeight.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} g`}
             />
             <StatPill label="Status" value={<StatusBadge status={stats.status} />} />
             <StatPill
@@ -264,6 +333,7 @@ export default function BuildingOverviewPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [statsByBuildingId, setStatsByBuildingId] = useState<Record<string, BuildingStats>>({});
   const [addForm] = Form.useForm();
 
   const resolveUserAccess = async (): Promise<UserAccess> => {
@@ -329,6 +399,301 @@ export default function BuildingOverviewPage() {
     void fetchBuildings();
   }, [user?.id]);
 
+  const fetchBuildingStatsByDate = async () => {
+    if (buildings.length === 0) {
+      setStatsByBuildingId({});
+      return;
+    }
+
+    const buildingIds = buildings
+      .map((b) => Number(b.id))
+      .filter((id): id is number => Number.isFinite(id));
+
+    if (buildingIds.length === 0) {
+      setStatsByBuildingId({});
+      return;
+    }
+
+    try {
+      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
+      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
+      const { data: growRows, error: growsError } = await supabase
+        .from(GROWS_TABLE)
+        .select("id, building_id, created_at, total_animals, status")
+        .in("building_id", buildingIds)
+        .lt("created_at", selectedDayEnd)
+        .order("created_at", { ascending: false });
+
+      if (growsError) throw growsError;
+
+      const latestGrowByBuilding: Record<
+        number,
+        { growId: number; createdAt: string; totalAnimals: number; status: BuildingStats["status"] }
+      > = {};
+
+      ((growRows ?? []) as Array<{
+        id: number | null;
+        building_id: number | null;
+        created_at: string;
+        total_animals: number | null;
+        status: string | null;
+      }>).forEach((row) => {
+        if (row.building_id == null || row.id == null) return;
+        if (latestGrowByBuilding[row.building_id]) return;
+        latestGrowByBuilding[row.building_id] = {
+          growId: row.id,
+          createdAt: row.created_at,
+          totalAnimals: toNonNegativeInt(row.total_animals),
+          status: normalizeBuildingStatus(row.status),
+        };
+      });
+
+      const latestGrowIds = Object.values(latestGrowByBuilding).map((row) => row.growId);
+      const latestGrowLogByGrowId: Record<
+        number,
+        { createdAt: string; actualTotalAnimals: number; mortality: number; thinning: number; takeOut: number }
+      > = {};
+
+      if (latestGrowIds.length > 0) {
+        const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
+          .from(GROW_LOGS_TABLE)
+          .select("grow_id, actual_total_animals, mortality, thinning, take_out, created_at")
+          .in("grow_id", latestGrowIds)
+          .gte("created_at", selectedDayStart)
+          .lt("created_at", selectedDayEnd)
+          .order("created_at", { ascending: false });
+
+        if (selectedDayGrowLogsError) throw selectedDayGrowLogsError;
+
+        ((selectedDayGrowLogs ?? []) as Array<{
+          created_at: string;
+          grow_id: number | null;
+          actual_total_animals: number | null;
+          mortality: number | null;
+          thinning: number | null;
+          take_out: number | null;
+        }>).forEach((row) => {
+          if (row.grow_id == null || latestGrowLogByGrowId[row.grow_id]) return;
+          latestGrowLogByGrowId[row.grow_id] = {
+            createdAt: row.created_at,
+            actualTotalAnimals: toNonNegativeInt(row.actual_total_animals),
+            mortality: toNonNegativeInt(row.mortality),
+            thinning: toNonNegativeInt(row.thinning),
+            takeOut: toNonNegativeInt(row.take_out),
+          };
+        });
+
+        const missingGrowIds = latestGrowIds.filter((growId) => !latestGrowLogByGrowId[growId]);
+        if (missingGrowIds.length > 0) {
+          const { data: previousGrowLogs, error: previousGrowLogsError } = await supabase
+            .from(GROW_LOGS_TABLE)
+            .select("grow_id, actual_total_animals, mortality, thinning, take_out, created_at")
+            .in("grow_id", missingGrowIds)
+            .lt("created_at", selectedDayStart)
+            .order("created_at", { ascending: false });
+
+          if (previousGrowLogsError) throw previousGrowLogsError;
+
+          ((previousGrowLogs ?? []) as Array<{
+            created_at: string;
+            grow_id: number | null;
+            actual_total_animals: number | null;
+            mortality: number | null;
+            thinning: number | null;
+            take_out: number | null;
+          }>).forEach((row) => {
+            if (row.grow_id == null || latestGrowLogByGrowId[row.grow_id]) return;
+            latestGrowLogByGrowId[row.grow_id] = {
+              createdAt: row.created_at,
+              actualTotalAnimals: toNonNegativeInt(row.actual_total_animals),
+              mortality: toNonNegativeInt(row.mortality),
+              thinning: toNonNegativeInt(row.thinning),
+              takeOut: toNonNegativeInt(row.take_out),
+            };
+          });
+        }
+      }
+
+      const overallMetricsByGrowId: Record<number, { mortality: number; thinning: number; takeOut: number }> = {};
+      await Promise.all(
+        latestGrowIds.map(async (growId) => {
+          const matchedGrowLog = latestGrowLogByGrowId[growId];
+          if (!matchedGrowLog) return;
+
+          const effectiveDate = dayjs(matchedGrowLog.createdAt).format("YYYY-MM-DD");
+          const effectiveStart = `${effectiveDate}T00:00:00+00:00`;
+          const effectiveEnd = `${dayjs(effectiveDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
+          const { data: growLogRows, error: growLogRowsError } = await supabase
+            .from(GROW_LOGS_TABLE)
+            .select("subbuilding_id, mortality, thinning, take_out, created_at")
+            .eq("grow_id", growId)
+            .gte("created_at", effectiveStart)
+            .lt("created_at", effectiveEnd)
+            .order("created_at", { ascending: false });
+
+          if (growLogRowsError) throw growLogRowsError;
+
+          const latestByCage: Record<string, { mortality: number; thinning: number; takeOut: number }> = {};
+          ((growLogRows ?? []) as Array<{
+            subbuilding_id: number | null;
+            mortality: number | null;
+            thinning: number | null;
+            take_out: number | null;
+          }>).forEach((row) => {
+            if (row.subbuilding_id == null) return;
+            const cageId = String(row.subbuilding_id);
+            if (latestByCage[cageId]) return;
+            latestByCage[cageId] = {
+              mortality: toNonNegativeInt(row.mortality),
+              thinning: toNonNegativeInt(row.thinning),
+              takeOut: toNonNegativeInt(row.take_out),
+            };
+          });
+
+          const rolledUp = Object.values(latestByCage).reduce(
+            (acc, row) => ({
+              mortality: acc.mortality + row.mortality,
+              thinning: acc.thinning + row.thinning,
+              takeOut: acc.takeOut + row.takeOut,
+            }),
+            { mortality: 0, thinning: 0, takeOut: 0 }
+          );
+
+          overallMetricsByGrowId[growId] =
+            Object.keys(latestByCage).length > 0
+              ? rolledUp
+              : {
+                  mortality: matchedGrowLog.mortality,
+                  thinning: matchedGrowLog.thinning,
+                  takeOut: matchedGrowLog.takeOut,
+                };
+        })
+      );
+
+      const nextStatsByBuildingId: Record<string, BuildingStats> = {};
+      const avgWeightByBuildingId: Record<number, number> = {};
+
+      const { data: selectedDayBodyWeightRows, error: selectedDayBodyWeightError } = await supabase
+        .from(BODY_WEIGHT_LOGS_TABLE)
+        .select("building_id, subbuilding_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
+        .in("building_id", buildingIds)
+        .gte("created_at", selectedDayStart)
+        .lt("created_at", selectedDayEnd)
+        .order("created_at", { ascending: false });
+
+      if (selectedDayBodyWeightError) throw selectedDayBodyWeightError;
+
+      const latestSelectedWeightByBuildingAndSubbuilding: Record<string, number> = {};
+      ((selectedDayBodyWeightRows ?? []) as Array<{
+        building_id: number | null;
+        subbuilding_id: number | null;
+        avg_weight: number | null;
+        front_weight: unknown;
+        middle_weight: unknown;
+        back_weight: unknown;
+      }>).forEach((row) => {
+        if (row.building_id == null || row.subbuilding_id == null) return;
+        const key = `${row.building_id}-${row.subbuilding_id}`;
+        if (latestSelectedWeightByBuildingAndSubbuilding[key] != null) return;
+        const frontTotal = toWeightArray(row.front_weight).reduce((sum, value) => sum + value, 0);
+        const middleTotal = toWeightArray(row.middle_weight).reduce((sum, value) => sum + value, 0);
+        const backTotal = toWeightArray(row.back_weight).reduce((sum, value) => sum + value, 0);
+        const computedWeight = frontTotal + middleTotal + backTotal;
+        const weight = toNonNegativeNumber(row.avg_weight) || computedWeight;
+        latestSelectedWeightByBuildingAndSubbuilding[key] = weight;
+      });
+
+      const { data: previousBodyWeightRows, error: previousBodyWeightError } = await supabase
+        .from(BODY_WEIGHT_LOGS_TABLE)
+        .select("building_id, subbuilding_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
+        .in("building_id", buildingIds)
+        .lt("created_at", selectedDayStart)
+        .order("created_at", { ascending: false });
+
+      if (previousBodyWeightError) throw previousBodyWeightError;
+
+      const latestPreviousWeightByBuildingAndSubbuilding: Record<string, number> = {};
+      ((previousBodyWeightRows ?? []) as Array<{
+        building_id: number | null;
+        subbuilding_id: number | null;
+        avg_weight: number | null;
+        front_weight: unknown;
+        middle_weight: unknown;
+        back_weight: unknown;
+      }>).forEach((row) => {
+        if (row.building_id == null || row.subbuilding_id == null) return;
+        const key = `${row.building_id}-${row.subbuilding_id}`;
+        if (latestPreviousWeightByBuildingAndSubbuilding[key] != null) return;
+        const frontTotal = toWeightArray(row.front_weight).reduce((sum, value) => sum + value, 0);
+        const middleTotal = toWeightArray(row.middle_weight).reduce((sum, value) => sum + value, 0);
+        const backTotal = toWeightArray(row.back_weight).reduce((sum, value) => sum + value, 0);
+        const computedWeight = frontTotal + middleTotal + backTotal;
+        const weight = toNonNegativeNumber(row.avg_weight) || computedWeight;
+        latestPreviousWeightByBuildingAndSubbuilding[key] = weight;
+      });
+
+      const weightValuesByBuilding: Record<number, number[]> = {};
+      Object.entries(latestSelectedWeightByBuildingAndSubbuilding).forEach(([key, weight]) => {
+        const [buildingIdPart] = key.split("-");
+        const buildingId = Number(buildingIdPart);
+        if (!Number.isFinite(buildingId)) return;
+        if (!weightValuesByBuilding[buildingId]) weightValuesByBuilding[buildingId] = [];
+        weightValuesByBuilding[buildingId].push(weight);
+      });
+
+      Object.entries(latestPreviousWeightByBuildingAndSubbuilding).forEach(([key, weight]) => {
+        if (latestSelectedWeightByBuildingAndSubbuilding[key] != null) return;
+        const [buildingIdPart] = key.split("-");
+        const buildingId = Number(buildingIdPart);
+        if (!Number.isFinite(buildingId)) return;
+        if (!weightValuesByBuilding[buildingId]) weightValuesByBuilding[buildingId] = [];
+        weightValuesByBuilding[buildingId].push(weight);
+      });
+
+      Object.entries(weightValuesByBuilding).forEach(([buildingIdKey, weights]) => {
+        const buildingId = Number(buildingIdKey);
+        if (!Number.isFinite(buildingId) || weights.length === 0) return;
+        const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+        avgWeightByBuildingId[buildingId] = totalWeight / weights.length;
+      });
+
+      buildings.forEach((building) => {
+        const buildingId = Number(building.id);
+        const grow = Number.isFinite(buildingId) ? latestGrowByBuilding[buildingId] : undefined;
+        const growLog = grow ? latestGrowLogByGrowId[grow.growId] : undefined;
+        const overallMetrics = grow ? overallMetricsByGrowId[grow.growId] : undefined;
+        const total = grow?.totalAnimals ?? 0;
+        const remaining = growLog?.actualTotalAnimals ?? total;
+        const days = grow
+          ? Math.max(0, dayjs(selectedDate).startOf("day").diff(dayjs(grow.createdAt).startOf("day"), "day")) + 1
+          : 0;
+
+        nextStatsByBuildingId[building.id] = {
+          days,
+          total,
+          remaining,
+          avgWeight: Number.isFinite(buildingId) ? avgWeightByBuildingId[buildingId] ?? 0 : 0,
+          status: grow?.status ?? "Ready",
+          mortality: overallMetrics?.mortality ?? growLog?.mortality ?? 0,
+          thinning: overallMetrics?.thinning ?? growLog?.thinning ?? 0,
+          takeOut: overallMetrics?.takeOut ?? growLog?.takeOut ?? 0,
+        };
+      });
+
+      setStatsByBuildingId(nextStatsByBuildingId);
+    } catch (error) {
+      setToastMessage(`Failed to load building stats: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+      setStatsByBuildingId({});
+    }
+  };
+
+  useEffect(() => {
+    void fetchBuildingStatsByDate();
+  }, [buildings, selectedDate]);
+
   const handleDateChange = (date: Dayjs | null) => {
     const nextDate = date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
     setSelectedDate(nextDate);
@@ -366,12 +731,12 @@ export default function BuildingOverviewPage() {
 
   const getStatsForBuilding = useMemo(() => {
     return (building: Building): BuildingStats => {
-      if (selectedDate && MOCK_STATS_BY_DATE[selectedDate]?.[building.id]) {
-        return MOCK_STATS_BY_DATE[selectedDate][building.id];
-      }
+      const mapped = statsByBuildingId[building.id];
+      if (mapped) return mapped;
       return {
         days: building.days,
         total: building.total,
+        remaining: building.total,
         avgWeight: building.avgWeight,
         status: "Ready",
         mortality: building.mortality,
@@ -379,7 +744,7 @@ export default function BuildingOverviewPage() {
         takeOut: building.takeOut,
       };
     };
-  }, [selectedDate]);
+  }, [statsByBuildingId]);
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -430,43 +795,54 @@ export default function BuildingOverviewPage() {
       </Header>
 
       <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
-        {/* Date Filter */}
-        <div
-          className={[
-            "bg-white shadow-sm",
-            isMobile ? "rounded-sm px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
-          ].join(" ")}
-        >
-          <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
-            Date
-          </div>
-          <DatePicker
-            className={isMobile ? "!w-full" : "!w-[220px]"}
-            size={isMobile ? "middle" : "large"}
-            placeholder="Select date"
-            value={dayjs(selectedDate)}
-            onChange={handleDateChange}
-            style={{ fontSize: 16 }}
-            styles={{ input: { fontSize: 16 } }}
+        {isLoading ? (
+          <ChickenState
+            title="Loading..."
+            subtitle=""
+            fullScreen
+            titleClassName="text-[#008822]"
+            subtitleClassName="text-[#008822]/80"
           />
-        </div>
-
-        {/* Active Buildings Section */}
-        <div>
-          <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3"].join(" ")}>
-            <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
-              Active Buildings ({buildings.length})
+        ) : buildings.length === 0 ? (
+          <ChickenState
+            title="No data yet"
+            subtitle="No buildings found for this date."
+            fullScreen
+          />
+        ) : (
+          <>
+            {/* Date Filter */}
+            <div
+              className={[
+                "bg-white shadow-sm",
+                isMobile ? "rounded-sm px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
+              ].join(" ")}
+            >
+              <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
+                Date
+              </div>
+              <DatePicker
+                className={isMobile ? "!w-full" : "!w-[220px]"}
+                size={isMobile ? "middle" : "large"}
+                placeholder="Select date"
+                value={dayjs(selectedDate)}
+                onChange={handleDateChange}
+                style={{ fontSize: 16 }}
+                styles={{ input: { fontSize: 16 } }}
+              />
             </div>
-          </div>
 
-          <Divider className={isMobile ? "!my-2" : "!my-3"} />
+            {/* Active Buildings Section */}
+            <div>
+              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3"].join(" ")}>
+                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
+                  Active Buildings ({buildings.length})
+                </div>
+              </div>
 
-          {/* Use gap, not space-y, for consistent spacing */}
-          {isLoading ? (
-            <div className="text-sm text-slate-500 py-6">Loading buildings...</div>
-          ) : buildings.length === 0 ? (
-            <div className="text-sm text-slate-500 py-6">No buildings found for this date.</div>
-          ) : (
+              <Divider className={isMobile ? "!my-2" : "!my-3"} />
+
+              {/* Use gap, not space-y, for consistent spacing */}
             <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
               {buildings.map((b) => (
                 <BuildingRow
@@ -480,11 +856,12 @@ export default function BuildingOverviewPage() {
                 />
               ))}
             </div>
-          )}
-        </div>
+            </div>
+          </>
+        )}
 
         {/* Floating Add Button - full width on mobile */}
-        {isTodaySelected && (
+        {isTodaySelected && buildings.length > 0 && !isLoading && (
           <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
             <Button
               type="primary"
