@@ -1151,11 +1151,21 @@ export default function BuildingCage() {
             subtitleClassName="text-[#008822]/80"
           />
         ) : filteredCages.length === 0 ? (
-          <ChickenState
-            title="No data yet"
-            subtitle="No cages found for this building."
-            fullScreen
-          />
+          <div className="min-h-[calc(100vh-90px)] flex flex-col items-center justify-center">
+            <ChickenState
+              title="No data yet"
+              subtitle="No cages found for this building."
+            />
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              className="!h-11 !px-4 !rounded-lg"
+              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+              onClick={handleOpenAdd}
+            >
+              Add First Cage
+            </Button>
+          </div>
         ) : (
           <>
             {/* Date Filter */}
