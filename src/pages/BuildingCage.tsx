@@ -1087,11 +1087,11 @@ export default function BuildingCage() {
   const totalBackWeight = weightDraft.backWeights.reduce((sum, w) => sum + w, 0);
   const totalWeight = totalFrontWeight + totalMiddleWeight + totalBackWeight;
 
-  const totals = useMemo(() => {
-    const totalAvgWeight = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).avgWeight, 0);
-    const totalMortality = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).mortality, 0);
-    return { totalAvgWeight, totalMortality };
-  }, [filteredCages, getStatsForCage]);
+  // const totals = useMemo(() => {
+  //   const totalAvgWeight = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).avgWeight, 0);
+  //   const totalMortality = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).mortality, 0);
+  //   return { totalAvgWeight, totalMortality };
+  // }, [filteredCages, getStatsForCage]);
 
   return (
     <Layout className="min-h-screen bg-slate-100">
