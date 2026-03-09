@@ -54,7 +54,7 @@ export default function BuildingLoadPage() {
   const hasTodayRecord = todayTotal > 0;
 
   const history = useMemo(() => {
-    return [...historyEntries].reverse();
+    return [...historyEntries];
   }, [historyEntries]);
 
   const grandTotal = useMemo(() => {
@@ -394,7 +394,7 @@ export default function BuildingLoadPage() {
               <ul className="text-sm text-slate-700 space-y-1">
                 {history.map((item, index) => (
                   <li key={`${item.dateTime}-${index}`} className="flex items-center gap-3">
-                    <span className="w-10 text-slate-500">#{history.length - index}</span>
+                    <span className="w-10 text-slate-500">#{index + 1}</span>
                     <span className="flex-1">{item.dateTime}</span>
                     <span className="font-semibold">{item.total.toLocaleString()}</span>
                   </li>

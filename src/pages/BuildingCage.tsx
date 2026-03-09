@@ -502,7 +502,28 @@ export default function BuildingCage() {
     };
   }, [selectedDate, metricOverrides, weightOverrides]);
 
-  const filteredCages = useMemo(() => cages, [cages]);
+  const filteredCages = useMemo(() => {
+    const getTrailingNumber = (name: string): number | null => {
+      const match = name.match(/(\d+)\s*$/);
+      if (!match) return null;
+      const value = Number(match[1]);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    return [...cages].sort((a, b) => {
+      const aNum = getTrailingNumber(a.name);
+      const bNum = getTrailingNumber(b.name);
+
+      if (aNum != null && bNum != null && aNum !== bNum) return aNum - bNum;
+      if (aNum != null && bNum == null) return -1;
+      if (aNum == null && bNum != null) return 1;
+
+      const nameOrder = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      if (nameOrder !== 0) return nameOrder;
+
+      return Number(a.id) - Number(b.id);
+    });
+  }, [cages]);
 
   const metricMeta: Record<EditableMetric, { title: string; helper: string; label: string; success: string }> = {
     mortality: {

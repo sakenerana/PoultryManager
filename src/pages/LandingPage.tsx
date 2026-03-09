@@ -162,7 +162,10 @@ export default function LandingPage() {
         return tiles.filter((tile) => tile.key !== "userAccess");
     }, [role]);
 
+    const isTileDisabled = (tile: Tile): boolean => role === "Staff" && tile.key === "harvest";
+
     const handleTileClick = (tile: Tile) => {
+        if (isTileDisabled(tile)) return;
         setActive(tile.key);
         if (tile.key === "signOut") {
             void signOutAndRedirect(navigate);
@@ -218,14 +221,15 @@ export default function LandingPage() {
                         <button
                             key={tile.key}
                             type="button"
+                            disabled={isTileDisabled(tile)}
                             onClick={() => handleTileClick(tile)}
                             className={[
-                                "cursor-pointer",
+                                isTileDisabled(tile) ? "cursor-not-allowed opacity-60" : "cursor-pointer",
                                 "text-left bg-white rounded-sm shadow-sm",
                                 "p-3 sm:p-6",
                                 "h-[clamp(118px,20vh,170px)] sm:h-[clamp(180px,24vh,230px)]",
                                 "transition-all duration-200",
-                                "hover:shadow-md hover:-translate-y-0.5",
+                                isTileDisabled(tile) ? "" : "hover:shadow-md hover:-translate-y-0.5",
                                 "active:translate-y-0 active:scale-[0.99]",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008822]/50",
                                 active === tile.key

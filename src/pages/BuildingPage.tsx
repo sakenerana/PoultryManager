@@ -68,18 +68,13 @@ const toNonNegativeInt = (value: unknown): number => {
   return Math.max(0, Math.floor(n));
 };
 
-const toNonNegativeNumber = (value: unknown): number => {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, n);
-};
-
 const toWeightArray = (value: unknown): number[] => {
-  if (!Array.isArray(value)) return [];
-  return value
+  if (!Array.isArray(value)) return [0];
+  const mapped = value
     .map((item) => Number(item))
     .filter((n) => Number.isFinite(n))
     .map((n) => Math.max(0, n));
+  return mapped.length > 0 ? mapped : [0];
 };
 
 const normalizeBuildingStatus = (value: unknown): BuildingStats["status"] => {
@@ -289,11 +284,11 @@ function BuildingRow({
               )}
             />
             <StatPill
-              label="Avg. Weight"
+              label="Body Weight"
               value={`${stats.avgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
-              })} g`}
+              })} kg`}
             />
             <StatPill label="Status" value={<StatusBadge status={stats.status} />} />
             <StatPill
@@ -601,41 +596,16 @@ export default function BuildingOverviewPage() {
         if (row.building_id == null || row.subbuilding_id == null) return;
         const key = `${row.building_id}-${row.subbuilding_id}`;
         if (latestSelectedWeightByBuildingAndSubbuilding[key] != null) return;
-        const frontTotal = toWeightArray(row.front_weight).reduce((sum, value) => sum + value, 0);
-        const middleTotal = toWeightArray(row.middle_weight).reduce((sum, value) => sum + value, 0);
-        const backTotal = toWeightArray(row.back_weight).reduce((sum, value) => sum + value, 0);
-        const computedWeight = frontTotal + middleTotal + backTotal;
-        const weight = toNonNegativeNumber(row.avg_weight) || computedWeight;
+        const frontWeights = toWeightArray(row.front_weight);
+        const middleWeights = toWeightArray(row.middle_weight);
+        const backWeights = toWeightArray(row.back_weight);
+        const totalWeight =
+          frontWeights.reduce((sum, value) => sum + value, 0) +
+          middleWeights.reduce((sum, value) => sum + value, 0) +
+          backWeights.reduce((sum, value) => sum + value, 0);
+        const totalChicken = frontWeights.length + middleWeights.length + backWeights.length;
+        const weight = totalChicken > 0 ? totalWeight / totalChicken : 0;
         latestSelectedWeightByBuildingAndSubbuilding[key] = weight;
-      });
-
-      const { data: previousBodyWeightRows, error: previousBodyWeightError } = await supabase
-        .from(BODY_WEIGHT_LOGS_TABLE)
-        .select("building_id, subbuilding_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
-        .in("building_id", buildingIds)
-        .lt("created_at", selectedDayStart)
-        .order("created_at", { ascending: false });
-
-      if (previousBodyWeightError) throw previousBodyWeightError;
-
-      const latestPreviousWeightByBuildingAndSubbuilding: Record<string, number> = {};
-      ((previousBodyWeightRows ?? []) as Array<{
-        building_id: number | null;
-        subbuilding_id: number | null;
-        avg_weight: number | null;
-        front_weight: unknown;
-        middle_weight: unknown;
-        back_weight: unknown;
-      }>).forEach((row) => {
-        if (row.building_id == null || row.subbuilding_id == null) return;
-        const key = `${row.building_id}-${row.subbuilding_id}`;
-        if (latestPreviousWeightByBuildingAndSubbuilding[key] != null) return;
-        const frontTotal = toWeightArray(row.front_weight).reduce((sum, value) => sum + value, 0);
-        const middleTotal = toWeightArray(row.middle_weight).reduce((sum, value) => sum + value, 0);
-        const backTotal = toWeightArray(row.back_weight).reduce((sum, value) => sum + value, 0);
-        const computedWeight = frontTotal + middleTotal + backTotal;
-        const weight = toNonNegativeNumber(row.avg_weight) || computedWeight;
-        latestPreviousWeightByBuildingAndSubbuilding[key] = weight;
       });
 
       const weightValuesByBuilding: Record<number, number[]> = {};
@@ -647,14 +617,48 @@ export default function BuildingOverviewPage() {
         weightValuesByBuilding[buildingId].push(weight);
       });
 
-      Object.entries(latestPreviousWeightByBuildingAndSubbuilding).forEach(([key, weight]) => {
-        if (latestSelectedWeightByBuildingAndSubbuilding[key] != null) return;
-        const [buildingIdPart] = key.split("-");
-        const buildingId = Number(buildingIdPart);
-        if (!Number.isFinite(buildingId)) return;
-        if (!weightValuesByBuilding[buildingId]) weightValuesByBuilding[buildingId] = [];
-        weightValuesByBuilding[buildingId].push(weight);
-      });
+      if ((selectedDayBodyWeightRows ?? []).length === 0) {
+        const { data: previousBodyWeightRows, error: previousBodyWeightError } = await supabase
+          .from(BODY_WEIGHT_LOGS_TABLE)
+          .select("building_id, subbuilding_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
+          .in("building_id", buildingIds)
+          .lt("created_at", selectedDayEnd)
+          .order("created_at", { ascending: false });
+
+        if (previousBodyWeightError) throw previousBodyWeightError;
+
+        const latestPreviousWeightByBuildingAndSubbuilding: Record<string, number> = {};
+        ((previousBodyWeightRows ?? []) as Array<{
+          building_id: number | null;
+          subbuilding_id: number | null;
+          avg_weight: number | null;
+          front_weight: unknown;
+          middle_weight: unknown;
+          back_weight: unknown;
+        }>).forEach((row) => {
+          if (row.building_id == null || row.subbuilding_id == null) return;
+          const key = `${row.building_id}-${row.subbuilding_id}`;
+          if (latestPreviousWeightByBuildingAndSubbuilding[key] != null) return;
+          const frontWeights = toWeightArray(row.front_weight);
+          const middleWeights = toWeightArray(row.middle_weight);
+          const backWeights = toWeightArray(row.back_weight);
+          const totalWeight =
+            frontWeights.reduce((sum, value) => sum + value, 0) +
+            middleWeights.reduce((sum, value) => sum + value, 0) +
+            backWeights.reduce((sum, value) => sum + value, 0);
+          const totalChicken = frontWeights.length + middleWeights.length + backWeights.length;
+          const weight = totalChicken > 0 ? totalWeight / totalChicken : 0;
+          latestPreviousWeightByBuildingAndSubbuilding[key] = weight;
+        });
+
+        Object.entries(latestPreviousWeightByBuildingAndSubbuilding).forEach(([key, weight]) => {
+          const [buildingIdPart] = key.split("-");
+          const buildingId = Number(buildingIdPart);
+          if (!Number.isFinite(buildingId)) return;
+          if (!weightValuesByBuilding[buildingId]) weightValuesByBuilding[buildingId] = [];
+          weightValuesByBuilding[buildingId].push(weight);
+        });
+      }
 
       Object.entries(weightValuesByBuilding).forEach(([buildingIdKey, weights]) => {
         const buildingId = Number(buildingIdKey);
@@ -751,6 +755,29 @@ export default function BuildingOverviewPage() {
       };
     };
   }, [statsByBuildingId]);
+
+  const sortedBuildings = useMemo(() => {
+    const getTrailingNumber = (name: string): number | null => {
+      const match = name.match(/(\d+)\s*$/);
+      if (!match) return null;
+      const value = Number(match[1]);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    return [...buildings].sort((a, b) => {
+      const aNum = getTrailingNumber(a.name);
+      const bNum = getTrailingNumber(b.name);
+
+      if (aNum != null && bNum != null && aNum !== bNum) return aNum - bNum;
+      if (aNum != null && bNum == null) return -1;
+      if (aNum == null && bNum != null) return 1;
+
+      const nameOrder = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      if (nameOrder !== 0) return nameOrder;
+
+      return Number(a.id) - Number(b.id);
+    });
+  }, [buildings]);
 
   const isPageLoading = isLoading || isStatsLoading;
 
@@ -862,7 +889,7 @@ export default function BuildingOverviewPage() {
 
               {/* Use gap, not space-y, for consistent spacing */}
             <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
-              {buildings.map((b) => (
+              {sortedBuildings.map((b) => (
                 <BuildingRow
                   key={b.id}
                   b={b}

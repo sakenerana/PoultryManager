@@ -29,17 +29,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     let isMounted = true;
 
     const bootstrap = async () => {
-      const rememberMe = localStorage.getItem(REMEMBER_ME_KEY) === "true";
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const searchParams = new URLSearchParams(window.location.search);
-      const isRecoveryFlow =
-        hashParams.get("type") === "recovery" ||
-        hashParams.has("access_token") ||
-        searchParams.has("code");
-
-      if (!rememberMe && !isRecoveryFlow) {
-        await supabase.auth.signOut();
-      }
+      // Keep existing auth session across refreshes.
       const { data } = await supabase.auth.getSession();
       if (!isMounted) return;
       setSession(data.session ?? null);
