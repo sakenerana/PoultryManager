@@ -242,7 +242,7 @@ function CageRow({
               value={hideMetrics ? "-" : `${stats.avgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
-              })} g`}
+              })} kg`}
               rightIcon={<span className="text-slate-400 text-base leading-none">›</span>}
               onClick={hideMetrics ? undefined : () => onWeightClick(c.id)}
             />
