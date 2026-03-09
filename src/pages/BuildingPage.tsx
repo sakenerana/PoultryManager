@@ -330,6 +330,7 @@ export default function BuildingOverviewPage() {
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -402,6 +403,7 @@ export default function BuildingOverviewPage() {
   const fetchBuildingStatsByDate = async () => {
     if (buildings.length === 0) {
       setStatsByBuildingId({});
+      setIsStatsLoading(false);
       return;
     }
 
@@ -411,10 +413,12 @@ export default function BuildingOverviewPage() {
 
     if (buildingIds.length === 0) {
       setStatsByBuildingId({});
+      setIsStatsLoading(false);
       return;
     }
 
     try {
+      setIsStatsLoading(true);
       const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
       const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
 
@@ -687,6 +691,8 @@ export default function BuildingOverviewPage() {
       setToastMessage(`Failed to load building stats: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
       setStatsByBuildingId({});
+    } finally {
+      setIsStatsLoading(false);
     }
   };
 
@@ -746,6 +752,8 @@ export default function BuildingOverviewPage() {
     };
   }, [statsByBuildingId]);
 
+  const isPageLoading = isLoading || isStatsLoading;
+
   return (
     <Layout className="min-h-screen bg-slate-100">
       {/* Header */}
@@ -795,7 +803,7 @@ export default function BuildingOverviewPage() {
       </Header>
 
       <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
-        {isLoading ? (
+        {isPageLoading ? (
           <ChickenState
             title="Loading..."
             subtitle=""
@@ -804,11 +812,21 @@ export default function BuildingOverviewPage() {
             subtitleClassName="text-[#008822]/80"
           />
         ) : buildings.length === 0 ? (
-          <ChickenState
-            title="No data yet"
-            subtitle="No buildings found for this date."
-            fullScreen
-          />
+          <div className="min-h-[calc(100vh-90px)] flex flex-col items-center justify-center">
+            <ChickenState
+              title="No data yet"
+              subtitle="No buildings found for this date."
+            />
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              className="!h-11 !px-4 !rounded-lg"
+              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+              onClick={handleOpenAdd}
+            >
+              Add First Building
+            </Button>
+          </div>
         ) : (
           <>
             {/* Date Filter */}
@@ -861,7 +879,7 @@ export default function BuildingOverviewPage() {
         )}
 
         {/* Floating Add Button - full width on mobile */}
-        {isTodaySelected && buildings.length > 0 && !isLoading && (
+        {isTodaySelected && buildings.length > 0 && !isPageLoading && (
           <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
             <Button
               type="primary"

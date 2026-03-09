@@ -88,6 +88,7 @@ export default function AccountsPage() {
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [isSavingUser, setIsSavingUser] = useState(false);
   const userListRef = useRef<HTMLDivElement | null>(null);
 
   const refreshFromSupabase = async (showLoading = false) => {
@@ -172,6 +173,7 @@ export default function AccountsPage() {
   };
 
   const handleAddUser = async () => {
+    setIsSavingUser(true);
     try {
       const values = await form.validateFields();
       const buildingId = values.role === "Staff" ? Number(values.buildingId) : null;
@@ -223,6 +225,8 @@ export default function AccountsPage() {
           : fallbackMessage;
       setToastMessage(message);
       setIsToastOpen(true);
+    } finally {
+      setIsSavingUser(false);
     }
   };
 
@@ -532,6 +536,8 @@ export default function AccountsPage() {
               className="!flex-1 !h-11"
               style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
               onClick={handleAddUser}
+              loading={isSavingUser}
+              disabled={isSavingUser}
             >
               {editingUserId ? "Update User" : "Save User"}
             </Button>

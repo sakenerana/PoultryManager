@@ -4,8 +4,17 @@ import { useNavigate } from "react-router-dom";
 import { Layout, Typography, Card, Button, Tag, Divider, Grid, DatePicker, Drawer, InputNumber, Input } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, RightOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { getHarvestById, loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
+import {
+  addHarvestLog,
+  addHarvestReductionTransaction,
+  loadHarvestReductionTransactionsByHarvestId,
+  updateHarvestReductionTransaction,
+} from "../controller/harvestLogsCrud";
+import type { HarvestReductionType } from "../type/harvestLogs.type";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -13,15 +22,17 @@ const { useBreakpoint } = Grid;
 
 type Building = {
   id: string;
+  growId: number;
   name: string;
   days: number;
   total: number;
+  growStatus: "Growing" | "Harvested";
 };
 
 type BuildingStats = {
   days: number;
   total: number;
-  status: "Loading" | "Complete";
+  status: "Growing" | "Harvested";
   mortality: number;
   thinning: number;
   takeOut: number;
@@ -34,6 +45,19 @@ const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
+const REDUCTION_TYPE_BY_METRIC: Record<EditableMetric, HarvestReductionType> = {
+  mortality: "mortality",
+  thinning: "thinning",
+  takeOut: "takeout",
+  defect: "defect",
+};
+
+function getErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "Unknown error";
+}
 
 function StatPill({
   label,
@@ -83,8 +107,8 @@ function StatPill({
 
 function StatusBadge({ status }: { status: BuildingStats["status"] }) {
   const styles: Record<BuildingStats["status"], { dot: string; text: string }> = {
-    Loading: { dot: "bg-blue-500", text: "text-blue-700" },
-    Complete: { dot: "bg-emerald-500", text: "text-emerald-700" },
+    Growing: { dot: "bg-emerald-500", text: "text-emerald-700" },
+    Harvested: { dot: "bg-amber-500", text: "text-amber-800" },
   };
 
   const style = styles[status];
@@ -148,12 +172,14 @@ function BuildingRow({
 }) {
   const remainingBirds = stats.remaining;
   const remainingPercentage = stats.total > 0 ? (remainingBirds / stats.total) * 100 : 0;
+  const isHarvested = stats.status === "Harvested";
   return (
     <Card
-      hoverable
-      onClick={onOpen}
+      hoverable={!isHarvested}
+      onClick={isHarvested ? undefined : onOpen}
       className={[
-        "!border-0 shadow-sm hover:shadow-md transition cursor-pointer",
+        "!border-0 shadow-sm transition",
+        isHarvested ? "opacity-80 cursor-not-allowed" : "hover:shadow-md cursor-pointer",
         isMobile ? "!rounded-sm" : "!rounded-xl",
       ].join(" ")}
       bodyStyle={{ padding: isMobile ? 10 : 12 }}
@@ -220,29 +246,29 @@ function BuildingRow({
               label="Mortality"
               value={stats.mortality.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
-              rightIcon={<RightOutlined className="!text-slate-400 !text-[10px]" />}
-              onClick={() => onMetricClick("mortality", b.id, stats.mortality)}
+              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              onClick={isHarvested ? undefined : () => onMetricClick("mortality", b.id, stats.mortality)}
             />
             <StatPill
               label="Defect"
               value={stats.defect.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />}
-              rightIcon={<RightOutlined className="!text-slate-400 !text-[10px]" />}
-              onClick={() => onMetricClick("defect", b.id, stats.defect)}
+              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              onClick={isHarvested ? undefined : () => onMetricClick("defect", b.id, stats.defect)}
             />
             <StatPill
               label="Take Out"
               value={stats.takeOut.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-              rightIcon={<RightOutlined className="!text-slate-400 !text-[10px]" />}
-              onClick={() => onMetricClick("takeOut", b.id, stats.takeOut)}
+              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              onClick={isHarvested ? undefined : () => onMetricClick("takeOut", b.id, stats.takeOut)}
             />
             <StatPill
               label="Thinning"
               value={stats.thinning.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-              rightIcon={<RightOutlined className="!text-slate-400 !text-[10px]" />}
-              onClick={() => onMetricClick("thinning", b.id, stats.thinning)}
+              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              onClick={isHarvested ? undefined : () => onMetricClick("thinning", b.id, stats.thinning)}
             />
           </div>
         </div>
@@ -261,6 +287,9 @@ export default function HarvestBuildingPage() {
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSavingMetric, setIsSavingMetric] = useState(false);
+  const [hasTruckByBuildingId, setHasTruckByBuildingId] = useState<Record<string, { harvestId: number | null; hasTruck: boolean }>>({});
+  const [harvestAnimalsOutByBuilding, setHarvestAnimalsOutByBuilding] = useState<Record<string, Record<string, number>>>({});
   const [metricOverrides, setMetricOverrides] = useState<Record<EditableMetric, Record<string, Record<string, number>>>>({
     mortality: {},
     thinning: {},
@@ -276,8 +305,12 @@ export default function HarvestBuildingPage() {
   const [isMetricModalOpen, setIsMetricModalOpen] = useState(false);
   const [activeMetric, setActiveMetric] = useState<EditableMetric>("mortality");
   const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null);
+  const [activeMetricRemaining, setActiveMetricRemaining] = useState<number | null>(null);
+  const [activeMetricPreviousValue, setActiveMetricPreviousValue] = useState(0);
   const [metricDraft, setMetricDraft] = useState<number>(0);
   const [metricRemarksDraft, setMetricRemarksDraft] = useState<string>("");
+  const [isToastOpen, setIsToastOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
@@ -290,27 +323,36 @@ export default function HarvestBuildingPage() {
 
       const { data: growRows, error: growsError } = await supabase
         .from(GROWS_TABLE)
-        .select("id, building_id, total_animals, created_at")
+        .select("id, building_id, total_animals, created_at, status, is_harvested")
         .lt("created_at", selectedDayEnd)
         .order("created_at", { ascending: false });
 
       if (growsError) throw growsError;
 
-      const latestByBuildingId: Record<number, { total: number; createdAt: string }> = {};
+      const latestByBuildingId: Record<number, { growId: number; total: number; createdAt: string; status: string }> = {};
       ((growRows ?? []) as Array<{
+        id?: number | null;
         building_id: number | null;
         total_animals: number | null;
         created_at: string;
+        status?: string | null;
+        is_harvested?: boolean | null;
       }>).forEach((row) => {
-        if (row.building_id == null) return;
+        if (row.building_id == null || row.id == null) return;
         if (latestByBuildingId[row.building_id]) return;
+        const normalizedStatus = String(row.status ?? "").trim().toLowerCase();
+        const status = row.is_harvested === true || normalizedStatus === "harvested" ? "harvested" : normalizedStatus;
         latestByBuildingId[row.building_id] = {
+          growId: Number(row.id),
           total: Math.max(0, Math.floor(Number(row.total_animals ?? 0))),
           createdAt: row.created_at,
+          status,
         };
       });
 
-      const buildingIds = Object.keys(latestByBuildingId).map((id) => Number(id));
+      const buildingIds = Object.entries(latestByBuildingId)
+        .filter(([, latest]) => latest.status === "growing" || latest.status === "harvested")
+        .map(([id]) => Number(id));
       if (buildingIds.length === 0) {
         setBuildings([]);
         return;
@@ -334,11 +376,14 @@ export default function HarvestBuildingPage() {
           0,
           dayjs(selectedDate).startOf("day").diff(dayjs(latest.createdAt).startOf("day"), "day")
         ) + 1;
+        const growStatus: Building["growStatus"] = latest.status === "harvested" ? "Harvested" : "Growing";
         return {
           id: String(buildingId),
+          growId: latest.growId,
           name: nameById[buildingId] ?? `Building ${buildingId}`,
           days,
           total: latest.total,
+          growStatus,
         };
       });
 
@@ -354,6 +399,171 @@ export default function HarvestBuildingPage() {
   useEffect(() => {
     void fetchBuildingsFromGrows();
   }, [selectedDate]);
+
+  const isSameSelectedDate = (dateTime: string): boolean =>
+    dayjs(dateTime).format("YYYY-MM-DD") === selectedDate;
+
+  const getHarvestForBuilding = async (
+    building: Building
+  ): Promise<{ harvestId: number; totalAnimalsOut: number } | null> => {
+    const byGrow = await loadHarvests({ growId: building.growId, limit: 1 });
+    if (byGrow.length > 0) {
+      return {
+        harvestId: Number(byGrow[0].id),
+        totalAnimalsOut: Math.max(0, Math.floor(Number(byGrow[0].totalAnimals ?? 0))),
+      };
+    }
+
+    const byBuilding = await loadHarvests({ buildingId: Number(building.id), limit: 1 });
+    if (byBuilding.length > 0) {
+      return {
+        harvestId: Number(byBuilding[0].id),
+        totalAnimalsOut: Math.max(0, Math.floor(Number(byBuilding[0].totalAnimals ?? 0))),
+      };
+    }
+
+    return null;
+  };
+
+  const resolveGrowTotalAnimalsByHarvest = async (
+    harvestId: number,
+    fallbackBuildingId: number
+  ): Promise<{ growId: number | null; growTotalAnimals: number | null }> => {
+    const harvest = await getHarvestById(harvestId);
+    if (harvest.growId !== null) {
+      const { data, error } = await supabase
+        .from(GROWS_TABLE)
+        .select("id, total_animals")
+        .eq("id", harvest.growId)
+        .single();
+      if (error) throw error;
+      return {
+        growId: Number(data?.id ?? harvest.growId),
+        growTotalAnimals: Math.max(0, Math.floor(Number(data?.total_animals ?? 0))),
+      };
+    }
+
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("id, total_animals, created_at")
+      .eq("building_id", fallbackBuildingId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    if (!data || data.length === 0) return { growId: null, growTotalAnimals: null };
+
+    return {
+      growId: Number(data[0].id),
+      growTotalAnimals: Math.max(0, Math.floor(Number(data[0].total_animals ?? 0))),
+    };
+  };
+
+  const fetchHarvestMetricsByDate = async () => {
+    if (buildings.length === 0) {
+      setHasTruckByBuildingId({});
+      setHarvestAnimalsOutByBuilding((prev) => ({ ...prev, [selectedDate]: {} }));
+      setMetricOverrides((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: {} },
+        thinning: { ...prev.thinning, [selectedDate]: {} },
+        takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        defect: { ...prev.defect, [selectedDate]: {} },
+      }));
+      setMetricRemarksByType((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: {} },
+        thinning: { ...prev.thinning, [selectedDate]: {} },
+        takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        defect: { ...prev.defect, [selectedDate]: {} },
+      }));
+      return;
+    }
+
+    try {
+      const mortalityByBuilding: Record<string, number> = {};
+      const thinningByBuilding: Record<string, number> = {};
+      const takeOutByBuilding: Record<string, number> = {};
+      const defectByBuilding: Record<string, number> = {};
+      const mortalityRemarksByBuilding: Record<string, string> = {};
+      const thinningRemarksByBuilding: Record<string, string> = {};
+      const takeOutRemarksByBuilding: Record<string, string> = {};
+      const defectRemarksByBuilding: Record<string, string> = {};
+      const editMap: Record<string, { harvestId: number | null; hasTruck: boolean }> = {};
+      const harvestAnimalsOutMap: Record<string, number> = {};
+
+      await Promise.all(
+        buildings.map(async (building) => {
+          const harvestInfo = await getHarvestForBuilding(building);
+          if (harvestInfo == null) {
+            editMap[building.id] = { harvestId: null, hasTruck: false };
+            harvestAnimalsOutMap[building.id] = 0;
+            return;
+          }
+
+          const [trucks, reductions] = await Promise.all([
+            loadHarvestTrucks({ harvestId: harvestInfo.harvestId, limit: 1 }),
+            loadHarvestReductionTransactionsByHarvestId(harvestInfo.harvestId),
+          ]);
+
+          editMap[building.id] = { harvestId: harvestInfo.harvestId, hasTruck: trucks.length > 0 };
+          harvestAnimalsOutMap[building.id] = harvestInfo.totalAnimalsOut;
+
+          const selectedDayRows = reductions.filter((row) => isSameSelectedDate(row.createdAt));
+          mortalityByBuilding[building.id] = 0;
+          thinningByBuilding[building.id] = 0;
+          takeOutByBuilding[building.id] = 0;
+          defectByBuilding[building.id] = 0;
+
+          selectedDayRows.forEach((row) => {
+            const count = Math.max(0, Math.floor(Number(row.animalCount ?? 0)));
+            if (row.reductionType === "mortality") mortalityByBuilding[building.id] += count;
+            if (row.reductionType === "thinning") thinningByBuilding[building.id] += count;
+            if (row.reductionType === "take_out" || row.reductionType === "takeout") takeOutByBuilding[building.id] += count;
+            if (row.reductionType === "defect") defectByBuilding[building.id] += count;
+          });
+
+          const latestRemarkByType: Record<string, string> = {};
+          selectedDayRows.forEach((row) => {
+            if (!row.reductionType) return;
+            if (latestRemarkByType[row.reductionType] != null) return;
+            latestRemarkByType[row.reductionType] = row.remarks ?? "";
+          });
+
+          mortalityRemarksByBuilding[building.id] = latestRemarkByType.mortality ?? "";
+          thinningRemarksByBuilding[building.id] = latestRemarkByType.thinning ?? "";
+          takeOutRemarksByBuilding[building.id] = latestRemarkByType.take_out ?? latestRemarkByType.takeout ?? "";
+          defectRemarksByBuilding[building.id] = latestRemarkByType.defect ?? "";
+        })
+      );
+
+      setHasTruckByBuildingId(editMap);
+      setHarvestAnimalsOutByBuilding((prev) => ({
+        ...prev,
+        [selectedDate]: harvestAnimalsOutMap,
+      }));
+      setMetricOverrides((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: mortalityByBuilding },
+        thinning: { ...prev.thinning, [selectedDate]: thinningByBuilding },
+        takeOut: { ...prev.takeOut, [selectedDate]: takeOutByBuilding },
+        defect: { ...prev.defect, [selectedDate]: defectByBuilding },
+      }));
+      setMetricRemarksByType((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: mortalityRemarksByBuilding },
+        thinning: { ...prev.thinning, [selectedDate]: thinningRemarksByBuilding },
+        takeOut: { ...prev.takeOut, [selectedDate]: takeOutRemarksByBuilding },
+        defect: { ...prev.defect, [selectedDate]: defectRemarksByBuilding },
+      }));
+    } catch (error) {
+      setToastMessage(`Failed to load harvest reductions: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    void fetchHarvestMetricsByDate();
+  }, [buildings, selectedDate]);
 
   const metricMeta: Record<EditableMetric, { title: string; helper: string; label: string }> = {
     mortality: {
@@ -379,42 +589,195 @@ export default function HarvestBuildingPage() {
   };
 
   const openMetricModal = (metric: EditableMetric, buildingId: string, current: number) => {
+    const selectedBuilding = buildings.find((item) => item.id === buildingId);
+    if (selectedBuilding?.growStatus === "Harvested") {
+      setToastMessage("This building is already harvested and cannot be edited.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const editInfo = hasTruckByBuildingId[buildingId];
+    if (!editInfo?.hasTruck) {
+      setToastMessage("You can only edit reductions after adding at least one truck.");
+      setIsToastOpen(true);
+      return;
+    }
+
     const existingRemarks = metricRemarksByType[metric][selectedDate]?.[buildingId] ?? "";
     setActiveMetric(metric);
     setActiveBuildingId(buildingId);
+    setActiveMetricRemaining(null);
+    setActiveMetricPreviousValue(Math.max(0, Math.floor(current || 0)));
     setMetricDraft(Math.max(0, Math.floor(current || 0)));
     setMetricRemarksDraft(existingRemarks);
     setIsMetricModalOpen(true);
+
+    if (editInfo.harvestId != null) {
+      void getHarvestById(editInfo.harvestId)
+        .then(async (harvest) => {
+          const { growTotalAnimals } = await resolveGrowTotalAnimalsByHarvest(editInfo.harvestId as number, Number(buildingId));
+          if (growTotalAnimals === null) {
+            setActiveMetricRemaining(null);
+            return;
+          }
+          const remaining = Math.max(0, growTotalAnimals - Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0))));
+          setActiveMetricRemaining(remaining);
+        })
+        .catch(() => {
+          setActiveMetricRemaining(null);
+        });
+    }
   };
 
   const closeMetricModal = () => {
     setIsMetricModalOpen(false);
     setActiveBuildingId(null);
+    setActiveMetricRemaining(null);
+    setActiveMetricPreviousValue(0);
     setMetricRemarksDraft("");
   };
 
-  const handleUpdateMetric = () => {
+  const handleUpdateMetric = async () => {
     if (!activeBuildingId) return;
     const nextValue = Math.max(0, Math.floor(metricDraft || 0));
-    setMetricOverrides((prev) => {
-      const next = { ...prev };
-      const selectedMetric = { ...next[activeMetric] };
-      const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
-      day[activeBuildingId] = nextValue;
-      selectedMetric[selectedDate] = day;
-      next[activeMetric] = selectedMetric;
-      return next;
-    });
-    setMetricRemarksByType((prev) => {
-      const next = { ...prev };
-      const selectedMetric = { ...next[activeMetric] };
-      const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
-      day[activeBuildingId] = metricRemarksDraft.trim();
-      selectedMetric[selectedDate] = day;
-      next[activeMetric] = selectedMetric;
-      return next;
-    });
-    closeMetricModal();
+    if (nextValue <= 0) return;
+    const maxAllowed = activeMetricRemaining === null ? null : activeMetricRemaining + activeMetricPreviousValue;
+    if (maxAllowed !== null && nextValue > maxAllowed) {
+      setToastMessage(`Value cannot exceed ${maxAllowed.toLocaleString()} (remaining + current value).`);
+      setIsToastOpen(true);
+      return;
+    }
+
+    const editInfo = hasTruckByBuildingId[activeBuildingId];
+    if (!editInfo?.hasTruck || editInfo.harvestId == null) {
+      setToastMessage("You can only edit reductions after adding at least one truck.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const reductionType = REDUCTION_TYPE_BY_METRIC[activeMetric];
+    const harvestId = editInfo.harvestId;
+
+    setIsSavingMetric(true);
+    try {
+      const reductions = await loadHarvestReductionTransactionsByHarvestId(harvestId);
+      const selectedDayRows = reductions.filter((row) => isSameSelectedDate(row.createdAt));
+
+      const existingReductionTx =
+        selectedDayRows.find((row) => {
+          if (!row.reductionType) return false;
+          if (reductionType === "takeout") {
+            return row.reductionType === "takeout" || row.reductionType === "take_out";
+          }
+          return row.reductionType === reductionType;
+        }) ?? null;
+
+      const selectedDayTotals = selectedDayRows.reduce(
+        (acc, row) => {
+          const count = Math.max(0, Math.floor(Number(row.animalCount ?? 0)));
+          if (row.reductionType === "mortality") acc.mortality += count;
+          if (row.reductionType === "thinning") acc.thinning += count;
+          if (row.reductionType === "take_out" || row.reductionType === "takeout") acc.takeOut += count;
+          if (row.reductionType === "defect") acc.defect += count;
+          return acc;
+        },
+        { mortality: 0, thinning: 0, takeOut: 0, defect: 0 }
+      );
+
+      const previousValueForThisTx = existingReductionTx?.animalCount ?? 0;
+      if (reductionType === "mortality") {
+        selectedDayTotals.mortality = Math.max(0, selectedDayTotals.mortality - previousValueForThisTx + nextValue);
+      } else if (reductionType === "thinning") {
+        selectedDayTotals.thinning = Math.max(0, selectedDayTotals.thinning - previousValueForThisTx + nextValue);
+      } else if (reductionType === "defect") {
+        selectedDayTotals.defect = Math.max(0, selectedDayTotals.defect - previousValueForThisTx + nextValue);
+      } else {
+        selectedDayTotals.takeOut = Math.max(0, selectedDayTotals.takeOut - previousValueForThisTx + nextValue);
+      }
+
+      const savedHarvestLog = await addHarvestLog({
+        harvestId,
+        mortality: selectedDayTotals.mortality,
+        thinning: selectedDayTotals.thinning,
+        takeOut: selectedDayTotals.takeOut,
+        defect: selectedDayTotals.defect,
+      });
+
+      if (existingReductionTx) {
+        await updateHarvestReductionTransaction(existingReductionTx.id, {
+          harvestLogId: Number(savedHarvestLog.id),
+          animalCount: nextValue,
+          remarks: metricRemarksDraft.trim() || null,
+        });
+      } else {
+        await addHarvestReductionTransaction({
+          harvestId,
+          harvestLogId: Number(savedHarvestLog.id),
+          animalCount: nextValue,
+          reductionType,
+          remarks: metricRemarksDraft.trim() || null,
+        });
+      }
+
+      // Keep Harvest.total_animals_out in sync with reduction updates.
+      const harvest = await getHarvestById(harvestId);
+      const nextTotalAnimalsOut = Math.max(
+        0,
+        Math.floor(Number(harvest.totalAnimals ?? 0)) - previousValueForThisTx + nextValue
+      );
+      await updateHarvest(harvestId, { totalAnimals: nextTotalAnimalsOut });
+      setHarvestAnimalsOutByBuilding((prev) => ({
+        ...prev,
+        [selectedDate]: {
+          ...(prev[selectedDate] ?? {}),
+          [activeBuildingId]: nextTotalAnimalsOut,
+        },
+      }));
+
+      // Mark grow as harvested when total animals out reaches total birds.
+      const { growId, growTotalAnimals } = await resolveGrowTotalAnimalsByHarvest(
+        harvestId,
+        Number(activeBuildingId)
+      );
+      if (growId !== null && growTotalAnimals !== null && nextTotalAnimalsOut >= growTotalAnimals) {
+        const { error: growUpdateError } = await supabase
+          .from(GROWS_TABLE)
+          .update({
+            status: "Harvested",
+            is_harvested: true,
+          })
+          .eq("id", growId);
+        if (growUpdateError) throw growUpdateError;
+      }
+
+      setMetricOverrides((prev) => {
+        const next = { ...prev };
+        const selectedMetric = { ...next[activeMetric] };
+        const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
+        day[activeBuildingId] = nextValue;
+        selectedMetric[selectedDate] = day;
+        next[activeMetric] = selectedMetric;
+        return next;
+      });
+      setMetricRemarksByType((prev) => {
+        const next = { ...prev };
+        const selectedMetric = { ...next[activeMetric] };
+        const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
+        day[activeBuildingId] = metricRemarksDraft.trim();
+        selectedMetric[selectedDate] = day;
+        next[activeMetric] = selectedMetric;
+        return next;
+      });
+
+      closeMetricModal();
+      setToastMessage(`${metricMeta[activeMetric].title} updated successfully.`);
+      setIsToastOpen(true);
+    } catch (error) {
+      setToastMessage(`Failed to save ${metricMeta[activeMetric].title.toLowerCase()}: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    } finally {
+      setIsSavingMetric(false);
+    }
   };
 
   const getStatsForBuilding = useMemo(() => {
@@ -423,18 +786,24 @@ export default function HarvestBuildingPage() {
       const thinning = metricOverrides.thinning[selectedDate]?.[building.id] ?? 0;
       const takeOut = metricOverrides.takeOut[selectedDate]?.[building.id] ?? 0;
       const defect = metricOverrides.defect[selectedDate]?.[building.id] ?? 0;
+      const totalAnimalsOut = harvestAnimalsOutByBuilding[selectedDate]?.[building.id] ?? 0;
+      const remaining = Math.max(0, building.total - totalAnimalsOut);
       return {
         days: building.days,
         total: building.total,
-        status: "Loading",
+        status: building.growStatus,
         mortality,
         thinning,
         takeOut,
-        remaining: 0,
+        remaining,
         defect,
       };
     };
-  }, [metricOverrides, selectedDate]);
+  }, [harvestAnimalsOutByBuilding, metricOverrides, selectedDate]);
+
+  const isMetricValid = metricDraft > 0;
+  const maxMetricAllowed = activeMetricRemaining === null ? null : activeMetricRemaining + activeMetricPreviousValue;
+  const isMetricWithinRemaining = maxMetricAllowed === null || metricDraft <= maxMetricAllowed;
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -552,23 +921,39 @@ export default function HarvestBuildingPage() {
           <div className="text-slate-500 text-sm mt-1">
             {metricMeta[activeMetric].helper}
           </div>
+          <div className="text-slate-600 text-sm mt-2">
+            Remaining:{" "}
+            <span className="font-semibold text-slate-900">
+              {activeMetricRemaining !== null ? activeMetricRemaining.toLocaleString() : "N/A"}
+            </span>
+          </div>
         </div>
 
-        <div className="bg-slate-50 rounded-lg p-3">
+          <div className="bg-slate-50 rounded-lg p-3">
           <div className="text-[11px] text-slate-500 mb-2">{metricMeta[activeMetric].label}</div>
           <div className="flex items-center gap-3">
             <Button onClick={() => setMetricDraft((v) => Math.max(0, (v || 0) - 1))}>-</Button>
             <InputNumber
               min={0}
               value={metricDraft}
-              onChange={(v) => setMetricDraft(Number(v) || 0)}
+              onChange={(v) => setMetricDraft(Math.max(0, Math.floor(Number(v) || 0)))}
               parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
               inputMode="numeric"
               className="!w-full"
               styles={{ input: { fontSize: 16 } }}
             />
-            <Button onClick={() => setMetricDraft((v) => (v || 0) + 1)}>+</Button>
+            <Button
+              onClick={() => setMetricDraft((v) => (v || 0) + 1)}
+              disabled={maxMetricAllowed !== null && metricDraft >= maxMetricAllowed}
+            >
+              +
+            </Button>
           </div>
+          {!isMetricWithinRemaining && maxMetricAllowed !== null && (
+            <div className="mt-2 text-xs text-red-500">
+              Value cannot exceed {maxMetricAllowed.toLocaleString()} (remaining + current value).
+            </div>
+          )}
           <div className="mt-3">
             <div className="text-[11px] text-slate-500 mb-2">Remarks</div>
             <Input.TextArea
@@ -590,11 +975,20 @@ export default function HarvestBuildingPage() {
             className="!flex-1"
             style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
             onClick={handleUpdateMetric}
+            disabled={!isMetricValid || !isMetricWithinRemaining || isSavingMetric}
+            loading={isSavingMetric}
           >
             Update
           </Button>
         </div>
       </Drawer>
+
+      <NotificationToast
+        open={isToastOpen}
+        message={toastMessage}
+        type="success"
+        onClose={() => setIsToastOpen(false)}
+      />
     </Layout>
   );
 }

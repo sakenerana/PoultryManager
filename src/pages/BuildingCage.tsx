@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs } from "antd";
+import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs, Select } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
@@ -304,10 +304,12 @@ export default function BuildingCage() {
   const [weightOverrides, setWeightOverrides] = useState<Record<string, Record<string, WeightEntry>>>({});
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [weightDraft, setWeightDraft] = useState<WeightEntry>({
-    frontWeights: [0],
-    middleWeights: [0],
-    backWeights: [0],
+    frontWeights: [],
+    middleWeights: [],
+    backWeights: [],
   });
+  const [addChickenRows, setAddChickenRows] = useState<number>(1);
+  const [batchWeightToSplit, setBatchWeightToSplit] = useState<number>(0);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -529,9 +531,9 @@ export default function BuildingCage() {
     const existing = weightOverrides[selectedDate]?.[cageId];
     setWeightDraft(
       existing ?? {
-        frontWeights: [0],
-        middleWeights: [0],
-        backWeights: [0],
+        frontWeights: [],
+        middleWeights: [],
+        backWeights: [],
       }
     );
     setIsWeightModalOpen(true);
@@ -1087,6 +1089,16 @@ export default function BuildingCage() {
   const totalBackWeight = weightDraft.backWeights.reduce((sum, w) => sum + w, 0);
   const totalWeight = totalFrontWeight + totalMiddleWeight + totalBackWeight;
 
+  const addChickenRowsToSection = (section: keyof WeightEntry) => {
+    const rowsToAdd = Math.max(1, Math.floor(Number(addChickenRows) || 1));
+    const totalWeightForBatch = Math.max(0, Number(batchWeightToSplit) || 0);
+    const valuePerRow = rowsToAdd > 0 ? totalWeightForBatch / rowsToAdd : 0;
+    setWeightDraft((prev) => ({
+      ...prev,
+      [section]: [...prev[section], ...Array.from({ length: rowsToAdd }, () => valuePerRow)],
+    }));
+  };
+
   // const totals = useMemo(() => {
   //   const totalAvgWeight = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).avgWeight, 0);
   //   const totalMortality = filteredCages.reduce((sum, c) => sum + getStatsForCage(c).mortality, 0);
@@ -1406,6 +1418,45 @@ export default function BuildingCage() {
         </div>
 
         <div className="bg-slate-50 rounded-lg p-3 space-y-3">
+          <div>
+            <div className="text-[11px] text-slate-500 mb-2">Chicken to add</div>
+            <Select
+              value={addChickenRows}
+              onChange={(value) => setAddChickenRows(Number(value))}
+              options={[
+                { label: "1 chicken", value: 1 },
+                { label: "5 chicken", value: 5 },
+                { label: "10 chicken", value: 10 },
+              ]}
+              className="!w-full"
+              size="large"
+              disabled={!isTodaySelected}
+            />
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500 mb-2">Total weight to split (g)</div>
+            <InputNumber
+              min={0}
+              step={0.01}
+              precision={2}
+              stringMode
+              placeholder="No data yet"
+              value={batchWeightToSplit}
+              onChange={(value) => setBatchWeightToSplit(Math.max(0, Number(value) || 0))}
+              inputMode="decimal"
+              className="!w-full"
+              styles={{ input: { fontSize: 16 } }}
+              disabled={!isTodaySelected}
+            />
+            <div className="text-[11px] text-slate-500 mt-1">
+              Each added row gets:{" "}
+              {(Math.max(0, Number(batchWeightToSplit) || 0) / Math.max(1, Math.floor(Number(addChickenRows) || 1))).toLocaleString(
+                undefined,
+                { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+              )}{" "}
+              g
+            </div>
+          </div>
           <Tabs
             type="card"
             size="large"
@@ -1434,6 +1485,9 @@ export default function BuildingCage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-2">Front Chicken Weights (g)</div>
                     <div className="space-y-2">
+                      {weightDraft.frontWeights.length === 0 && (
+                        <div className="text-xs text-slate-500">No data yet. Click Add Chicken.</div>
+                      )}
                       {weightDraft.frontWeights.map((weight, index) => (
                         <div key={`front-weight-${index}`} className="flex items-center gap-2">
                           <div className="w-10 text-center text-xs font-semibold text-slate-600">
@@ -1444,6 +1498,7 @@ export default function BuildingCage() {
                             step={0.01}
                             precision={2}
                             stringMode
+                            placeholder="No data yet"
                             value={weight}
                             onChange={(v) =>
                               setWeightDraft((prev) => ({
@@ -1460,25 +1515,17 @@ export default function BuildingCage() {
                             onClick={() =>
                               setWeightDraft((prev) => ({
                                 ...prev,
-                                frontWeights:
-                                  prev.frontWeights.length === 1
-                                    ? prev.frontWeights
-                                    : prev.frontWeights.filter((_, i) => i !== index),
+                                frontWeights: prev.frontWeights.filter((_, i) => i !== index),
                               }))
                             }
-                            disabled={!isTodaySelected || weightDraft.frontWeights.length === 1}
+                            disabled={!isTodaySelected}
                           >
                             Remove
                           </Button>
                         </div>
                       ))}
                       <Button
-                        onClick={() =>
-                          setWeightDraft((prev) => ({
-                            ...prev,
-                            frontWeights: [...prev.frontWeights, 0],
-                          }))
-                        }
+                        onClick={() => addChickenRowsToSection("frontWeights")}
                         icon={<PlusOutlined />}
                         disabled={!isTodaySelected}
                       >
@@ -1501,6 +1548,9 @@ export default function BuildingCage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-2">Middle Chicken Weights (g)</div>
                     <div className="space-y-2">
+                      {weightDraft.middleWeights.length === 0 && (
+                        <div className="text-xs text-slate-500">No data yet. Click Add Chicken.</div>
+                      )}
                       {weightDraft.middleWeights.map((weight, index) => (
                         <div key={`middle-weight-${index}`} className="flex items-center gap-2">
                           <div className="w-10 text-center text-xs font-semibold text-slate-600">
@@ -1511,6 +1561,7 @@ export default function BuildingCage() {
                             step={0.01}
                             precision={2}
                             stringMode
+                            placeholder="No data yet"
                             value={weight}
                             onChange={(v) =>
                               setWeightDraft((prev) => ({
@@ -1527,25 +1578,17 @@ export default function BuildingCage() {
                             onClick={() =>
                               setWeightDraft((prev) => ({
                                 ...prev,
-                                middleWeights:
-                                  prev.middleWeights.length === 1
-                                    ? prev.middleWeights
-                                    : prev.middleWeights.filter((_, i) => i !== index),
+                                middleWeights: prev.middleWeights.filter((_, i) => i !== index),
                               }))
                             }
-                            disabled={!isTodaySelected || weightDraft.middleWeights.length === 1}
+                            disabled={!isTodaySelected}
                           >
                             Remove
                           </Button>
                         </div>
                       ))}
                       <Button
-                        onClick={() =>
-                          setWeightDraft((prev) => ({
-                            ...prev,
-                            middleWeights: [...prev.middleWeights, 0],
-                          }))
-                        }
+                        onClick={() => addChickenRowsToSection("middleWeights")}
                         icon={<PlusOutlined />}
                         disabled={!isTodaySelected}
                       >
@@ -1568,6 +1611,9 @@ export default function BuildingCage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-2">Back Chicken Weights (g)</div>
                     <div className="space-y-2">
+                      {weightDraft.backWeights.length === 0 && (
+                        <div className="text-xs text-slate-500">No data yet. Click Add Chicken.</div>
+                      )}
                       {weightDraft.backWeights.map((weight, index) => (
                         <div key={`back-weight-${index}`} className="flex items-center gap-2">
                           <div className="w-10 text-center text-xs font-semibold text-slate-600">
@@ -1578,6 +1624,7 @@ export default function BuildingCage() {
                             step={0.01}
                             precision={2}
                             stringMode
+                            placeholder="No data yet"
                             value={weight}
                             onChange={(v) =>
                               setWeightDraft((prev) => ({
@@ -1594,25 +1641,17 @@ export default function BuildingCage() {
                             onClick={() =>
                               setWeightDraft((prev) => ({
                                 ...prev,
-                                backWeights:
-                                  prev.backWeights.length === 1
-                                    ? prev.backWeights
-                                    : prev.backWeights.filter((_, i) => i !== index),
+                                backWeights: prev.backWeights.filter((_, i) => i !== index),
                               }))
                             }
-                            disabled={!isTodaySelected || weightDraft.backWeights.length === 1}
+                            disabled={!isTodaySelected}
                           >
                             Remove
                           </Button>
                         </div>
                       ))}
                       <Button
-                        onClick={() =>
-                          setWeightDraft((prev) => ({
-                            ...prev,
-                            backWeights: [...prev.backWeights, 0],
-                          }))
-                        }
+                        onClick={() => addChickenRowsToSection("backWeights")}
                         icon={<PlusOutlined />}
                         disabled={!isTodaySelected}
                       >

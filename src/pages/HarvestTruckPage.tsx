@@ -243,11 +243,48 @@ export default function HarvestTruckPage() {
     return trucks.filter((truck) => parseTruckDate(truck.dateTime).format("YYYY-MM-DD") === selectedDate);
   }, [trucks, selectedDate]);
 
+  const activeTruck = useMemo(() => {
+    if (!activeTruckId) return null;
+    return trucks.find((truck) => truck.id === activeTruckId) ?? null;
+  }, [activeTruckId, trucks]);
+
+  const loadDrawerAvgWeight = useMemo(() => {
+    if (!activeTruck) return null;
+    const weightLoad = Number(loadFormValues?.weightLoad) || 0;
+    const birdsLoad = Number(loadFormValues?.birdsLoad) || 0;
+    if (birdsLoad <= 0) return null;
+    return (weightLoad - activeTruck.weightNoLoad) / birdsLoad;
+  }, [activeTruck, loadFormValues?.birdsLoad, loadFormValues?.weightLoad]);
+
   const totals = useMemo(() => {
     const totalBirdsLoad = filteredTrucks.reduce((sum, t) => sum + t.birdsLoad, 0);
     const totalWeightLoad = filteredTrucks.reduce((sum, t) => sum + t.weightLoad, 0);
     return { totalBirdsLoad, totalWeightLoad };
   }, [filteredTrucks]);
+
+  const getGrowTotalAnimals = async (growId: number | null, fallbackBuildingId: number): Promise<number | null> => {
+    if (growId !== null) {
+      const { data, error } = await supabase
+        .from(GROWS_TABLE)
+        .select("total_animals")
+        .eq("id", growId)
+        .single();
+
+      if (error) throw error;
+      return Math.max(0, Math.floor(Number(data?.total_animals ?? 0)));
+    }
+
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("total_animals, created_at")
+      .eq("building_id", fallbackBuildingId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
+    return Math.max(0, Math.floor(Number(data[0]?.total_animals ?? 0)));
+  };
 
   const fetchTrucksFromSupabase = async () => {
     const buildingId = Number(buildingIdParam);
@@ -355,16 +392,15 @@ export default function HarvestTruckPage() {
       // 2) Upsert Harvests with default status = Loading.
       const { data: growRows, error: growError } = await supabase
         .from(GROWS_TABLE)
-        .select("id, total_animals, created_at")
+        .select("id, created_at")
         .eq("building_id", buildingId)
         .order("created_at", { ascending: false })
         .limit(1);
 
       if (growError) throw growError;
-      const grow = (growRows?.[0] ?? null) as { id: number; total_animals: number | null } | null;
+      const grow = (growRows?.[0] ?? null) as { id: number } | null;
 
       const growId = grow ? Number(grow.id) : null;
-      const totalAnimals = Math.max(0, Math.floor(Number(grow?.total_animals ?? 0)));
 
       const existingHarvests = await loadHarvests({
         ...(growId !== null ? { growId } : { buildingId }),
@@ -374,13 +410,12 @@ export default function HarvestTruckPage() {
         ? await updateHarvest(existingHarvests[0].id, {
             buildingId,
             growId,
-            totalAnimals,
             status: "Loading",
           })
         : await addHarvest({
             buildingId,
             growId,
-            totalAnimals,
+            totalAnimals: 0,
             status: "Loading",
           });
 
@@ -408,14 +443,22 @@ export default function HarvestTruckPage() {
   };
 
   const handleOpenLoadDrawer = (truck: Truck) => {
+    const buildingId = Number(buildingIdParam);
     setActiveTruckId(truck.id);
     setActiveTruckPreviousBirdsLoad(truck.birdsLoad || 0);
     setActiveHarvestRemaining(null);
 
-    if (truck.harvestId !== null) {
+    if (truck.harvestId !== null && Number.isFinite(buildingId) && buildingId > 0) {
       void getHarvestById(truck.harvestId)
-        .then((harvest) => {
-          setActiveHarvestRemaining(harvest.totalAnimals);
+        .then(async (harvest) => {
+          const growTotalAnimals = await getGrowTotalAnimals(harvest.growId, buildingId);
+          if (growTotalAnimals === null) {
+            setActiveHarvestRemaining(null);
+            return;
+          }
+
+          const remaining = Math.max(0, growTotalAnimals - harvest.totalAnimals);
+          setActiveHarvestRemaining(remaining);
         })
         .catch(() => {
           setActiveHarvestRemaining(null);
@@ -454,10 +497,19 @@ export default function HarvestTruckPage() {
       });
 
       if (updatedTruck.harvestId !== null) {
-        const harvest = await getHarvestById(updatedTruck.harvestId);
-        const nextTotalAnimalsOut = Math.max(0, harvest.totalAnimals - animalsLoadedDelta);
+        const buildingId = Number(buildingIdParam);
+        if (!Number.isFinite(buildingId) || buildingId <= 0) {
+          throw new Error("Invalid building id.");
+        }
 
-        const shouldMarkHarvestCompleted = nextTotalAnimalsOut <= 0;
+        const harvest = await getHarvestById(updatedTruck.harvestId);
+        const nextTotalAnimalsOut = Math.max(0, harvest.totalAnimals + animalsLoadedDelta);
+        const growTotalAnimals = await getGrowTotalAnimals(harvest.growId, buildingId);
+        const remainingAfterLoad = growTotalAnimals === null
+          ? null
+          : Math.max(0, growTotalAnimals - nextTotalAnimalsOut);
+
+        const shouldMarkHarvestCompleted = remainingAfterLoad !== null && remainingAfterLoad <= 0;
         const shouldUpdateTotalAnimalsOut = animalsLoadedDelta !== 0;
 
         if (shouldUpdateTotalAnimalsOut || shouldMarkHarvestCompleted) {
@@ -708,6 +760,12 @@ export default function HarvestTruckPage() {
             Remaining:{" "}
             <span className="font-semibold text-slate-900">
               {activeHarvestRemaining !== null ? activeHarvestRemaining.toLocaleString() : "N/A"}
+            </span>
+          </div>
+          <div className="text-slate-600 text-sm mt-1">
+            Avg. Weight Truck:{" "}
+            <span className="font-semibold text-slate-900">
+              {loadDrawerAvgWeight !== null ? `${loadDrawerAvgWeight.toFixed(2)} kg/bird` : "N/A"}
             </span>
           </div>
         </div>
