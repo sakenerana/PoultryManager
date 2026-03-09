@@ -1,6 +1,6 @@
 // LandingPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { Menu, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
@@ -195,15 +195,7 @@ export default function LandingPage() {
             >
                 {/* gradient like the screenshot */}
                 <div className="absolute inset-0 bg-gradient-to-b from-[#008822] to-[#006e1b]" />
-                <div className="relative h-full px-4 flex items-center justify-between">
-                    <button
-                        type="button"
-                        aria-label="Open menu"
-                        className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 transition grid place-items-center"
-                    >
-                        <Menu size={22} />
-                    </button>
-
+                <div className="relative h-full px-4 flex items-center justify-center">
                     <div className="text-center leading-tight">
                         <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-white/75 font-medium">
                             Operations Dashboard
@@ -213,8 +205,6 @@ export default function LandingPage() {
                         </h1>
                     </div>
 
-                    {/* spacer to keep title centered */}
-                    <div className="h-10 w-10" />
                 </div>
 
                 {/* divider */}

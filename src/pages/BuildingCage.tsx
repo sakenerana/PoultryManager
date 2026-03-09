@@ -480,13 +480,21 @@ export default function BuildingCage() {
       const thinningOverride = metricOverrides.thinning[selectedDate]?.[cage.id];
       const takeOutOverride = metricOverrides.takeOut[selectedDate]?.[cage.id];
       const weightOverride = weightOverrides[selectedDate]?.[cage.id];
-      const weightTotal = weightOverride
-        ? weightOverride.frontWeights.reduce((sum, w) => sum + w, 0) +
-        weightOverride.middleWeights.reduce((sum, w) => sum + w, 0) +
-        weightOverride.backWeights.reduce((sum, w) => sum + w, 0)
+      const avgWeight = weightOverride
+        ? (() => {
+          const totalWeight =
+            weightOverride.frontWeights.reduce((sum, w) => sum + w, 0) +
+            weightOverride.middleWeights.reduce((sum, w) => sum + w, 0) +
+            weightOverride.backWeights.reduce((sum, w) => sum + w, 0);
+          const totalChicken =
+            weightOverride.frontWeights.length +
+            weightOverride.middleWeights.length +
+            weightOverride.backWeights.length;
+          return totalChicken > 0 ? totalWeight / totalChicken : cage.avgWeight;
+        })()
         : cage.avgWeight;
       return {
-        avgWeight: weightTotal,
+        avgWeight,
         mortality: mortalityOverride ?? cage.mortality,
         thinning: thinningOverride ?? cage.thinning,
         takeOut: takeOutOverride ?? cage.takeOut,
@@ -1030,10 +1038,15 @@ export default function BuildingCage() {
       backWeights,
     };
 
-    const avgWeight =
+    const totalWeight =
       clean.frontWeights.reduce((sum, w) => sum + w, 0) +
       clean.middleWeights.reduce((sum, w) => sum + w, 0) +
       clean.backWeights.reduce((sum, w) => sum + w, 0);
+    const totalChicken =
+      clean.frontWeights.length +
+      clean.middleWeights.length +
+      clean.backWeights.length;
+    const avgWeight = totalChicken > 0 ? totalWeight / totalChicken : 0;
 
     try {
       const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
@@ -1408,7 +1421,7 @@ export default function BuildingCage() {
             Update Avg. Weight
           </Title>
           <div className="text-slate-500 text-sm mt-1">
-            Enter individual chicken weights by section (g).
+            Enter individual chicken weights by section (kg).
           </div>
           {!isTodaySelected && (
             <div className="text-amber-600 text-xs mt-1">
@@ -1434,7 +1447,7 @@ export default function BuildingCage() {
             />
           </div>
           <div>
-            <div className="text-[11px] text-slate-500 mb-2">Total weight to split (g)</div>
+            <div className="text-[11px] text-slate-500 mb-2">Total weight to split (kg)</div>
             <InputNumber
               min={0}
               step={0.01}
@@ -1454,7 +1467,7 @@ export default function BuildingCage() {
                 undefined,
                 { minimumFractionDigits: 2, maximumFractionDigits: 2 }
               )}{" "}
-              g
+              kg
             </div>
           </div>
           <Tabs
@@ -1483,7 +1496,7 @@ export default function BuildingCage() {
                 label: "Front",
                 children: (
                   <div>
-                    <div className="text-[11px] text-slate-500 mb-2">Front Chicken Weights (g)</div>
+                    <div className="text-[11px] text-slate-500 mb-2">Front Chicken Weights (kg)</div>
                     <div className="space-y-2">
                       {weightDraft.frontWeights.length === 0 && (
                         <div className="text-xs text-slate-500">No data yet. Click Add Chicken.</div>
@@ -1536,7 +1549,7 @@ export default function BuildingCage() {
                       Total Front Weight: {totalFrontWeight.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
-                      })} g
+                      })} kg
                     </div>
                   </div>
                 ),
@@ -1546,7 +1559,7 @@ export default function BuildingCage() {
                 label: "Middle",
                 children: (
                   <div>
-                    <div className="text-[11px] text-slate-500 mb-2">Middle Chicken Weights (g)</div>
+                    <div className="text-[11px] text-slate-500 mb-2">Middle Chicken Weights (kg)</div>
                     <div className="space-y-2">
                       {weightDraft.middleWeights.length === 0 && (
                         <div className="text-xs text-slate-500">No data yet. Click Add Chicken.</div>
@@ -1599,7 +1612,7 @@ export default function BuildingCage() {
                       Total Middle Weight: {totalMiddleWeight.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
-                      })} g
+                      })} kg
                     </div>
                   </div>
                 ),
@@ -1609,7 +1622,7 @@ export default function BuildingCage() {
                 label: "Back",
                 children: (
                   <div>
-                    <div className="text-[11px] text-slate-500 mb-2">Back Chicken Weights (g)</div>
+                    <div className="text-[11px] text-slate-500 mb-2">Back Chicken Weights (kg)</div>
                     <div className="space-y-2">
                       {weightDraft.backWeights.length === 0 && (
                         <div className="text-xs text-slate-500">No data yet. Click Add Chicken.</div>
@@ -1662,7 +1675,7 @@ export default function BuildingCage() {
                       Total Back Weight: {totalBackWeight.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
-                      })} g
+                      })} kg
                     </div>
                   </div>
                 ),
@@ -1673,7 +1686,7 @@ export default function BuildingCage() {
             Total: {totalWeight.toLocaleString(undefined, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
-            })} g
+            })} kg
           </div>
         </div>
 
