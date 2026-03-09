@@ -330,7 +330,9 @@ export default function BuildingOverviewPage() {
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [statsByBuildingId, setStatsByBuildingId] = useState<Record<string, BuildingStats>>({});
+  const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
   const [addForm] = Form.useForm();
+  const canManageBuildings = userRole === "Admin" || userRole === "Supervisor";
 
   const resolveUserAccess = async (): Promise<UserAccess> => {
     if (!user?.id) return { role: null, buildingId: null, isActive: false };
@@ -365,10 +367,12 @@ export default function BuildingOverviewPage() {
     try {
       setIsLoading(true);
       const access = await resolveUserAccess();
+      setUserRole(access.role);
       const data = await loadBuildings();
       const mapped = data.map(mapRecordToBuilding);
 
       if (!access.isActive) {
+        setUserRole(null);
         setBuildings([]);
         return;
       }
@@ -715,6 +719,11 @@ export default function BuildingOverviewPage() {
     void signOutAndRedirect(navigate);
   };
   const handleOpenAdd = () => {
+    if (!canManageBuildings) {
+      setToastMessage("Please contact an Admin or Supervisor to add a new building.");
+      setIsToastOpen(true);
+      return;
+    }
     const nextIndex = buildings.length + 1;
     addForm.setFieldsValue({ name: `Building ${nextIndex}` });
     setIsAddModalOpen(true);
@@ -844,15 +853,21 @@ export default function BuildingOverviewPage() {
               title="No data yet"
               subtitle="No buildings found for this date."
             />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              className="!h-11 !px-4 !rounded-lg"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleOpenAdd}
-            >
-              Add First Building
-            </Button>
+            {canManageBuildings ? (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                className="!h-11 !px-4 !rounded-lg"
+                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                onClick={handleOpenAdd}
+              >
+                Add First Building
+              </Button>
+            ) : (
+              <div className="mt-3 text-sm text-slate-600 text-center">
+                Contact an Admin or Supervisor to add a new building.
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -907,22 +922,30 @@ export default function BuildingOverviewPage() {
 
         {/* Floating Add Button - full width on mobile */}
         {isTodaySelected && buildings.length > 0 && !isPageLoading && (
-          <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-            <Button
-              type="primary"
-              size="large"
-              icon={
-                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
-                  <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
-                </span>
-              }
-              className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleOpenAdd}
-            >
-              Add
-            </Button>
-          </div>
+          canManageBuildings ? (
+            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
+              <Button
+                type="primary"
+                size="large"
+                icon={
+                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
+                    <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
+                  </span>
+                }
+                className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
+                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                onClick={handleOpenAdd}
+              >
+                Add
+              </Button>
+            </div>
+          ) : (
+            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
+              <div className="rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-md">
+                Contact Admin/Supervisor to add building.
+              </div>
+            </div>
+          )
         )}
       </Content>
 

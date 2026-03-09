@@ -7,6 +7,7 @@ import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import { loadSubBuildingsByBuildingId } from "../controller/subbuildingsCrud";
 import type { SubBuildingRecord } from "../type/subbuildings.type";
+import { useAuth } from "../context/AuthContext";
 import supabase from "../utils/supabase";
 import {
   addBodyWeightLog,
@@ -55,6 +56,10 @@ type GrowLogPreview = {
   thinning: number;
   takeOut: number;
 } | null;
+type UserAccess = {
+  role: "Admin" | "Supervisor" | "Staff" | null;
+  isActive: boolean;
+};
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
@@ -62,6 +67,7 @@ const SUBBUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_SUBBUILDINGS_TABLE ?? "
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 const toNumberArray = (value: unknown): number[] => {
   if (!Array.isArray(value)) return [0];
@@ -279,6 +285,7 @@ function CageRow({
 
 export default function BuildingCage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { id } = useParams();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -313,10 +320,51 @@ export default function BuildingCage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
   const [selectedBuildingName, setSelectedBuildingName] = useState<string>("");
   const [isLatestGrowHarvested, setIsLatestGrowHarvested] = useState(false);
   const [growLogPreview, setGrowLogPreview] = useState<GrowLogPreview>(null);
   const [addForm] = Form.useForm();
+  const canManageCages = userRole === "Admin" || userRole === "Supervisor";
+
+  const resolveUserAccess = async (): Promise<UserAccess> => {
+    if (!user?.id) return { role: null, isActive: false };
+
+    const { data, error } = await supabase
+      .from(USERS_TABLE)
+      .select("role, status")
+      .eq("user_uuid", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || "Failed to load user access.");
+    }
+
+    if (!data) {
+      return { role: null, isActive: false };
+    }
+
+    const normalizedRole =
+      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+
+    return {
+      role: normalizedRole,
+      isActive: data.status !== "Inactive",
+    };
+  };
+
+  const fetchUserAccess = async () => {
+    try {
+      const access = await resolveUserAccess();
+      setUserRole(access.isActive ? access.role : null);
+    } catch (error) {
+      setUserRole(null);
+      setToastMessage(`Failed to load user access: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    }
+  };
 
   const fetchSelectedBuildingName = async () => {
     const buildingId = Number(id);
@@ -367,6 +415,10 @@ export default function BuildingCage() {
   useEffect(() => {
     void fetchSelectedBuildingName();
   }, [id]);
+
+  useEffect(() => {
+    void fetchUserAccess();
+  }, [user?.id]);
 
   const fetchBodyWeightLogsByDate = async () => {
     const buildingId = Number(id);
@@ -431,6 +483,11 @@ export default function BuildingCage() {
     void signOutAndRedirect(navigate);
   };
   const handleOpenAdd = () => {
+    if (!canManageCages) {
+      setToastMessage("Please contact an Admin or Supervisor to add a new cage.");
+      setIsToastOpen(true);
+      return;
+    }
     const nextIndex = filteredCages.length + 1;
     addForm.setFieldsValue({ name: `Cage ${nextIndex}` });
     setIsAddModalOpen(true);
@@ -441,6 +498,12 @@ export default function BuildingCage() {
   };
 
   const handleSubmitAdd = async () => {
+    if (!canManageCages) {
+      setToastMessage("Please contact an Admin or Supervisor to add a new cage.");
+      setIsToastOpen(true);
+      return;
+    }
+
     try {
       const values = await addForm.validateFields();
       const buildingId = Number(id);
@@ -1202,15 +1265,21 @@ export default function BuildingCage() {
               title="No data yet"
               subtitle="No cages found for this building."
             />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              className="!h-11 !px-4 !rounded-lg"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleOpenAdd}
-            >
-              Add First Cage
-            </Button>
+            {canManageCages ? (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                className="!h-11 !px-4 !rounded-lg"
+                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                onClick={handleOpenAdd}
+              >
+                Add First Cage
+              </Button>
+            ) : (
+              <div className="mt-3 text-sm text-slate-600 text-center">
+                Contact an Admin or Supervisor to add a new cage.
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -1286,22 +1355,30 @@ export default function BuildingCage() {
 
         {/* Floating Add Button */}
         {isTodaySelected && filteredCages.length > 0 && !isLoading && (
-          <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-            <Button
-              type="primary"
-              size="large"
-              icon={
-                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
-                  <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
-                </span>
-              }
-              className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleOpenAdd}
-            >
-              Add
-            </Button>
-          </div>
+          canManageCages ? (
+            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
+              <Button
+                type="primary"
+                size="large"
+                icon={
+                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
+                    <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
+                  </span>
+                }
+                className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
+                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                onClick={handleOpenAdd}
+              >
+                Add
+              </Button>
+            </div>
+          ) : (
+            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
+              <div className="rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-md">
+                Contact Admin/Supervisor to add cage.
+              </div>
+            </div>
+          )
         )}
       </Content>
 
