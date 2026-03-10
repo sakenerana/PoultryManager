@@ -201,15 +201,16 @@ function BuildingRow({
       hoverable
       onClick={onOpen}
       className={[
-        "!border-0 shadow-sm hover:shadow-md transition cursor-pointer",
-        isMobile ? "!rounded-sm" : "!rounded-xl",
+        "!border-0 shadow-sm hover:shadow-md transition cursor-pointer h-full",
+        !isMobile ? "border border-slate-200/80 bg-white/95" : "",
+        isMobile ? "!rounded-sm" : "!rounded-sm",
       ].join(" ")}
-      bodyStyle={{ padding: isMobile ? 10 : 12 }}
+      bodyStyle={{ padding: isMobile ? 10 : 14 }}
     >
       <div className="flex items-start gap-2.5">
         {/* Icon */}
         <div
-          className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-sm" : "h-10 w-10 rounded-xl"].join(
+          className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-sm" : "h-10 w-10 rounded-sm"].join(
             " "
           )}
           style={{ backgroundColor: `${PRIMARY}22` }}
@@ -789,6 +790,21 @@ export default function BuildingOverviewPage() {
   }, [buildings]);
 
   const isPageLoading = isLoading || isStatsLoading;
+  const overviewStats = useMemo(() => {
+    return sortedBuildings.reduce(
+      (acc, building) => {
+        const stats = getStatsForBuilding(building);
+        acc.totalBuildings += 1;
+        acc.totalBirds += stats.total;
+        acc.totalRemaining += stats.remaining;
+        acc.totalWeight += stats.avgWeight;
+        return acc;
+      },
+      { totalBuildings: 0, totalBirds: 0, totalRemaining: 0, totalWeight: 0 }
+    );
+  }, [sortedBuildings, getStatsForBuilding]);
+  const avgWeightAcrossBuildings =
+    overviewStats.totalBuildings > 0 ? overviewStats.totalWeight / overviewStats.totalBuildings : 0;
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -797,11 +813,11 @@ export default function BuildingOverviewPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-4 !h-16",
+          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
         style={{ backgroundColor: PRIMARY }}
       >
-        <div className="flex items-center gap-2">
+        <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -811,7 +827,7 @@ export default function BuildingOverviewPage() {
           />
           <Divider
             type="vertical"
-            className="!m-0 !h-5 !border-white/60"
+            className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")}
           />
           <Button
             type="text"
@@ -820,13 +836,24 @@ export default function BuildingOverviewPage() {
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
           />
-          <Divider
-            type="vertical"
-            className="!m-0 !h-5 !border-white/60"
-          />
-          <Title level={4} className={["!m-0 !text-white", isMobile ? "!text-base" : ""].join(" ")}>
-            Building
-          </Title>
+          {isMobile ? (
+            <>
+              <Divider
+                type="vertical"
+                className="!m-0 !h-5 !border-white/60"
+              />
+              <Title level={4} className="!m-0 !text-base !text-white">
+                Building
+              </Title>
+            </>
+          ) : (
+            <div className="leading-tight">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Inventory</div>
+              <Title level={4} className="!m-0 !text-white !text-lg">
+                Building Overview
+              </Title>
+            </div>
+          )}
         </div>
         <Button
           type="text"
@@ -838,7 +865,7 @@ export default function BuildingOverviewPage() {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
-      <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
+      <Content className={isMobile ? "px-3 py-3 pb-28" : "px-8 py-6"}>
         {isPageLoading ? (
           <ChickenState
             title="Loading..."
@@ -871,39 +898,105 @@ export default function BuildingOverviewPage() {
           </div>
         ) : (
           <>
-            {/* Date Filter */}
-            <div
-              className={[
-                "bg-white shadow-sm",
-                isMobile ? "rounded-sm px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
-              ].join(" ")}
-            >
-              <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
-                Date
+            {isMobile ? (
+              <div
+                className={[
+                  "bg-white shadow-sm",
+                  "rounded-sm px-3 py-3 mb-3",
+                ].join(" ")}
+              >
+                <div className="text-slate-600 font-medium text-xs mb-2">
+                  Date
+                </div>
+                <DatePicker
+                  className="!w-full"
+                  size="middle"
+                  placeholder="Select date"
+                  value={dayjs(selectedDate)}
+                  onChange={handleDateChange}
+                  style={{ fontSize: 16 }}
+                  styles={{ input: { fontSize: 16 } }}
+                />
               </div>
-              <DatePicker
-                className={isMobile ? "!w-full" : "!w-[220px]"}
-                size={isMobile ? "middle" : "large"}
-                placeholder="Select date"
-                value={dayjs(selectedDate)}
-                onChange={handleDateChange}
-                style={{ fontSize: 16 }}
-                styles={{ input: { fontSize: 16 } }}
-              />
-            </div>
+            ) : (
+              <div className="mb-6 grid grid-cols-12 gap-4">
+                <div className="col-span-8 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-6 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                    Daily Snapshot
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">Building Operations</div>
+                  <div className="mt-4 grid grid-cols-4 gap-3">
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Buildings</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalBuildings}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Total Birds</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalBirds.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Remaining</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalRemaining.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Avg Weight</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">
+                        {avgWeightAcrossBuildings.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        kg
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
+                  <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
+                  <DatePicker
+                    className="!mt-3 !w-full"
+                    size="large"
+                    placeholder="Select date"
+                    value={dayjs(selectedDate)}
+                    onChange={handleDateChange}
+                    style={{ fontSize: 16 }}
+                    styles={{ input: { fontSize: 16 } }}
+                  />
+                  <div className="mt-3 text-xs text-slate-500">
+                    Showing data for {dayjs(selectedDate).format("MMMM D, YYYY")}
+                  </div>
+                  {isTodaySelected && (
+                    canManageBuildings ? (
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        className="!mt-4 !h-10 !w-full !rounded-sm !font-semibold"
+                        style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                        onClick={handleOpenAdd}
+                      >
+                        Add Building
+                      </Button>
+                    ) : (
+                      <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        Contact Admin/Supervisor to add building.
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Active Buildings Section */}
             <div>
-              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3"].join(" ")}>
-                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
+              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-sm px-5 py-3 border border-amber-200"].join(" ")}>
+                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-base"].join(" ")}>
                   Active Buildings ({buildings.length})
                 </div>
               </div>
 
               <Divider className={isMobile ? "!my-2" : "!my-3"} />
 
-              {/* Use gap, not space-y, for consistent spacing */}
-            <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+            <div className={isMobile ? "flex flex-col gap-3" : "grid grid-cols-2 gap-4"}>
               {sortedBuildings.map((b) => (
                 <BuildingRow
                   key={b.id}
@@ -921,7 +1014,7 @@ export default function BuildingOverviewPage() {
         )}
 
         {/* Floating Add Button - full width on mobile */}
-        {isTodaySelected && buildings.length > 0 && !isPageLoading && (
+        {isMobile && isTodaySelected && buildings.length > 0 && !isPageLoading && (
           canManageBuildings ? (
             <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
               <Button
@@ -952,8 +1045,9 @@ export default function BuildingOverviewPage() {
       <Drawer
         open={isAddModalOpen}
         onClose={handleCloseAdd}
-        placement="bottom"
-        height={isMobile ? "60%" : 420}
+        placement={isMobile ? "bottom" : "right"}
+        height={isMobile ? "60%" : undefined}
+        width={isMobile ? undefined : 460}
         className="add-building-drawer"
         bodyStyle={{ padding: 16 }}
       >

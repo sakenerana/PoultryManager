@@ -1,6 +1,5 @@
 // LandingPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
@@ -111,7 +110,6 @@ const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 type AppRole = "Admin" | "Supervisor" | "Staff" | null;
 
 export default function LandingPage() {
-    const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<TileKey | null>(null);
     const [role, setRole] = useState<AppRole>(null);
     const navigate = useNavigate();
@@ -175,18 +173,6 @@ export default function LandingPage() {
             navigate(tile.link);
         }
         console.log("clicked:", tile.key);
-    };
-
-    const handleSync = async () => {
-        if (syncing) return;
-        setSyncing(true);
-        try {
-            // TODO: call your sync API here
-            await new Promise((r) => setTimeout(r, 900));
-            console.log("synced!");
-        } finally {
-            setSyncing(false);
-        }
     };
 
     return (
@@ -262,29 +248,6 @@ export default function LandingPage() {
                 </div>
             </main>
 
-            {/* FLOATING SYNC BUTTON */}
-            <button
-                type="button"
-                onClick={handleSync}
-                disabled={syncing}
-                className={[
-                    "hidden sm:flex",
-                    "fixed bottom-6 right-6 z-50",
-                    "rounded-full px-4 py-2",
-                    "text-sm text-white font-semibold",
-                    "bg-[#ffa600] hover:bg-[#006e1b]",
-                    "shadow-xl shadow-[#008822]/25",
-                    "flex items-center gap-2",
-                    "transition active:scale-95",
-                    "disabled:opacity-70 disabled:cursor-not-allowed",
-                ].join(" ")}
-            >
-                <RefreshCw
-                    size={15}
-                    className={syncing ? "animate-spin" : ""}
-                />
-                {syncing ? "Syncing..." : "Sync data"}
-            </button>
         </div>
     );
 }

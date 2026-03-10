@@ -321,6 +321,7 @@ export default function BuildingLoadPage() {
 
   const isTotalValid =
     !isCompleted && totalInput.trim() !== "" && Number.isFinite(Number(totalInput)) && Number(totalInput) >= 0;
+  const remainingEntries = Math.max(0, 2 - history.length);
   const handleSignOut = async () => {
     await signOutAndRedirect(navigate);
   };
@@ -331,11 +332,11 @@ export default function BuildingLoadPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-4 !h-16",
+          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
         style={{ backgroundColor: BRAND }}
       >
-        <div className="flex items-center gap-2">
+        <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -345,7 +346,7 @@ export default function BuildingLoadPage() {
           />
           <Divider
             type="vertical"
-            className="!m-0 !h-5 !border-white/60"
+            className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")}
           />
           <Button
             type="text"
@@ -354,13 +355,24 @@ export default function BuildingLoadPage() {
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
           />
-          <Divider
-            type="vertical"
-            className="!m-0 !h-5 !border-white/60"
-          />
-          <Title level={4} className={["!m-0 !text-white", isMobile ? "!text-base" : ""].join(" ")}>
-            Building Load
-          </Title>
+          {isMobile ? (
+            <>
+              <Divider
+                type="vertical"
+                className="!m-0 !h-5 !border-white/60"
+              />
+              <Title level={4} className="!m-0 !text-base !text-white">
+                Building Load
+              </Title>
+            </>
+          ) : (
+            <div className="leading-tight">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Inventory</div>
+              <Title level={4} className="!m-0 !text-white !text-lg">
+                Building Load Entry
+              </Title>
+            </div>
+          )}
         </div>
         <Button
           type="text"
@@ -371,63 +383,161 @@ export default function BuildingLoadPage() {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
-      <Content className={["flex-1 flex", isMobile ? "px-3 py-3 pb-10" : "px-4 py-4"].join(" ")}>
-        <div className="max-w-xl mx-auto w-full flex flex-col flex-1 min-h-0">
-          <div className="flex items-start justify-between gap-4 mb-1">
-            <div>
-              <h1 className="text-md pl-2 font-bold text-[#0f7aa8]">Building # {id ?? ""}</h1>
+      <Content className={["flex-1", isMobile ? "px-3 py-3 pb-10" : "px-8 py-6"].join(" ")}>
+        {isMobile ? (
+          <div className="max-w-xl mx-auto w-full flex flex-col flex-1 min-h-0">
+            <div className="flex items-start justify-between gap-4 mb-1">
+              <div>
+                <h1 className="text-md pl-2 font-bold text-[#0f7aa8]">Building # {id ?? ""}</h1>
+              </div>
+              <div className="text-md pr-2 font-semibold text-slate-500">
+                {selectedDateDisplay}
+              </div>
             </div>
-            <div className="text-md pr-2 font-semibold text-slate-500">
-              {selectedDateDisplay}
+
+            <div className="bg-white rounded-sm shadow-sm p-4 mb-4 flex-1 min-h-0">
+              <div className="text-xs font-semibold text-slate-500 mb-2">
+                History
+              </div>
+              {isHistoryLoading ? (
+                <div className="text-sm text-slate-500">Loading history...</div>
+              ) : history.length === 0 ? (
+                <div className="text-sm text-slate-500">No history yet.</div>
+              ) : (
+                <ul className="text-sm text-slate-700 space-y-1">
+                  {history.map((item, index) => (
+                    <li key={`${item.dateTime}-${index}`} className="flex items-center gap-3">
+                      <span className="w-10 text-slate-500">#{index + 1}</span>
+                      <span className="flex-1">{item.dateTime}</span>
+                      <span className="font-semibold">{item.total.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-sm">
+                <span className="text-slate-500">Total Encoded (All)</span>
+                <span className="font-semibold text-slate-900">{grandTotal.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-sm shadow-sm p-4 mt-auto">
+              {!isCompleted && (
+                <input
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
+                  placeholder="Enter total count"
+                  value={totalInput}
+                  onChange={(e) => setTotalInput(e.target.value)}
+                  inputMode="numeric"
+                />
+              )}
+              <button
+                type="button"
+                className="text-base mt-3 w-full rounded-lg h-11 bg-[#008822] text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={handleSaveOrUpdate}
+                disabled={!isTotalValid || isSaving}
+              >
+                {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
+              </button>
             </div>
           </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex-1 min-h-0">
-            <div className="text-xs font-semibold text-slate-500 mb-2">
-              History
+        ) : (
+          <div className="mx-auto w-full max-w-6xl">
+            <div className="mb-5 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-6 py-5 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                Load Session
+              </div>
+              <div className="mt-1 flex items-end justify-between gap-6">
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">Building #{id ?? ""}</div>
+                  <div className="mt-1 text-sm text-slate-600">Selected date: {selectedDateDisplay}</div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-sm border border-emerald-100 bg-white/90 px-4 py-3 text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">History Rows</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{history.length}</div>
+                  </div>
+                  <div className="rounded-sm border border-emerald-100 bg-white/90 px-4 py-3 text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Remaining Entries</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{remainingEntries}</div>
+                  </div>
+                  <div className="rounded-sm border border-emerald-100 bg-white/90 px-4 py-3 text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Grand Total</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{grandTotal.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            {isHistoryLoading ? (
-              <div className="text-sm text-slate-500">Loading history...</div>
-            ) : history.length === 0 ? (
-              <div className="text-sm text-slate-500">No history yet.</div>
-            ) : (
-              <ul className="text-sm text-slate-700 space-y-1">
-                {history.map((item, index) => (
-                  <li key={`${item.dateTime}-${index}`} className="flex items-center gap-3">
-                    <span className="w-10 text-slate-500">#{index + 1}</span>
-                    <span className="flex-1">{item.dateTime}</span>
-                    <span className="font-semibold">{item.total.toLocaleString()}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
 
-            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-sm">
-              <span className="text-slate-500">Total Encoded (All)</span>
-              <span className="font-semibold text-slate-900">{grandTotal.toLocaleString()}</span>
+            <div className="grid grid-cols-12 gap-5">
+              <div className="col-span-5 flex flex-col gap-4">
+                <div className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Entry Panel</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900">Encode Load Count</div>
+                  <div className="mt-4 text-sm text-slate-500">
+                    Only 2 load transactions are allowed for this grow.
+                  </div>
+                  <div className="mt-4 rounded-sm bg-slate-50 px-4 py-3">
+                    <div className="text-xs text-slate-500">Today Total</div>
+                    <div className="mt-1 text-2xl font-bold text-slate-900">{todayTotal.toLocaleString()}</div>
+                  </div>
+                  {!isCompleted && (
+                    <input
+                      className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
+                      placeholder="Enter total count"
+                      value={totalInput}
+                      onChange={(e) => setTotalInput(e.target.value)}
+                      inputMode="numeric"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    className="mt-4 h-11 w-full rounded-lg bg-[#008822] text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleSaveOrUpdate}
+                    disabled={!isTotalValid || isSaving}
+                  >
+                    {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="col-span-7">
+                <div className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm h-full">
+                  <div className="flex items-center justify-between">
+                    <div className="text-lg font-semibold text-slate-900">History</div>
+                    <div className="text-xs font-medium text-slate-500">{selectedDateDisplay}</div>
+                  </div>
+                  <div className="mt-4">
+                    {isHistoryLoading ? (
+                      <div className="text-sm text-slate-500">Loading history...</div>
+                    ) : history.length === 0 ? (
+                      <div className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                        No history yet.
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {history.map((item, index) => (
+                          <li
+                            key={`${item.dateTime}-${index}`}
+                            className="grid grid-cols-[52px_1fr_auto] items-center gap-3 rounded-sm border border-slate-100 bg-slate-50/60 px-3 py-2.5"
+                          >
+                            <span className="text-xs font-semibold text-slate-500">#{index + 1}</span>
+                            <span className="text-sm text-slate-700">{item.dateTime}</span>
+                            <span className="text-sm font-semibold text-slate-900">{item.total.toLocaleString()}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="mt-5 border-t border-slate-100 pt-4 flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Total Encoded (All)</span>
+                    <span className="font-semibold text-slate-900">{grandTotal.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-4 mt-auto">
-            {!isCompleted && (
-              <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
-                placeholder="Enter total count"
-                value={totalInput}
-                onChange={(e) => setTotalInput(e.target.value)}
-                inputMode="numeric"
-              />
-            )}
-            <button
-              type="button"
-              className="text-base mt-3 w-full rounded-lg h-11 bg-[#008822] text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              onClick={handleSaveOrUpdate}
-              disabled={!isTotalValid || isSaving}
-            >
-              {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
-            </button>
-          </div>
-        </div>
+        )}
       </Content>
       <NotificationToast
         open={isToastOpen}

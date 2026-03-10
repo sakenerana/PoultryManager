@@ -135,12 +135,15 @@ function TruckRow({
   return (
     <Card
       hoverable
-      className={["!border-0 shadow-sm hover:shadow-md transition", "!rounded-sm"].join(" ")}
-      bodyStyle={{ padding: isMobile ? 10 : 12 }}
+      className={[
+        "!border-0 shadow-sm hover:shadow-md transition h-full",
+        isMobile ? "!rounded-sm" : "!rounded-sm border border-slate-200/80 bg-white/95",
+      ].join(" ")}
+      bodyStyle={{ padding: isMobile ? 10 : 14 }}
     >
       <div className="flex items-start gap-2.5">
         <div
-          className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-lg" : "h-10 w-10 rounded-xl"].join(
+          className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-lg" : "h-10 w-10 rounded-sm"].join(
             " "
           )}
           style={{ backgroundColor: `${PRIMARY}22` }}
@@ -282,6 +285,18 @@ export default function HarvestTruckPage() {
     const totalWeightLoad = filteredTrucks.reduce((sum, t) => sum + t.weightLoad, 0);
     return { totalBirdsLoad, totalWeightLoad };
   }, [filteredTrucks]);
+  const overviewStats = useMemo(() => {
+    const loadingCount = filteredTrucks.filter((truck) => truck.status === "Loading").length;
+    const completedCount = filteredTrucks.filter((truck) => truck.status === "Completed").length;
+    const avgWeightLoaded =
+      totals.totalBirdsLoad > 0 ? totals.totalWeightLoad / totals.totalBirdsLoad : 0;
+    return {
+      totalTrucks: filteredTrucks.length,
+      loadingCount,
+      completedCount,
+      avgWeightLoaded,
+    };
+  }, [filteredTrucks, totals.totalBirdsLoad, totals.totalWeightLoad]);
 
   const getGrowTotalAnimals = async (growId: number | null, fallbackBuildingId: number): Promise<number | null> => {
     if (growId !== null) {
@@ -570,11 +585,11 @@ export default function HarvestTruckPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-4 !h-16",
+          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
         style={{ backgroundColor: PRIMARY }}
       >
-        <div className="flex items-center gap-2">
+        <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -582,7 +597,7 @@ export default function HarvestTruckPage() {
             onClick={() => navigate(-1)}
             aria-label="Back"
           />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+          <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Button
             type="text"
             icon={<HomeOutlined />}
@@ -590,10 +605,21 @@ export default function HarvestTruckPage() {
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
           />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
-          <Title level={4} className={["!m-0 !text-white", isMobile ? "!text-base" : ""].join(" ")}>
-            Truck
-          </Title>
+          {isMobile ? (
+            <>
+              <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+              <Title level={4} className="!m-0 !text-base !text-white">
+                Truck
+              </Title>
+            </>
+          ) : (
+            <div className="leading-tight">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Harvest</div>
+              <Title level={4} className="!m-0 !text-white !text-lg">
+                Truck Operations
+              </Title>
+            </div>
+          )}
         </div>
 
         <Button
@@ -605,34 +631,95 @@ export default function HarvestTruckPage() {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
-      <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
+      <Content className={isMobile ? "px-3 py-3 pb-28" : "px-8 py-6"}>
         {isLoadingTrucks ? (
           <ChickenState title="Loading..." subtitle="" fullScreen />
         ) : (
           <>
-            <div
-              className={[
-                "bg-white shadow-sm",
-                isMobile ? "rounded-sm px-3 py-3 mb-3" : "rounded-sm px-4 py-4 mb-4",
-              ].join(" ")}
-            >
-              <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
-                Date
+            {isMobile ? (
+              <div
+                className={[
+                  "bg-white shadow-sm",
+                  "rounded-sm px-3 py-3 mb-3",
+                ].join(" ")}
+              >
+                <div className="text-slate-600 font-medium text-xs mb-2">
+                  Date
+                </div>
+                <DatePicker
+                  className="!w-full"
+                  size="middle"
+                  placeholder="Select date"
+                  value={dayjs(selectedDate)}
+                  onChange={handleDateChange}
+                  style={{ fontSize: 16 }}
+                  styles={{ input: { fontSize: 16 } }}
+                />
               </div>
-              <DatePicker
-                className={isMobile ? "!w-full" : "!w-[220px]"}
-                size={isMobile ? "middle" : "large"}
-                placeholder="Select date"
-                defaultValue={dayjs()}
-                onChange={handleDateChange}
-                style={{ fontSize: 16 }}
-                styles={{ input: { fontSize: 16 } }}
-              />
-            </div>
+            ) : (
+              <div className="mb-6 grid grid-cols-12 gap-4">
+                <div className="col-span-8 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-6 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                    Daily Snapshot
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">Truck Dispatch & Loads</div>
+                  <div className="mt-4 grid grid-cols-4 gap-3">
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Trucks</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalTrucks}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Completed</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.completedCount}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Birds Loaded</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{totals.totalBirdsLoad.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Avg Weight</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">
+                        {overviewStats.avgWeightLoaded.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })} kg/bird
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
+                  <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
+                  <DatePicker
+                    className="!mt-3 !w-full"
+                    size="large"
+                    placeholder="Select date"
+                    value={dayjs(selectedDate)}
+                    onChange={handleDateChange}
+                    style={{ fontSize: 16 }}
+                    styles={{ input: { fontSize: 16 } }}
+                  />
+                  <div className="mt-3 text-xs text-slate-500">
+                    Showing data for {dayjs(selectedDate).format("MMMM D, YYYY")}
+                  </div>
+                  {isTodaySelected && (
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      className="!mt-4 !h-10 !w-full !rounded-sm !font-semibold"
+                      style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                      onClick={handleOpenAdd}
+                    >
+                      Add Truck
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div>
-              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-sm px-3 py-2" : "rounded-sm px-4 py-3"].join(" ")}>
-                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
+              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-sm px-3 py-2" : "rounded-sm px-5 py-3 border border-amber-200"].join(" ")}>
+                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-base"].join(" ")}>
                   Active Trucks ({filteredTrucks.length})
                 </div>
               </div>
@@ -649,7 +736,7 @@ export default function HarvestTruckPage() {
                 </div>
               </div>
 
-              <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+              <div className={isMobile ? "flex flex-col gap-3" : "grid grid-cols-2 gap-4"}>
                 {filteredTrucks.map((truck) => (
                   <TruckRow
                     key={truck.id}
@@ -663,7 +750,7 @@ export default function HarvestTruckPage() {
               </div>
             </div>
 
-            {isTodaySelected && (
+            {isMobile && isTodaySelected && (
               <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
                 <Button
                   type="primary"
@@ -688,8 +775,9 @@ export default function HarvestTruckPage() {
       <Drawer
         open={isAddModalOpen}
         onClose={handleCloseAdd}
-        placement="bottom"
-        height={isMobile ? "70%" : 540}
+        placement={isMobile ? "bottom" : "right"}
+        height={isMobile ? "70%" : undefined}
+        width={isMobile ? undefined : 460}
         className="add-truck-drawer"
         bodyStyle={{ padding: 16 }}
       >

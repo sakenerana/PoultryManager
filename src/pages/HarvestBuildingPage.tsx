@@ -178,16 +178,16 @@ function BuildingRow({
       hoverable={!isHarvested}
       onClick={isHarvested ? undefined : onOpen}
       className={[
-        "!border-0 shadow-sm transition",
+        "!border-0 shadow-sm transition h-full",
         isHarvested ? "opacity-80 cursor-not-allowed" : "hover:shadow-md cursor-pointer",
-        isMobile ? "!rounded-sm" : "!rounded-xl",
+        isMobile ? "!rounded-sm" : "!rounded-sm border border-slate-200/80 bg-white/95",
       ].join(" ")}
-      bodyStyle={{ padding: isMobile ? 10 : 12 }}
+      bodyStyle={{ padding: isMobile ? 10 : 14 }}
     >
       <div className="flex items-start gap-2.5">
         {/* Icon */}
         <div
-          className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-sm" : "h-10 w-10 rounded-xl"].join(
+          className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-sm" : "h-10 w-10 rounded-sm"].join(
             " "
           )}
           style={{ backgroundColor: `${PRIMARY}22` }}
@@ -274,7 +274,7 @@ function BuildingRow({
         </div>
 
         {/* Chevron - hide on mobile to reduce clutter */}
-        {!isMobile && <div className="text-slate-300 text-lg mt-2">›</div>}
+        {!isMobile && <div className="text-slate-300 text-lg mt-2">{">"}</div>}
       </div>
     </Card>
   );
@@ -804,6 +804,30 @@ export default function HarvestBuildingPage() {
   const isMetricValid = metricDraft > 0;
   const maxMetricAllowed = activeMetricRemaining === null ? null : activeMetricRemaining + activeMetricPreviousValue;
   const isMetricWithinRemaining = maxMetricAllowed === null || metricDraft <= maxMetricAllowed;
+  const overviewStats = useMemo(() => {
+    return buildings.reduce(
+      (acc, building) => {
+        const stats = getStatsForBuilding(building);
+        acc.totalBuildings += 1;
+        acc.totalBirds += stats.total;
+        acc.totalRemaining += stats.remaining;
+        acc.totalMortality += stats.mortality;
+        acc.totalDefect += stats.defect;
+        acc.totalThinning += stats.thinning;
+        acc.totalTakeOut += stats.takeOut;
+        return acc;
+      },
+      {
+        totalBuildings: 0,
+        totalBirds: 0,
+        totalRemaining: 0,
+        totalMortality: 0,
+        totalDefect: 0,
+        totalThinning: 0,
+        totalTakeOut: 0,
+      }
+    );
+  }, [buildings, getStatsForBuilding]);
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -812,11 +836,11 @@ export default function HarvestBuildingPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-4 !h-16",
+          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
         style={{ backgroundColor: PRIMARY }}
       >
-        <div className="flex items-center gap-2">
+        <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -824,7 +848,7 @@ export default function HarvestBuildingPage() {
             onClick={() => navigate(-1)}
             aria-label="Back"
           />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+          <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Button
             type="text"
             icon={<HomeOutlined />}
@@ -832,16 +856,27 @@ export default function HarvestBuildingPage() {
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
           />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
-          <Title level={4} className={["!m-0 !text-white", isMobile ? "!text-base" : ""].join(" ")}>
-            Harvest Building
-          </Title>
+          {isMobile ? (
+            <>
+              <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+              <Title level={4} className="!m-0 !text-base !text-white">
+                Harvest Building
+              </Title>
+            </>
+          ) : (
+            <div className="leading-tight">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Harvest</div>
+              <Title level={4} className="!m-0 !text-white !text-lg">
+                Building Harvest Overview
+              </Title>
+            </div>
+          )}
         </div>
         <Button type="text" icon={<LogoutOutlined />} className="!text-white hover:!text-white/90" onClick={handleSignOut} />
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
-      <Content className={isMobile ? "px-3 py-3 pb-28" : "px-4 py-4"}>
+      <Content className={isMobile ? "px-3 py-3 pb-28" : "px-8 py-6"}>
         {isLoading ? (
           <ChickenState
             title="Loading..."
@@ -858,38 +893,84 @@ export default function HarvestBuildingPage() {
           />
         ) : (
           <>
-            {/* Date Filter */}
-            <div
-              className={[
-                "bg-white shadow-sm",
-                isMobile ? "rounded-sm px-3 py-3 mb-3" : "rounded-xl px-4 py-4 mb-4",
-              ].join(" ")}
-            >
-              <div className={["text-slate-600 font-medium", isMobile ? "text-xs mb-2" : "text-sm mb-2"].join(" ")}>
-                Date
+            {isMobile ? (
+              <div
+                className={[
+                  "bg-white shadow-sm",
+                  "rounded-sm px-3 py-3 mb-3",
+                ].join(" ")}
+              >
+                <div className="text-slate-600 font-medium text-xs mb-2">
+                  Date
+                </div>
+                <DatePicker
+                  className="!w-full"
+                  size="middle"
+                  placeholder="Select date"
+                  value={dayjs(selectedDate)}
+                  onChange={(date) => setSelectedDate(date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"))}
+                  style={{ fontSize: 16 }}
+                  styles={{ input: { fontSize: 16 } }}
+                />
               </div>
-              <DatePicker
-                className={isMobile ? "!w-full" : "!w-[220px]"}
-                size={isMobile ? "middle" : "large"}
-                placeholder="Select date"
-                value={dayjs(selectedDate)}
-                onChange={(date) => setSelectedDate(date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"))}
-                style={{ fontSize: 16 }}
-                styles={{ input: { fontSize: 16 } }}
-              />
-            </div>
+            ) : (
+              <div className="mb-6 grid grid-cols-12 gap-4">
+                <div className="col-span-8 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-6 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                    Daily Snapshot
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">Harvest Operations</div>
+                  <div className="mt-4 grid grid-cols-4 gap-3">
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Buildings</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalBuildings}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Total Birds</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalBirds.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Remaining</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">{overviewStats.totalRemaining.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Loss + Out</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">
+                        {(overviewStats.totalMortality + overviewStats.totalDefect + overviewStats.totalThinning + overviewStats.totalTakeOut).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
+                  <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
+                  <DatePicker
+                    className="!mt-3 !w-full"
+                    size="large"
+                    placeholder="Select date"
+                    value={dayjs(selectedDate)}
+                    onChange={(date) => setSelectedDate(date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"))}
+                    style={{ fontSize: 16 }}
+                    styles={{ input: { fontSize: 16 } }}
+                  />
+                  <div className="mt-3 text-xs text-slate-500">
+                    Showing data for {dayjs(selectedDate).format("MMMM D, YYYY")}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Active Buildings Section */}
             <div>
-              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3"].join(" ")}>
-                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-sm"].join(" ")}>
+              <div className={["bg-[#ffa6001f]", isMobile ? "rounded-lg px-3 py-2" : "rounded-sm px-5 py-3 border border-amber-200"].join(" ")}>
+                <div className={["font-semibold text-slate-700", isMobile ? "text-xs" : "text-base"].join(" ")}>
                   Active Buildings ({buildings.length})
                 </div>
               </div>
 
               <Divider className={isMobile ? "!my-2" : "!my-3"} />
 
-              <div className={isMobile ? "flex flex-col gap-3" : "flex flex-col gap-5"}>
+              <div className={isMobile ? "flex flex-col gap-3" : "grid grid-cols-2 gap-4"}>
                 {buildings.map((b) => (
                   <BuildingRow
                     key={b.id}
@@ -909,8 +990,9 @@ export default function HarvestBuildingPage() {
       <Drawer
         open={isMetricModalOpen}
         onClose={closeMetricModal}
-        placement="bottom"
-        height={isMobile ? "60%" : 420}
+        placement={isMobile ? "bottom" : "right"}
+        height={isMobile ? "60%" : undefined}
+        width={isMobile ? undefined : 460}
         className="metric-drawer"
         bodyStyle={{ padding: 16 }}
       >
@@ -992,3 +1074,4 @@ export default function HarvestBuildingPage() {
     </Layout>
   );
 }
+

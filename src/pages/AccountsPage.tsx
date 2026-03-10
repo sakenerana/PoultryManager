@@ -240,11 +240,11 @@ export default function AccountsPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-4 !h-16",
+          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
         style={{ backgroundColor: PRIMARY }}
       >
-        <div className="flex items-center gap-2">
+        <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -252,7 +252,7 @@ export default function AccountsPage() {
             onClick={() => navigate(-1)}
             aria-label="Back"
           />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+          <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Button
             type="text"
             icon={<HomeOutlined />}
@@ -260,10 +260,21 @@ export default function AccountsPage() {
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
           />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
-          <Title level={4} className={["!m-0 !text-white", isMobile ? "!text-base" : ""].join(" ")}>
-            Accounts
-          </Title>
+          {isMobile ? (
+            <>
+              <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+              <Title level={4} className="!m-0 !text-base !text-white">
+                Accounts
+              </Title>
+            </>
+          ) : (
+            <div className="leading-tight">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Administration</div>
+              <Title level={4} className="!m-0 !text-white !text-lg">
+                Account Management
+              </Title>
+            </div>
+          )}
         </div>
 
         <Button
@@ -275,126 +286,263 @@ export default function AccountsPage() {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
-      <Content className={isMobile ? "px-2 py-2 pb-24" : "px-4 py-4"}>
-        <div className="max-w-[430px] mx-auto">
-          <div className={isMobile ? "space-y-3" : "rounded-[28px] bg-slate-50 shadow-xl p-3 space-y-3"}>
-            <Card className="!rounded-sm !border-0 shadow-sm" bodyStyle={{ padding: 12 }}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Overview</div>
-                  <div className="text-sm font-bold text-slate-900 mt-0.5">Accounts Summary</div>
+      <Content className={isMobile ? "px-2 py-2 pb-24" : "px-8 py-6"}>
+        {isMobile ? (
+          <div className="max-w-[430px] mx-auto">
+            <div className="space-y-3">
+              <Card className="!rounded-sm !border-0 shadow-sm" bodyStyle={{ padding: 12 }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Overview</div>
+                    <div className="text-sm font-bold text-slate-900 mt-0.5">Accounts Summary</div>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Updated live</div>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">Updated live</div>
-              </div>
 
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-                  <div className="text-[11px] text-slate-500">Total Accounts</div>
-                  <div className="text-xl leading-none font-bold text-slate-900 mt-1">{totals.total}</div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+                    <div className="text-[11px] text-slate-500">Total Accounts</div>
+                    <div className="text-xl leading-none font-bold text-slate-900 mt-1">{totals.total}</div>
+                  </div>
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2">
+                    <div className="text-[11px] text-emerald-700">Active Users</div>
+                    <div className="text-xl leading-none font-bold text-emerald-700 mt-1">{totals.active}</div>
+                  </div>
+                  <div className="rounded-lg bg-red-50 border border-red-100 p-2">
+                    <div className="text-[11px] text-red-700">Admins</div>
+                    <div className="text-xl leading-none font-bold text-red-700 mt-1">{totals.admins}</div>
+                  </div>
+                  <div className="rounded-lg bg-blue-50 border border-blue-100 p-2">
+                    <div className="text-[11px] text-blue-700">Supervisors</div>
+                    <div className="text-xl leading-none font-bold text-blue-700 mt-1">{totals.supervisors}</div>
+                  </div>
                 </div>
-                <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2">
-                  <div className="text-[11px] text-emerald-700">Active Users</div>
-                  <div className="text-xl leading-none font-bold text-emerald-700 mt-1">{totals.active}</div>
-                </div>
-                <div className="rounded-lg bg-red-50 border border-red-100 p-2">
-                  <div className="text-[11px] text-red-700">Admins</div>
-                  <div className="text-xl leading-none font-bold text-red-700 mt-1">{totals.admins}</div>
-                </div>
-                <div className="rounded-lg bg-blue-50 border border-blue-100 p-2">
-                  <div className="text-[11px] text-blue-700">Supervisors</div>
-                  <div className="text-xl leading-none font-bold text-blue-700 mt-1">{totals.supervisors}</div>
-                </div>
-              </div>
-            </Card>
+              </Card>
 
-            <div ref={userListRef} className="px-1 mt-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">User List</div>
-              <div className="space-y-2">
-                {isLoadingUsers && (
-                  <Card className="!rounded-sm !border-0 shadow-sm">
-                    <ChickenState
-                      title="Loading..."
-                      subtitle="Please wait while we fetch the latest records."
-                      titleClassName="text-[#008822]"
-                      subtitleClassName="text-[#008822]/80"
-                    />
-                  </Card>
-                )}
+              <div ref={userListRef} className="px-1 mt-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">User List</div>
+                <div className="space-y-2">
+                  {isLoadingUsers && (
+                    <Card className="!rounded-sm !border-0 shadow-sm">
+                      <ChickenState
+                        title="Loading..."
+                        subtitle="Please wait while we fetch the latest records."
+                        titleClassName="text-[#008822]"
+                        subtitleClassName="text-[#008822]/80"
+                      />
+                    </Card>
+                  )}
 
-                {!isLoadingUsers && users.length === 0 && (
-                  <Card className="!rounded-sm !border-0 shadow-sm">
-                    <ChickenState
-                      title="No data yet"
-                      subtitle="No users yet."
-                    />
-                    <Button
-                      type="primary"
-                      block
-                      icon={<UserAddOutlined />}
-                      style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
-                      onClick={openAdd}
+                  {!isLoadingUsers && users.length === 0 && (
+                    <Card className="!rounded-sm !border-0 shadow-sm">
+                      <ChickenState
+                        title="No data yet"
+                        subtitle="No users yet."
+                      />
+                      <Button
+                        type="primary"
+                        block
+                        icon={<UserAddOutlined />}
+                        style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
+                        onClick={openAdd}
+                      >
+                        Add First User
+                      </Button>
+                    </Card>
+                  )}
+
+                  {!isLoadingUsers && users.map((user) => (
+                    <Card
+                      key={user.id}
+                      className={[
+                        "!rounded-sm !border-0 shadow-sm transition-all !mt-2 cursor-pointer",
+                        highlightedUserId === user.id ? "!ring-2 !ring-[#008822]/40" : "",
+                      ].join(" ")}
+                      bodyStyle={{ padding: 12 }}
+                      onClick={() => openEdit(user)}
                     >
-                      Add First User
-                    </Button>
-                  </Card>
-                )}
-
-                {!isLoadingUsers && users.map((user) => (
-                  <Card
-                    key={user.id}
-                    className={[
-                      "!rounded-sm !border-0 shadow-sm transition-all !mt-2 cursor-pointer",
-                      highlightedUserId === user.id ? "!ring-2 !ring-[#008822]/40" : "",
-                    ].join(" ")}
-                    bodyStyle={{ padding: 12 }}
-                    onClick={() => openEdit(user)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="h-10 w-10 rounded-full bg-[#00882220] text-[#006e1b] font-bold grid place-items-center">
-                        {initialsOf(user.fullName)}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-semibold text-slate-900 truncate">{user.fullName}</div>
-                          <Tag color={statusColors[user.status]} className="!mr-0">
-                            {user.status}
-                          </Tag>
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-full bg-[#00882220] text-[#006e1b] font-bold grid place-items-center">
+                          {initialsOf(user.fullName)}
                         </div>
 
-                        {user.userUuid && (
-                          <div className="text-[11px] text-slate-400 truncate">UUID: {user.userUuid}</div>
-                        )}
-                        <div className="mt-2">
-                          {user.buildingId === null && (
-                            <Tag className="!mr-0">All Building Access</Tag>
-                          )}
-                          {user.buildingId !== null && (
-                            <Tag className="!mr-0" color="geekblue">
-                              {buildingNameById.get(user.buildingId) ?? `Building ${user.buildingId}`}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-semibold text-slate-900 truncate">{user.fullName}</div>
+                            <Tag color={statusColors[user.status]} className="!mr-0">
+                              {user.status}
                             </Tag>
-                          )}
-                        </div>
+                          </div>
 
-                        <div className="flex items-center justify-between mt-2">
-                          <Tag color={roleColors[user.role]} className="!mr-0">
-                            {user.role}
-                          </Tag>
-                          <Text className="!text-[11px] !text-slate-400">
-                            {new Date(user.createdAt).toLocaleDateString()}
-                          </Text>
+                          {user.userUuid && (
+                            <div className="text-[11px] text-slate-400 truncate">UUID: {user.userUuid}</div>
+                          )}
+                          <div className="mt-2">
+                            {user.buildingId === null && (
+                              <Tag className="!mr-0">All Building Access</Tag>
+                            )}
+                            {user.buildingId !== null && (
+                              <Tag className="!mr-0" color="geekblue">
+                                {buildingNameById.get(user.buildingId) ?? `Building ${user.buildingId}`}
+                              </Tag>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            <Tag color={roleColors[user.role]} className="!mr-0">
+                              {user.role}
+                            </Tag>
+                            <Text className="!text-[11px] !text-slate-400">
+                              {new Date(user.createdAt).toLocaleDateString()}
+                            </Text>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="mx-auto w-full max-w-7xl">
+            <div className="mb-6 grid grid-cols-12 gap-4">
+              <div className="col-span-8 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-6 py-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Accounts Snapshot
+                </div>
+                <div className="mt-1 text-2xl font-bold text-slate-900">User Access Overview</div>
+                <div className="mt-4 grid grid-cols-4 gap-3">
+                  <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Total</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{totals.total}</div>
+                  </div>
+                  <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Active</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{totals.active}</div>
+                  </div>
+                  <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Admins</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{totals.admins}</div>
+                  </div>
+                  <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Supervisors</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{totals.supervisors}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Actions</div>
+                <div className="mt-1 text-base font-semibold text-slate-800">Manage Accounts</div>
+                <div className="mt-3 text-xs text-slate-500">
+                  Add new users or click an existing user card to edit account details.
+                </div>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  className="!mt-4 !h-10 !w-full !rounded-sm !font-semibold"
+                  style={{ backgroundColor: ACCENT, borderColor: ACCENT }}
+                  onClick={openAdd}
+                >
+                  Add User
+                </Button>
+              </div>
+            </div>
+
+            <div ref={userListRef} className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">User List</div>
+                <div className="text-xs text-slate-500">Total: {users.length}</div>
+              </div>
+
+              {isLoadingUsers && (
+                <Card className="!rounded-sm !border-0 shadow-sm mt-3">
+                  <ChickenState
+                    title="Loading..."
+                    subtitle="Please wait while we fetch the latest records."
+                    titleClassName="text-[#008822]"
+                    subtitleClassName="text-[#008822]/80"
+                  />
+                </Card>
+              )}
+
+              {!isLoadingUsers && users.length === 0 && (
+                <Card className="!rounded-sm !border-0 shadow-sm mt-3">
+                  <ChickenState
+                    title="No data yet"
+                    subtitle="No users yet."
+                  />
+                  <Button
+                    type="primary"
+                    block
+                    icon={<UserAddOutlined />}
+                    style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
+                    onClick={openAdd}
+                  >
+                    Add First User
+                  </Button>
+                </Card>
+              )}
+
+              {!isLoadingUsers && users.length > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {users.map((user) => (
+                    <Card
+                      key={user.id}
+                      className={[
+                        "!rounded-sm !border-0 shadow-sm transition-all cursor-pointer h-full",
+                        highlightedUserId === user.id ? "!ring-2 !ring-[#008822]/40" : "",
+                      ].join(" ")}
+                      bodyStyle={{ padding: 14 }}
+                      onClick={() => openEdit(user)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-full bg-[#00882220] text-[#006e1b] font-bold grid place-items-center">
+                          {initialsOf(user.fullName)}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-semibold text-slate-900 truncate">{user.fullName}</div>
+                            <Tag color={statusColors[user.status]} className="!mr-0">
+                              {user.status}
+                            </Tag>
+                          </div>
+
+                          {user.userUuid && (
+                            <div className="text-[11px] text-slate-400 truncate">UUID: {user.userUuid}</div>
+                          )}
+                          <div className="mt-2">
+                            {user.buildingId === null && (
+                              <Tag className="!mr-0">All Building Access</Tag>
+                            )}
+                            {user.buildingId !== null && (
+                              <Tag className="!mr-0" color="geekblue">
+                                {buildingNameById.get(user.buildingId) ?? `Building ${user.buildingId}`}
+                              </Tag>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            <Tag color={roleColors[user.role]} className="!mr-0">
+                              {user.role}
+                            </Tag>
+                            <Text className="!text-[11px] !text-slate-400">
+                              {new Date(user.createdAt).toLocaleDateString()}
+                            </Text>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Content>
 
-      {users.length > 0 && (
+      {isMobile && users.length > 0 && (
         <div className="fixed bottom-6 right-6 z-50">
           <Button
             type="primary"
