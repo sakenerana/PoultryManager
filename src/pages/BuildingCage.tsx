@@ -304,6 +304,7 @@ export default function BuildingCage() {
     takeOut: {},
   });
   const [isMetricModalOpen, setIsMetricModalOpen] = useState(false);
+  const [isMetricSubmitting, setIsMetricSubmitting] = useState(false);
   const [activeCageId, setActiveCageId] = useState<string | null>(null);
   const [activeMetric, setActiveMetric] = useState<EditableMetric>("mortality");
   const [metricDraft, setMetricDraft] = useState<number>(0);
@@ -953,6 +954,7 @@ export default function BuildingCage() {
     const reductionType = activeMetric === "takeOut" ? "take_out" : activeMetric;
 
     try {
+      setIsMetricSubmitting(true);
       const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
       if (!latestGrow) {
         setToastMessage("No grow record found for this building/date.");
@@ -1092,6 +1094,8 @@ export default function BuildingCage() {
     } catch (error) {
       setToastMessage(`Failed to save ${metricMeta[activeMetric].title.toLowerCase()}: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
+    } finally {
+      setIsMetricSubmitting(false);
     }
   };
 
@@ -1604,6 +1608,7 @@ export default function BuildingCage() {
               style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
               onClick={handleUpdateMetric}
               disabled={!isMetricValid}
+              loading={isMetricSubmitting}
             >
               Update
             </Button>
