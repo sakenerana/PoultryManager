@@ -11,6 +11,7 @@ const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 const BRAND = "#008822";
+const MAX_LOAD_TRANSACTIONS = 3;
 
 export default function BuildingLoadPage() {
   const navigate = useNavigate();
@@ -60,7 +61,7 @@ export default function BuildingLoadPage() {
   const grandTotal = useMemo(() => {
     return historyEntries.reduce((sum, entry) => sum + entry.total, 0);
   }, [historyEntries]);
-  const isCompleted = history.length >= 2;
+  const isCompleted = history.length >= MAX_LOAD_TRANSACTIONS;
 
   const fetchHistoryByStatus = async () => {
     const buildingId = Number(id);
@@ -222,9 +223,9 @@ export default function BuildingLoadPage() {
       }
 
       const transactionCountBeforeInsert = (existingTransactions ?? []).length;
-      if (transactionCountBeforeInsert >= 2) {
+      if (transactionCountBeforeInsert >= MAX_LOAD_TRANSACTIONS) {
         setToastType("error");
-        setToastMessage("Only 2 load transactions are allowed for this grow.");
+        setToastMessage(`Only ${MAX_LOAD_TRANSACTIONS} load transactions are allowed for this grow.`);
         setIsToastOpen(true);
         return;
       }
@@ -293,7 +294,8 @@ export default function BuildingLoadPage() {
       }
 
       const transactionCountAfterInsert = transactionCountBeforeInsert + 1;
-      const nextGrowStatus = transactionCountAfterInsert === 2 ? "Growing" : "Loading";
+      const nextGrowStatus =
+        transactionCountAfterInsert === MAX_LOAD_TRANSACTIONS ? "Growing" : "Loading";
       const { error: growStatusError } = await supabase
         .from(GROWS_TABLE)
         .update({ status: nextGrowStatus })
@@ -321,7 +323,7 @@ export default function BuildingLoadPage() {
 
   const isTotalValid =
     !isCompleted && totalInput.trim() !== "" && Number.isFinite(Number(totalInput)) && Number(totalInput) >= 0;
-  const remainingEntries = Math.max(0, 2 - history.length);
+  const remainingEntries = Math.max(0, MAX_LOAD_TRANSACTIONS - history.length);
   const handleSignOut = async () => {
     await signOutAndRedirect(navigate);
   };
@@ -475,7 +477,7 @@ export default function BuildingLoadPage() {
                   <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Entry Panel</div>
                   <div className="mt-1 text-lg font-semibold text-slate-900">Encode Load Count</div>
                   <div className="mt-4 text-sm text-slate-500">
-                    Only 2 load transactions are allowed for this grow.
+                    Only {MAX_LOAD_TRANSACTIONS} load transactions are allowed for this grow.
                   </div>
                   <div className="mt-4 rounded-sm bg-slate-50 px-4 py-3">
                     <div className="text-xs text-slate-500">Today Total</div>
