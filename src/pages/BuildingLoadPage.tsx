@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Layout, Button, Divider, Grid, Typography } from "antd";
+import { Layout, Button, Divider, Grid, Typography, Modal } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined } from "@ant-design/icons";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
@@ -11,7 +11,6 @@ const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 const BRAND = "#008822";
-const MAX_LOAD_TRANSACTIONS = 3;
 
 export default function BuildingLoadPage() {
   const navigate = useNavigate();
@@ -38,7 +37,10 @@ export default function BuildingLoadPage() {
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [isSaving, setIsSaving] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [activeGrowId, setActiveGrowId] = useState<number | null>(null);
+  const [activeGrowStatus, setActiveGrowStatus] = useState<string>("");
 
   const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
   const LOAD_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TABLE ?? "Load";
@@ -61,7 +63,7 @@ export default function BuildingLoadPage() {
   const grandTotal = useMemo(() => {
     return historyEntries.reduce((sum, entry) => sum + entry.total, 0);
   }, [historyEntries]);
-  const isCompleted = history.length >= MAX_LOAD_TRANSACTIONS;
+  const isCompleted = activeGrowStatus.toLowerCase() === "growing";
 
   const fetchHistoryByStatus = async () => {
     const buildingId = Number(id);
@@ -85,6 +87,9 @@ export default function BuildingLoadPage() {
 
       const growRows = (grows ?? []) as Array<{ id: number; status?: string | null }>;
       const growIds = growRows.map((row) => row.id);
+      const latestGrow = growRows[growRows.length - 1] ?? null;
+      setActiveGrowId(latestGrow?.id ?? null);
+      setActiveGrowStatus(latestGrow?.status ?? "");
       if (growIds.length === 0) {
         setHistoryEntries([]);
         return;
@@ -146,6 +151,8 @@ export default function BuildingLoadPage() {
       setToastMessage(message);
       setIsToastOpen(true);
       setHistoryEntries([]);
+      setActiveGrowId(null);
+      setActiveGrowStatus("");
     } finally {
       setIsHistoryLoading(false);
     }
@@ -184,6 +191,13 @@ export default function BuildingLoadPage() {
         throw new Error(activeGrowError.message || "Failed to check existing transactions.");
       }
 
+      if (typeof activeGrow?.status === "string" && activeGrow.status.toLowerCase() === "growing") {
+        setToastType("error");
+        setToastMessage("This building load is already completed.");
+        setIsToastOpen(true);
+        return;
+      }
+
       const growUpsertPayload: Record<string, unknown> = {
         building_id: buildingId,
         status: typeof activeGrow?.status === "string" ? activeGrow.status : "Loading",
@@ -201,33 +215,6 @@ export default function BuildingLoadPage() {
 
       if (growError || !grow?.id) {
         throw new Error(growError?.message || "Failed to upsert grow record.");
-      }
-
-      const { data: loadsBeforeInsert, error: loadsBeforeInsertError } = await supabase
-        .from(LOAD_TABLE)
-        .select("id")
-        .eq("grow_id", grow.id);
-
-      if (loadsBeforeInsertError) {
-        throw new Error(loadsBeforeInsertError.message || "Failed to check load records.");
-      }
-
-      const loadIdsBeforeInsert = (loadsBeforeInsert ?? []).map((row: { id: number }) => row.id);
-      const { data: existingTransactions, error: existingTransactionsError } = await supabase
-        .from(LOAD_TRANSACTIONS_TABLE)
-        .select("id")
-        .in("load_id", loadIdsBeforeInsert.length > 0 ? loadIdsBeforeInsert : [-1]);
-
-      if (existingTransactionsError) {
-        throw new Error(existingTransactionsError.message || "Failed to check existing load transactions.");
-      }
-
-      const transactionCountBeforeInsert = (existingTransactions ?? []).length;
-      if (transactionCountBeforeInsert >= MAX_LOAD_TRANSACTIONS) {
-        setToastType("error");
-        setToastMessage(`Only ${MAX_LOAD_TRANSACTIONS} load transactions are allowed for this grow.`);
-        setIsToastOpen(true);
-        return;
       }
 
       const { data: load, error: loadError } = await supabase
@@ -293,18 +280,6 @@ export default function BuildingLoadPage() {
         throw new Error(growTotalError.message || "Failed to update grow total_animals.");
       }
 
-      const transactionCountAfterInsert = transactionCountBeforeInsert + 1;
-      const nextGrowStatus =
-        transactionCountAfterInsert === MAX_LOAD_TRANSACTIONS ? "Growing" : "Loading";
-      const { error: growStatusError } = await supabase
-        .from(GROWS_TABLE)
-        .update({ status: nextGrowStatus })
-        .eq("id", grow.id);
-
-      if (growStatusError) {
-        throw new Error(growStatusError.message || "Failed to update grow status.");
-      }
-
       await fetchHistoryByStatus();
       setTotalInput("");
       setToastType("success");
@@ -323,7 +298,90 @@ export default function BuildingLoadPage() {
 
   const isTotalValid =
     !isCompleted && totalInput.trim() !== "" && Number.isFinite(Number(totalInput)) && Number(totalInput) >= 0;
-  const remainingEntries = Math.max(0, MAX_LOAD_TRANSACTIONS - history.length);
+  const handleComplete = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) {
+      setToastType("error");
+      setToastMessage("Invalid building id.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Complete Building Load",
+        content: "Are you sure you want to complete?",
+        okText: "Complete",
+        cancelText: "Cancel",
+        okButtonProps: {
+          style: { backgroundColor: BRAND, borderColor: BRAND },
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+
+    setIsCompleting(true);
+    try {
+      let growId = activeGrowId;
+      let growStatus = activeGrowStatus;
+
+      if (growId == null) {
+        const { data: activeGrow, error: activeGrowError } = await supabase
+          .from(GROWS_TABLE)
+          .select("id, status")
+          .eq("building_id", buildingId)
+          .in("status", ["Loading", "Growing"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (activeGrowError) {
+          throw new Error(activeGrowError.message || "Failed to load active grow.");
+        }
+
+        growId = activeGrow?.id ?? null;
+        growStatus = activeGrow?.status ?? "";
+      }
+
+      if (growId == null) {
+        setToastType("error");
+        setToastMessage("No active load session found to complete.");
+        setIsToastOpen(true);
+        return;
+      }
+
+      if (typeof growStatus === "string" && growStatus.toLowerCase() === "growing") {
+        setToastType("success");
+        setToastMessage("This building load is already completed.");
+        setIsToastOpen(true);
+        return;
+      }
+
+      const { error: growStatusError } = await supabase
+        .from(GROWS_TABLE)
+        .update({ status: "Growing" })
+        .eq("id", growId);
+
+      if (growStatusError) {
+        throw new Error(growStatusError.message || "Failed to complete building load.");
+      }
+
+      await fetchHistoryByStatus();
+      setToastType("success");
+      setToastMessage("Building load completed successfully.");
+      setIsToastOpen(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to complete building load. Please try again.";
+      setToastType("error");
+      setToastMessage(message);
+      setIsToastOpen(true);
+    } finally {
+      setIsCompleting(false);
+    }
+  };
   const handleSignOut = async () => {
     await signOutAndRedirect(navigate);
   };
@@ -441,6 +499,16 @@ export default function BuildingLoadPage() {
               >
                 {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
               </button>
+              {!isCompleted && history.length > 0 && (
+                <button
+                  type="button"
+                  className="text-base mt-3 w-full rounded-lg h-11 border border-[#008822] text-[#008822] font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={handleComplete}
+                  disabled={isSaving || isCompleting}
+                >
+                  {isCompleting ? "Completing..." : "Complete"}
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -460,8 +528,8 @@ export default function BuildingLoadPage() {
                     <div className="mt-1 text-xl font-bold text-slate-900">{history.length}</div>
                   </div>
                   <div className="rounded-sm border border-emerald-100 bg-white/90 px-4 py-3 text-right">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Remaining Entries</div>
-                    <div className="mt-1 text-xl font-bold text-slate-900">{remainingEntries}</div>
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Session Status</div>
+                    <div className="mt-1 text-xl font-bold text-slate-900">{isCompleted ? "Completed" : "Open"}</div>
                   </div>
                   <div className="rounded-sm border border-emerald-100 bg-white/90 px-4 py-3 text-right">
                     <div className="text-[11px] uppercase tracking-wide text-slate-500">Grand Total</div>
@@ -477,7 +545,7 @@ export default function BuildingLoadPage() {
                   <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Entry Panel</div>
                   <div className="mt-1 text-lg font-semibold text-slate-900">Encode Load Count</div>
                   <div className="mt-4 text-sm text-slate-500">
-                    Only {MAX_LOAD_TRANSACTIONS} load transactions are allowed for this grow.
+                    Save load entries as needed, then mark the session complete when you are done.
                   </div>
                   <div className="mt-4 rounded-sm bg-slate-50 px-4 py-3">
                     <div className="text-xs text-slate-500">Today Total</div>
@@ -500,6 +568,16 @@ export default function BuildingLoadPage() {
                   >
                     {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
                   </button>
+                  {!isCompleted && history.length > 0 && (
+                    <button
+                      type="button"
+                      className="mt-3 h-11 w-full rounded-lg border border-[#008822] bg-white text-base font-semibold text-[#008822] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handleComplete}
+                      disabled={isSaving || isCompleting}
+                    >
+                      {isCompleting ? "Completing..." : "Complete"}
+                    </button>
+                  )}
                 </div>
               </div>
 
