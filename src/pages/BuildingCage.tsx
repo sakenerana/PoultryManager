@@ -311,6 +311,7 @@ export default function BuildingCage() {
   const [metricRemarksDraft, setMetricRemarksDraft] = useState<string>("");
   const [weightOverrides, setWeightOverrides] = useState<Record<string, Record<string, WeightEntry>>>({});
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  const [isWeightSubmitting, setIsWeightSubmitting] = useState(false);
   const [weightDraft, setWeightDraft] = useState<WeightEntry>({
     frontWeights: [],
     middleWeights: [],
@@ -319,6 +320,7 @@ export default function BuildingCage() {
   const [addChickenRows, setAddChickenRows] = useState<number>(1);
   const [batchWeightToSplit, setBatchWeightToSplit] = useState<number>(0);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAddSubmitting, setIsAddSubmitting] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
@@ -506,6 +508,7 @@ export default function BuildingCage() {
     }
 
     try {
+      setIsAddSubmitting(true);
       const values = await addForm.validateFields();
       const buildingId = Number(id);
       if (!Number.isFinite(buildingId)) {
@@ -535,6 +538,8 @@ export default function BuildingCage() {
       if (error && typeof error === "object" && "errorFields" in error) return;
       setToastMessage(`Failed to add cage: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
+    } finally {
+      setIsAddSubmitting(false);
     }
   };
 
@@ -1137,6 +1142,7 @@ export default function BuildingCage() {
     const avgWeight = totalChicken > 0 ? totalWeight / totalChicken : 0;
 
     try {
+      setIsWeightSubmitting(true);
       const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
       if (!latestGrow) {
         setToastMessage("No grow record found for this building/date.");
@@ -1182,6 +1188,8 @@ export default function BuildingCage() {
     } catch (error) {
       setToastMessage(`Failed to save average weight: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
+    } finally {
+      setIsWeightSubmitting(false);
     }
   };
 
@@ -1524,6 +1532,7 @@ export default function BuildingCage() {
               className="!w-full !rounded-lg !h-12"
               style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
               onClick={handleSubmitAdd}
+              loading={isAddSubmitting}
             >
               Add Cage
             </Button>
@@ -1908,6 +1917,7 @@ export default function BuildingCage() {
               className="!flex-1"
               style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
               onClick={handleUpdateWeight}
+              loading={isWeightSubmitting}
             >
               Update
             </Button>

@@ -329,6 +329,7 @@ export default function BuildingOverviewPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAddSubmitting, setIsAddSubmitting] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [statsByBuildingId, setStatsByBuildingId] = useState<Record<string, BuildingStats>>({});
@@ -768,6 +769,7 @@ export default function BuildingOverviewPage() {
 
   const handleSubmitAdd = async () => {
     try {
+      setIsAddSubmitting(true);
       const values = await addForm.validateFields();
       await addBuilding({ name: values.name });
       await fetchBuildings();
@@ -778,6 +780,8 @@ export default function BuildingOverviewPage() {
       if (error && typeof error === "object" && "errorFields" in error) return;
       setToastMessage(`Failed to add building: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
+    } finally {
+      setIsAddSubmitting(false);
     }
   };
 
@@ -1108,6 +1112,7 @@ export default function BuildingOverviewPage() {
               className="!w-full !rounded-lg !h-12"
               style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
               onClick={handleSubmitAdd}
+              loading={isAddSubmitting}
             >
               Add Building
             </Button>
