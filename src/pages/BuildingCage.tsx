@@ -11,7 +11,6 @@ import { useAuth } from "../context/AuthContext";
 import supabase from "../utils/supabase";
 import {
   addBodyWeightLog,
-  loadBodyWeightLogsByBuildingId,
   loadBodyWeightLogsByBuildingIdAndDate,
   updateBodyWeightLog,
 } from "../controller/bodyWeightCrud";
@@ -428,28 +427,7 @@ export default function BuildingCage() {
     if (!Number.isFinite(buildingId)) return;
 
     try {
-      const logs = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
-      let logsForDisplay = logs;
-
-      if (logsForDisplay.length === 0) {
-        const allLogs = await loadBodyWeightLogsByBuildingId(buildingId);
-        const selectedDayEnd = dayjs(selectedDate).add(1, "day").startOf("day").valueOf();
-        const latestByCage: Record<string, (typeof allLogs)[number]> = {};
-
-        allLogs
-          .filter((row) => dayjs(row.createdAt).valueOf() < selectedDayEnd)
-          .forEach((row) => {
-            if (row.subbuildingId == null) return;
-            const cageId = String(row.subbuildingId);
-            const previous = latestByCage[cageId];
-            if (!previous || dayjs(row.createdAt).isAfter(dayjs(previous.createdAt))) {
-              latestByCage[cageId] = row;
-            }
-          });
-
-        logsForDisplay = Object.values(latestByCage);
-      }
-
+      const logsForDisplay = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
       const byCage: Record<string, WeightEntry> = {};
 
       logsForDisplay.forEach((row) => {
@@ -770,28 +748,13 @@ export default function BuildingCage() {
 
       if (selectedDayGrowLogError) throw selectedDayGrowLogError;
 
-      let matchedGrowLogRow = selectedDayGrowLogRow;
-      if (!matchedGrowLogRow) {
-        const { data: previousGrowLogRow, error: previousGrowLogError } = await supabase
-          .from(GROW_LOGS_TABLE)
-          .select("id, created_at, grow_id, subbuilding_id, actual_total_animals, mortality, thinning, take_out")
-          .in("grow_id", growIds)
-          .lt("created_at", selectedDayStart)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (previousGrowLogError) throw previousGrowLogError;
-        matchedGrowLogRow = previousGrowLogRow;
-      }
-
-      const selectedDayGrowLog = matchedGrowLogRow
+      const selectedDayGrowLog = selectedDayGrowLogRow
         ? {
-          createdAt: matchedGrowLogRow.created_at,
-          growId: matchedGrowLogRow.grow_id,
-          mortality: matchedGrowLogRow.mortality,
-          thinning: matchedGrowLogRow.thinning,
-          takeOut: matchedGrowLogRow.take_out,
+          createdAt: selectedDayGrowLogRow.created_at,
+          growId: selectedDayGrowLogRow.grow_id,
+          mortality: selectedDayGrowLogRow.mortality,
+          thinning: selectedDayGrowLogRow.thinning,
+          takeOut: selectedDayGrowLogRow.take_out,
         }
         : null;
 
