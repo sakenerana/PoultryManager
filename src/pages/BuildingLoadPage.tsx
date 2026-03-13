@@ -4,6 +4,7 @@ import { Layout, Button, Divider, Grid, Typography, Modal } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined } from "@ant-design/icons";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
@@ -11,10 +12,17 @@ const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 const BRAND = "#008822";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+
+type UserAccess = {
+  role: "Admin" | "Supervisor" | "Staff" | null;
+  isActive: boolean;
+};
 
 export default function BuildingLoadPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const { id } = useParams();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -41,6 +49,7 @@ export default function BuildingLoadPage() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [activeGrowId, setActiveGrowId] = useState<number | null>(null);
   const [activeGrowStatus, setActiveGrowStatus] = useState<string>("");
+  const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
 
   const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
   const LOAD_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TABLE ?? "Load";
@@ -64,6 +73,49 @@ export default function BuildingLoadPage() {
     return historyEntries.reduce((sum, entry) => sum + entry.total, 0);
   }, [historyEntries]);
   const isCompleted = activeGrowStatus.toLowerCase() === "growing";
+  const canUndoCompletion = userRole === "Admin" && isCompleted;
+
+  const resolveUserAccess = async (): Promise<UserAccess> => {
+    if (!user?.id) return { role: null, isActive: false };
+
+    const { data, error } = await supabase
+      .from(USERS_TABLE)
+      .select("role, status")
+      .eq("user_uuid", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || "Failed to load user access.");
+    }
+
+    if (!data) {
+      return { role: null, isActive: false };
+    }
+
+    const normalizedRole =
+      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+
+    return {
+      role: normalizedRole,
+      isActive: data.status !== "Inactive",
+    };
+  };
+
+  const fetchUserAccess = async () => {
+    try {
+      const access = await resolveUserAccess();
+      setUserRole(access.isActive ? access.role : null);
+    } catch (error) {
+      setUserRole(null);
+      const message =
+        error instanceof Error ? error.message : "Unable to load user access. Please try again.";
+      setToastType("error");
+      setToastMessage(message);
+      setIsToastOpen(true);
+    }
+  };
 
   const fetchHistoryByStatus = async () => {
     const buildingId = Number(id);
@@ -161,6 +213,10 @@ export default function BuildingLoadPage() {
   useEffect(() => {
     void fetchHistoryByStatus();
   }, [id, selectedDate]);
+
+  useEffect(() => {
+    void fetchUserAccess();
+  }, [user?.id]);
 
   const handleSaveOrUpdate = async () => {
     const parsed = Number(totalInput);
@@ -382,6 +438,99 @@ export default function BuildingLoadPage() {
       setIsCompleting(false);
     }
   };
+
+  const handleUndoCompletion = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) {
+      setToastType("error");
+      setToastMessage("Invalid building id.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    if (userRole !== "Admin") {
+      setToastType("error");
+      setToastMessage("Only Admin can undo the completion.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Undo Building Load Completion",
+        content: "Are you sure you want to undo the completion?",
+        okText: "Undo Completion",
+        cancelText: "Cancel",
+        okButtonProps: {
+          style: { backgroundColor: BRAND, borderColor: BRAND },
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+
+    setIsCompleting(true);
+    try {
+      let growId = activeGrowId;
+      let growStatus = activeGrowStatus;
+
+      if (growId == null) {
+        const { data: activeGrow, error: activeGrowError } = await supabase
+          .from(GROWS_TABLE)
+          .select("id, status")
+          .eq("building_id", buildingId)
+          .in("status", ["Loading", "Growing"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (activeGrowError) {
+          throw new Error(activeGrowError.message || "Failed to load active grow.");
+        }
+
+        growId = activeGrow?.id ?? null;
+        growStatus = activeGrow?.status ?? "";
+      }
+
+      if (growId == null) {
+        setToastType("error");
+        setToastMessage("No completed load session found to undo.");
+        setIsToastOpen(true);
+        return;
+      }
+
+      if (typeof growStatus !== "string" || growStatus.toLowerCase() !== "growing") {
+        setToastType("error");
+        setToastMessage("Only completed building loads can be undone.");
+        setIsToastOpen(true);
+        return;
+      }
+
+      const { error: growStatusError } = await supabase
+        .from(GROWS_TABLE)
+        .update({ status: "Loading" })
+        .eq("id", growId);
+
+      if (growStatusError) {
+        throw new Error(growStatusError.message || "Failed to undo building load completion.");
+      }
+
+      await fetchHistoryByStatus();
+      setToastType("success");
+      setToastMessage("Building load completion has been undone.");
+      setIsToastOpen(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to undo building load completion. Please try again.";
+      setToastType("error");
+      setToastMessage(message);
+      setIsToastOpen(true);
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await signOutAndRedirect(navigate);
   };
@@ -509,6 +658,16 @@ export default function BuildingLoadPage() {
                   {isCompleting ? "Completing..." : "Complete"}
                 </button>
               )}
+              {canUndoCompletion && (
+                <button
+                  type="button"
+                  className="text-base mt-3 w-full rounded-lg h-11 border border-[#d97706] text-[#d97706] font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={handleUndoCompletion}
+                  disabled={isSaving || isCompleting}
+                >
+                  {isCompleting ? "Undoing..." : "Undo the completion"}
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -576,6 +735,16 @@ export default function BuildingLoadPage() {
                       disabled={isSaving || isCompleting}
                     >
                       {isCompleting ? "Completing..." : "Complete"}
+                    </button>
+                  )}
+                  {canUndoCompletion && (
+                    <button
+                      type="button"
+                      className="mt-3 h-11 w-full rounded-lg border border-[#d97706] bg-white text-base font-semibold text-[#d97706] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handleUndoCompletion}
+                      disabled={isSaving || isCompleting}
+                    >
+                      {isCompleting ? "Undoing..." : "Undo the completion"}
                     </button>
                   )}
                 </div>
