@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs, Select } from "antd";
+import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs, Select, Popconfirm } from "antd";
 import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
@@ -69,12 +69,11 @@ const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLo
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 const toNumberArray = (value: unknown): number[] => {
-  if (!Array.isArray(value)) return [0];
+  if (!Array.isArray(value)) return [];
   const mapped = value
     .map((item) => Number(item))
-    .filter((n) => Number.isFinite(n))
-    .map((n) => Math.max(0, n));
-  return mapped.length > 0 ? mapped : [0];
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return mapped;
 };
 
 const mapSubBuildingToCage = (record: SubBuildingRecord): Cage => ({
@@ -1093,6 +1092,12 @@ export default function BuildingCage() {
       middleWeights,
       backWeights,
     };
+    const hasInvalidWeightRows = [...clean.frontWeights, ...clean.middleWeights, ...clean.backWeights].some((w) => w <= 0);
+    if (hasInvalidWeightRows) {
+      setToastMessage("Zero values are not allowed. Please enter a value greater than 0 for all rows.");
+      setIsToastOpen(true);
+      return;
+    }
 
     const totalWeight =
       clean.frontWeights.reduce((sum, w) => sum + w, 0) +
@@ -1103,6 +1108,11 @@ export default function BuildingCage() {
       clean.middleWeights.length +
       clean.backWeights.length;
     const avgWeight = totalChicken > 0 ? totalWeight / totalChicken : 0;
+    if (avgWeight <= 0) {
+      setToastMessage("Average weight is required.");
+      setIsToastOpen(true);
+      return;
+    }
 
     try {
       setIsWeightSubmitting(true);
@@ -1160,6 +1170,13 @@ export default function BuildingCage() {
   const totalMiddleWeight = weightDraft.middleWeights.reduce((sum, w) => sum + w, 0);
   const totalBackWeight = weightDraft.backWeights.reduce((sum, w) => sum + w, 0);
   const totalWeight = totalFrontWeight + totalMiddleWeight + totalBackWeight;
+  const totalChickenWeightRows =
+    weightDraft.frontWeights.length + weightDraft.middleWeights.length + weightDraft.backWeights.length;
+  const avgWeightDraft = totalChickenWeightRows > 0 ? totalWeight / totalChickenWeightRows : 0;
+  const hasInvalidWeightRows = [...weightDraft.frontWeights, ...weightDraft.middleWeights, ...weightDraft.backWeights].some(
+    (w) => w <= 0
+  );
+  const isWeightValid = avgWeightDraft > 0 && !hasInvalidWeightRows;
 
   const addChickenRowsToSection = (section: keyof WeightEntry) => {
     const rowsToAdd = Math.max(1, Math.floor(Number(addChickenRows) || 1));
@@ -1702,10 +1719,15 @@ export default function BuildingCage() {
                             inputMode="decimal"
                             className="!w-full"
                             styles={{ input: { fontSize: 16 } }}
+                            status={isTodaySelected && weight <= 0 ? "error" : undefined}
                             disabled={!isTodaySelected}
                           />
-                          <Button
-                            onClick={() =>
+                          <Popconfirm
+                            title="Remove entry"
+                            description="Are you sure you want to remove this weight?"
+                            okText="Yes"
+                            cancelText="No"
+                            onConfirm={() =>
                               setWeightDraft((prev) => ({
                                 ...prev,
                                 frontWeights: prev.frontWeights.filter((_, i) => i !== index),
@@ -1713,8 +1735,10 @@ export default function BuildingCage() {
                             }
                             disabled={!isTodaySelected}
                           >
-                            Remove
-                          </Button>
+                            <Button disabled={!isTodaySelected}>
+                              Remove
+                            </Button>
+                          </Popconfirm>
                         </div>
                       ))}
                       <Button
@@ -1765,10 +1789,15 @@ export default function BuildingCage() {
                             inputMode="decimal"
                             className="!w-full"
                             styles={{ input: { fontSize: 16 } }}
+                            status={isTodaySelected && weight <= 0 ? "error" : undefined}
                             disabled={!isTodaySelected}
                           />
-                          <Button
-                            onClick={() =>
+                          <Popconfirm
+                            title="Remove entry"
+                            description="Are you sure you want to remove this weight?"
+                            okText="Yes"
+                            cancelText="No"
+                            onConfirm={() =>
                               setWeightDraft((prev) => ({
                                 ...prev,
                                 middleWeights: prev.middleWeights.filter((_, i) => i !== index),
@@ -1776,8 +1805,10 @@ export default function BuildingCage() {
                             }
                             disabled={!isTodaySelected}
                           >
-                            Remove
-                          </Button>
+                            <Button disabled={!isTodaySelected}>
+                              Remove
+                            </Button>
+                          </Popconfirm>
                         </div>
                       ))}
                       <Button
@@ -1828,10 +1859,15 @@ export default function BuildingCage() {
                             inputMode="decimal"
                             className="!w-full"
                             styles={{ input: { fontSize: 16 } }}
+                            status={isTodaySelected && weight <= 0 ? "error" : undefined}
                             disabled={!isTodaySelected}
                           />
-                          <Button
-                            onClick={() =>
+                          <Popconfirm
+                            title="Remove entry"
+                            description="Are you sure you want to remove this weight?"
+                            okText="Yes"
+                            cancelText="No"
+                            onConfirm={() =>
                               setWeightDraft((prev) => ({
                                 ...prev,
                                 backWeights: prev.backWeights.filter((_, i) => i !== index),
@@ -1839,8 +1875,10 @@ export default function BuildingCage() {
                             }
                             disabled={!isTodaySelected}
                           >
-                            Remove
-                          </Button>
+                            <Button disabled={!isTodaySelected}>
+                              Remove
+                            </Button>
+                          </Popconfirm>
                         </div>
                       ))}
                       <Button
@@ -1868,6 +1906,13 @@ export default function BuildingCage() {
               maximumFractionDigits: 2,
             })} kg
           </div>
+          {isTodaySelected && !isWeightValid && (
+            <div className="text-xs text-red-500">
+              {hasInvalidWeightRows
+                ? "Zero values are not allowed. Please enter a value greater than 0 for all rows."
+                : "Average weight is required."}
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex gap-2">
@@ -1880,6 +1925,7 @@ export default function BuildingCage() {
               className="!flex-1"
               style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
               onClick={handleUpdateWeight}
+              disabled={!isWeightValid}
               loading={isWeightSubmitting}
             >
               Update
