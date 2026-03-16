@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, InputNumber, Tabs, Select, Popconfirm } from "antd";
-import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Input, InputNumber, Tabs, Select, Popconfirm } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
+import { FaSignOutAlt } from "react-icons/fa";
+import { IoMdArrowRoundBack } from "react-icons/io";
+import { IoHome } from "react-icons/io5";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import { loadSubBuildingsByBuildingId } from "../controller/subbuildingsCrud";
 import type { SubBuildingRecord } from "../type/subbuildings.type";
-import { useAuth } from "../context/AuthContext";
 import supabase from "../utils/supabase";
 import {
   addBodyWeightLog,
@@ -55,18 +58,18 @@ type GrowLogPreview = {
   thinning: number;
   takeOut: number;
 } | null;
-type UserAccess = {
-  role: "Admin" | "Supervisor" | "Staff" | null;
-  isActive: boolean;
-};
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
-const SUBBUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_SUBBUILDINGS_TABLE ?? "Subbuildings";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+
+type UserAccess = {
+  role: "Admin" | "Supervisor" | "Staff" | null;
+  isActive: boolean;
+};
 
 const toNumberArray = (value: unknown): number[] => {
   if (!Array.isArray(value)) return [];
@@ -283,14 +286,20 @@ function CageRow({
 
 export default function BuildingCage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+  const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
   const [cages, setCages] = useState<Cage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
-  const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const dateParam = searchParams.get("date");
+    return dateParam && dayjs(dateParam, "YYYY-MM-DD", true).isValid()
+      ? dateParam
+      : dayjs().format("YYYY-MM-DD");
+  });
   const [metricOverrides, setMetricOverrides] = useState<Record<EditableMetric, Record<string, Record<string, number>>>>({
     mortality: {},
     thinning: {},
@@ -317,55 +326,12 @@ export default function BuildingCage() {
   });
   const [addChickenRows, setAddChickenRows] = useState<number>(1);
   const [batchWeightToSplit, setBatchWeightToSplit] = useState<number>(0);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isAddSubmitting, setIsAddSubmitting] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
   const [selectedBuildingName, setSelectedBuildingName] = useState<string>("");
   const [isLatestGrowHarvested, setIsLatestGrowHarvested] = useState(false);
   const [growLogPreview, setGrowLogPreview] = useState<GrowLogPreview>(null);
-  const [addForm] = Form.useForm();
-  const canManageCages = userRole === "Admin" || userRole === "Supervisor";
-
-  const resolveUserAccess = async (): Promise<UserAccess> => {
-    if (!user?.id) return { role: null, isActive: false };
-
-    const { data, error } = await supabase
-      .from(USERS_TABLE)
-      .select("role, status")
-      .eq("user_uuid", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(error.message || "Failed to load user access.");
-    }
-
-    if (!data) {
-      return { role: null, isActive: false };
-    }
-
-    const normalizedRole =
-      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
-
-    return {
-      role: normalizedRole,
-      isActive: data.status !== "Inactive",
-    };
-  };
-
-  const fetchUserAccess = async () => {
-    try {
-      const access = await resolveUserAccess();
-      setUserRole(access.isActive ? access.role : null);
-    } catch (error) {
-      setUserRole(null);
-      setToastMessage(`Failed to load user access: ${getErrorMessage(error)}`);
-      setIsToastOpen(true);
-    }
-  };
+  const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
 
   const fetchSelectedBuildingName = async () => {
     const buildingId = Number(id);
@@ -417,16 +383,15 @@ export default function BuildingCage() {
     void fetchSelectedBuildingName();
   }, [id]);
 
-  useEffect(() => {
-    void fetchUserAccess();
-  }, [user?.id]);
-
   const fetchBodyWeightLogsByDate = async () => {
     const buildingId = Number(id);
     if (!Number.isFinite(buildingId)) return;
 
     try {
-      const logsForDisplay = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
+      const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
+      const logsForDisplay = latestGrow
+        ? (await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate)).filter((row) => row.growId === latestGrow.id)
+        : [];
       const byCage: Record<string, WeightEntry> = {};
 
       logsForDisplay.forEach((row) => {
@@ -455,70 +420,71 @@ export default function BuildingCage() {
   const handleDateChange = (date: dayjs.Dayjs | null) => {
     const nextDate = date ? date.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
     setSelectedDate(nextDate);
+    setSearchParams({ date: nextDate });
     setToastMessage(`Filtered date: ${dayjs(nextDate).format("MMM D, YYYY")}`);
     setIsToastOpen(true);
   };
 
+  useEffect(() => {
+    const dateParam = searchParams.get("date");
+    const nextDate =
+      dateParam && dayjs(dateParam, "YYYY-MM-DD", true).isValid()
+        ? dateParam
+        : dayjs().format("YYYY-MM-DD");
+
+    setSelectedDate((current) => (current === nextDate ? current : nextDate));
+  }, [searchParams]);
+
+  const resolveUserAccess = async (): Promise<UserAccess> => {
+    if (!user?.id) return { role: null, isActive: false };
+
+    const { data, error } = await supabase
+      .from(USERS_TABLE)
+      .select("role, status")
+      .eq("user_uuid", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || "Failed to load user access.");
+    }
+
+    if (!data) {
+      return { role: null, isActive: false };
+    }
+
+    const normalizedRole =
+      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+
+    return {
+      role: normalizedRole,
+      isActive: data.status !== "Inactive",
+    };
+  };
+
+  useEffect(() => {
+    const fetchUserAccess = async () => {
+      try {
+        const access = await resolveUserAccess();
+        setUserRole(access.isActive ? access.role : null);
+      } catch (error) {
+        setUserRole(null);
+        setToastMessage(`Failed to load user access: ${getErrorMessage(error)}`);
+        setIsToastOpen(true);
+      }
+    };
+
+    void fetchUserAccess();
+  }, [user?.id]);
+
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
   };
-  const handleOpenAdd = () => {
-    if (!canManageCages) {
-      setToastMessage("Please contact an Admin or Supervisor to add a new cage.");
-      setIsToastOpen(true);
-      return;
-    }
-    const nextIndex = filteredCages.length + 1;
-    addForm.setFieldsValue({ name: `Cage ${nextIndex}` });
-    setIsAddModalOpen(true);
-  };
-  const handleCloseAdd = () => {
-    setIsAddModalOpen(false);
-    addForm.resetFields();
-  };
 
-  const handleSubmitAdd = async () => {
-    if (!canManageCages) {
-      setToastMessage("Please contact an Admin or Supervisor to add a new cage.");
-      setIsToastOpen(true);
-      return;
-    }
-
-    try {
-      setIsAddSubmitting(true);
-      const values = await addForm.validateFields();
-      const buildingId = Number(id);
-      if (!Number.isFinite(buildingId)) {
-        setToastMessage("Invalid building ID.");
-        setIsToastOpen(true);
-        return;
-      }
-
-      const { error } = await supabase
-        .from(SUBBUILDINGS_TABLE)
-        .insert([
-          {
-            building_id: buildingId,
-            name: String(values.name ?? "").trim(),
-          },
-        ]);
-
-      if (error) {
-        throw error;
-      }
-
-      await fetchCagesByBuildingId();
-      handleCloseAdd();
-      setToastMessage(`Successfully added ${values.name}`);
-      setIsToastOpen(true);
-    } catch (error) {
-      if (error && typeof error === "object" && "errorFields" in error) return;
-      setToastMessage(`Failed to add cage: ${getErrorMessage(error)}`);
-      setIsToastOpen(true);
-    } finally {
-      setIsAddSubmitting(false);
-    }
-  };
+  const isPreviousDateSelected = dayjs(selectedDate).isBefore(dayjs().format("YYYY-MM-DD"), "day");
+  const canEditSelectedDate = !isPreviousDateSelected || userRole === "Admin";
+  const selectedDateTimestamp = `${selectedDate}T12:00:00+00:00`;
 
   const getStatsForCage = useMemo(() => {
     return (cage: Cage): CageStats => {
@@ -631,11 +597,11 @@ export default function BuildingCage() {
   const resolveGrowForDate = async (
     buildingId: number,
     date: string
-  ): Promise<{ id: number; totalAnimals: number; isHarvested: boolean } | null> => {
+  ): Promise<{ id: number; totalAnimals: number; isHarvested: boolean; createdAt: string } | null> => {
     const endOfDay = dayjs(date).add(1, "day").startOf("day").toISOString();
     const { data, error } = await supabase
       .from(GROWS_TABLE)
-      .select("id, total_animals, status, is_harvested")
+      .select("id, total_animals, status, is_harvested, created_at")
       .eq("building_id", buildingId)
       .lt("created_at", endOfDay)
       .order("created_at", { ascending: false })
@@ -652,7 +618,7 @@ export default function BuildingCage() {
     const isHarvested =
       data?.is_harvested === true ||
       (typeof data?.status === "string" && data.status.toLowerCase() === "harvested");
-    return { id: idValue, totalAnimals, isHarvested };
+    return { id: idValue, totalAnimals, isHarvested, createdAt: data.created_at };
   };
 
   const resolveLatestGrowStatus = async (
@@ -705,18 +671,9 @@ export default function BuildingCage() {
     if (!Number.isFinite(buildingId)) return;
 
     try {
-      const { data: growRows, error: growRowsError } = await supabase
-        .from(GROWS_TABLE)
-        .select("id")
-        .eq("building_id", buildingId);
+      const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
 
-      if (growRowsError) throw growRowsError;
-
-      const growIds = ((growRows ?? []) as Array<{ id: number | null }>).flatMap((row) =>
-        typeof row.id === "number" ? [row.id] : []
-      );
-
-      if (growIds.length === 0) {
+      if (!latestGrow) {
         setGrowLogPreview(null);
         setMetricOverrides((prev) => ({
           ...prev,
@@ -738,7 +695,7 @@ export default function BuildingCage() {
       const { data: selectedDayGrowLogRow, error: selectedDayGrowLogError } = await supabase
         .from(GROW_LOGS_TABLE)
         .select("id, created_at, grow_id, subbuilding_id, actual_total_animals, mortality, thinning, take_out")
-        .in("grow_id", growIds)
+        .eq("grow_id", latestGrow.id)
         .gte("created_at", selectedDayStart)
         .lt("created_at", selectedDayEnd)
         .order("created_at", { ascending: false })
@@ -906,7 +863,11 @@ export default function BuildingCage() {
       return;
     }
     if (!activeCageId) return;
-    if (!isTodaySelected) return;
+    if (!canEditSelectedDate) {
+      setToastMessage("Only Admin can update previous dates.");
+      setIsToastOpen(true);
+      return;
+    }
     if (metricDraft <= 0) return;
 
     const buildingId = Number(id);
@@ -1016,6 +977,7 @@ export default function BuildingCage() {
         thinning: selectedCageTotals.thinning,
         takeOut: selectedCageTotals.takeOut,
         actualTotalAnimals,
+        createdAt: selectedDateTimestamp,
       });
 
       if (existingReductionTx) {
@@ -1023,6 +985,7 @@ export default function BuildingCage() {
           growLogId: Number(savedGrowLog.id),
           animalCount: value,
           remarks: metricRemarksDraft.trim() || null,
+          createdAt: selectedDateTimestamp,
         });
       } else {
         await addGrowReductionTransaction({
@@ -1033,6 +996,7 @@ export default function BuildingCage() {
           animalCount: value,
           reductionType,
           remarks: metricRemarksDraft.trim() || null,
+          createdAt: selectedDateTimestamp,
         });
       }
 
@@ -1075,7 +1039,11 @@ export default function BuildingCage() {
       return;
     }
     if (!activeCageId) return;
-    if (!isTodaySelected) return;
+    if (!canEditSelectedDate) {
+      setToastMessage("Only Admin can update previous dates.");
+      setIsToastOpen(true);
+      return;
+    }
     const buildingId = Number(id);
     const subbuildingId = Number(activeCageId);
     if (!Number.isFinite(buildingId) || !Number.isFinite(subbuildingId)) {
@@ -1124,8 +1092,9 @@ export default function BuildingCage() {
       }
       const growId = latestGrow.id;
 
-      const logs = await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate);
-      const existing = logs.find((row) => row.subbuildingId === subbuildingId);
+      const logs = (await loadBodyWeightLogsByBuildingIdAndDate(buildingId, selectedDate))
+        .filter((row) => row.growId === growId);
+      const existing = [...logs].reverse().find((row) => row.subbuildingId === subbuildingId);
 
       if (existing) {
         await updateBodyWeightLog(existing.id, {
@@ -1134,6 +1103,7 @@ export default function BuildingCage() {
           frontWeight: clean.frontWeights,
           middleWeight: clean.middleWeights,
           backWeight: clean.backWeights,
+          createdAt: selectedDateTimestamp,
         });
       } else {
         await addBodyWeightLog({
@@ -1144,6 +1114,7 @@ export default function BuildingCage() {
           frontWeight: clean.frontWeights,
           middleWeight: clean.middleWeights,
           backWeight: clean.backWeights,
+          createdAt: selectedDateTimestamp,
         });
       }
 
@@ -1218,14 +1189,22 @@ export default function BuildingCage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
+          isMobile ? "!px-3 !h-auto !min-h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
-        style={{ backgroundColor: PRIMARY }}
+        style={{
+          backgroundColor: PRIMARY,
+          ...(isMobile
+            ? {
+              paddingTop: mobileSafeAreaTop,
+              height: `calc(56px + ${mobileSafeAreaTop})`,
+            }
+            : {}),
+        }}
       >
         <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
-            icon={<ArrowLeftOutlined />}
+            icon={<IoMdArrowRoundBack size={20} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate(-1)}
             aria-label="Back"
@@ -1236,7 +1215,7 @@ export default function BuildingCage() {
           />
           <Button
             type="text"
-            icon={<HomeOutlined />}
+            icon={<IoHome size={18} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
@@ -1262,7 +1241,7 @@ export default function BuildingCage() {
         </div>
         <Button
           type="text"
-          icon={<LogoutOutlined />}
+          icon={<FaSignOutAlt size={18} />}
           className="!text-white hover:!text-white/90"
           onClick={handleSignOut}
         />
@@ -1285,21 +1264,9 @@ export default function BuildingCage() {
               title="No data yet"
               subtitle="No cages found for this building."
             />
-            {canManageCages ? (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                className="!h-11 !px-4 !rounded-lg"
-                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-                onClick={handleOpenAdd}
-              >
-                Add First Cage
-              </Button>
-            ) : (
-              <div className="mt-3 text-sm text-slate-600 text-center">
-                Contact an Admin or Supervisor to add a new cage.
-              </div>
-            )}
+            <div className="mt-3 text-sm text-slate-600 text-center">
+              Each building should contain exactly 6 cages.
+            </div>
           </div>
         ) : (
           <>
@@ -1390,23 +1357,6 @@ export default function BuildingCage() {
                         : "No record on selected date"}
                     </span>
                   </div>
-                  {isTodaySelected && (
-                    canManageCages ? (
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        className="!mt-4 !h-10 !w-full !rounded-sm !font-semibold"
-                        style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-                        onClick={handleOpenAdd}
-                      >
-                        Add Cage
-                      </Button>
-                    ) : (
-                      <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                        Contact Admin/Supervisor to add cage.
-                      </div>
-                    )
-                  )}
                 </div>
               </div>
             )}
@@ -1449,76 +1399,7 @@ export default function BuildingCage() {
           </>
         )}
 
-        {/* Floating Add Button */}
-        {isMobile && isTodaySelected && filteredCages.length > 0 && !isLoading && (
-          canManageCages ? (
-            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-              <Button
-                type="primary"
-                size="large"
-                icon={
-                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
-                    <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
-                  </span>
-                }
-                className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
-                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-                onClick={handleOpenAdd}
-              >
-                Add
-              </Button>
-            </div>
-          ) : (
-            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-              <div className="rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-md">
-                Contact Admin/Supervisor to add cage.
-              </div>
-            </div>
-          )
-        )}
       </Content>
-
-      <Drawer
-        open={isAddModalOpen}
-        onClose={handleCloseAdd}
-        placement={isMobile ? "bottom" : "right"}
-        height={isMobile ? "60%" : undefined}
-        width={isMobile ? undefined : 460}
-        className="add-cage-drawer"
-        bodyStyle={{ padding: 16 }}
-      >
-        <div className="mb-4">
-          <Title level={4} className="!m-0">
-            Add New Cage
-          </Title>
-          <div className="text-slate-500 text-sm mt-1">
-            Enter the details to create a new cage record.
-          </div>
-        </div>
-
-        <Form form={addForm} layout="vertical" requiredMark={false}>
-          <Form.Item
-            label="Cage Name"
-            name="name"
-            rules={[{ required: true, message: "Please enter cage name" }]}
-          >
-            <Input placeholder="e.g., Cage 6" size="large" className="!text-base" />
-          </Form.Item>
-
-          <div className="mt-4">
-            <Button
-              type="primary"
-              size="large"
-              className="!w-full !rounded-lg !h-12"
-              style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
-              onClick={handleSubmitAdd}
-              loading={isAddSubmitting}
-            >
-              Add Cage
-            </Button>
-          </div>
-        </Form>
-      </Drawer>
 
       <Drawer
         open={isMetricModalOpen}
@@ -1535,9 +1416,9 @@ export default function BuildingCage() {
           <div className="text-slate-500 text-sm mt-1">
             {metricMeta[activeMetric].helper}
           </div>
-          {!isTodaySelected && (
+          {isPreviousDateSelected && !canEditSelectedDate && (
             <div className="text-amber-600 text-xs mt-1">
-              Previous dates are view-only.
+              Only Admin can update previous dates.
             </div>
           )}
         </div>
@@ -1545,12 +1426,12 @@ export default function BuildingCage() {
         <div className="bg-slate-50 rounded-lg p-3">
           <div className="text-[11px] text-slate-500 mb-2">{metricMeta[activeMetric].label}</div>
           <div className="flex items-center gap-3">
-            <Button
-              onClick={() => setMetricDraft((v) => Math.max(0, (v || 0) - 1))}
-              disabled={!isTodaySelected}
-            >
-              -
-            </Button>
+              <Button
+                onClick={() => setMetricDraft((v) => Math.max(0, (v || 0) - 1))}
+                disabled={!canEditSelectedDate}
+              >
+                -
+              </Button>
             <InputNumber
               min={0}
               value={metricDraft}
@@ -1559,11 +1440,11 @@ export default function BuildingCage() {
               inputMode="numeric"
               className="!w-full"
               styles={{ input: { fontSize: 16 } }}
-              disabled={!isTodaySelected}
+              disabled={!canEditSelectedDate}
             />
             <Button
               onClick={() => setMetricDraft((v) => (v || 0) + 1)}
-              disabled={!isTodaySelected}
+              disabled={!canEditSelectedDate}
             >
               +
             </Button>
@@ -1576,10 +1457,10 @@ export default function BuildingCage() {
               onChange={(e) => setMetricRemarksDraft(e.target.value)}
               placeholder="Add remarks (optional)"
               className="!text-base"
-              disabled={!isTodaySelected}
+              disabled={!canEditSelectedDate}
             />
           </div>
-          {isTodaySelected && !isMetricValid && (
+          {canEditSelectedDate && !isMetricValid && (
             <div className="text-xs text-red-500 mt-2">
               {metricMeta[activeMetric].label} is required.
             </div>
@@ -1590,18 +1471,16 @@ export default function BuildingCage() {
           <Button className="!flex-1" onClick={closeMetricModal}>
             Cancel
           </Button>
-          {isTodaySelected && (
-            <Button
-              type="primary"
-              className="!flex-1"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleUpdateMetric}
-              disabled={!isMetricValid}
-              loading={isMetricSubmitting}
-            >
-              Update
-            </Button>
-          )}
+          <Button
+            type="primary"
+            className="!flex-1"
+            style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+            onClick={handleUpdateMetric}
+            disabled={!canEditSelectedDate || !isMetricValid}
+            loading={isMetricSubmitting}
+          >
+            Update
+          </Button>
         </div>
       </Drawer>
 
@@ -1620,9 +1499,9 @@ export default function BuildingCage() {
           <div className="text-slate-500 text-sm mt-1">
             Enter individual chicken weights by section (kg).
           </div>
-          {!isTodaySelected && (
+          {isPreviousDateSelected && !canEditSelectedDate && (
             <div className="text-amber-600 text-xs mt-1">
-              Previous dates are view-only.
+              Only Admin can update previous dates.
             </div>
           )}
         </div>
@@ -1640,7 +1519,7 @@ export default function BuildingCage() {
               ]}
               className="!w-full"
               size="large"
-              disabled={!isTodaySelected}
+              disabled={!canEditSelectedDate}
             />
           </div>
           <div>
@@ -1656,7 +1535,7 @@ export default function BuildingCage() {
               inputMode="decimal"
               className="!w-full"
               styles={{ input: { fontSize: 16 } }}
-              disabled={!isTodaySelected}
+              disabled={!canEditSelectedDate}
             />
             <div className="text-[11px] text-slate-500 mt-1">
               Each added row gets:{" "}
@@ -1719,8 +1598,8 @@ export default function BuildingCage() {
                             inputMode="decimal"
                             className="!w-full"
                             styles={{ input: { fontSize: 16 } }}
-                            status={isTodaySelected && weight <= 0 ? "error" : undefined}
-                            disabled={!isTodaySelected}
+                            status={canEditSelectedDate && weight <= 0 ? "error" : undefined}
+                            disabled={!canEditSelectedDate}
                           />
                           <Popconfirm
                             title="Remove entry"
@@ -1733,9 +1612,9 @@ export default function BuildingCage() {
                                 frontWeights: prev.frontWeights.filter((_, i) => i !== index),
                               }))
                             }
-                            disabled={!isTodaySelected}
+                            disabled={!canEditSelectedDate}
                           >
-                            <Button disabled={!isTodaySelected}>
+                            <Button disabled={!canEditSelectedDate}>
                               Remove
                             </Button>
                           </Popconfirm>
@@ -1744,7 +1623,7 @@ export default function BuildingCage() {
                       <Button
                         onClick={() => addChickenRowsToSection("frontWeights")}
                         icon={<PlusOutlined />}
-                        disabled={!isTodaySelected}
+                        disabled={!canEditSelectedDate}
                       >
                         Add Chicken
                       </Button>
@@ -1789,8 +1668,8 @@ export default function BuildingCage() {
                             inputMode="decimal"
                             className="!w-full"
                             styles={{ input: { fontSize: 16 } }}
-                            status={isTodaySelected && weight <= 0 ? "error" : undefined}
-                            disabled={!isTodaySelected}
+                            status={canEditSelectedDate && weight <= 0 ? "error" : undefined}
+                            disabled={!canEditSelectedDate}
                           />
                           <Popconfirm
                             title="Remove entry"
@@ -1803,9 +1682,9 @@ export default function BuildingCage() {
                                 middleWeights: prev.middleWeights.filter((_, i) => i !== index),
                               }))
                             }
-                            disabled={!isTodaySelected}
+                            disabled={!canEditSelectedDate}
                           >
-                            <Button disabled={!isTodaySelected}>
+                            <Button disabled={!canEditSelectedDate}>
                               Remove
                             </Button>
                           </Popconfirm>
@@ -1814,7 +1693,7 @@ export default function BuildingCage() {
                       <Button
                         onClick={() => addChickenRowsToSection("middleWeights")}
                         icon={<PlusOutlined />}
-                        disabled={!isTodaySelected}
+                        disabled={!canEditSelectedDate}
                       >
                         Add Chicken
                       </Button>
@@ -1859,8 +1738,8 @@ export default function BuildingCage() {
                             inputMode="decimal"
                             className="!w-full"
                             styles={{ input: { fontSize: 16 } }}
-                            status={isTodaySelected && weight <= 0 ? "error" : undefined}
-                            disabled={!isTodaySelected}
+                            status={canEditSelectedDate && weight <= 0 ? "error" : undefined}
+                            disabled={!canEditSelectedDate}
                           />
                           <Popconfirm
                             title="Remove entry"
@@ -1873,9 +1752,9 @@ export default function BuildingCage() {
                                 backWeights: prev.backWeights.filter((_, i) => i !== index),
                               }))
                             }
-                            disabled={!isTodaySelected}
+                            disabled={!canEditSelectedDate}
                           >
-                            <Button disabled={!isTodaySelected}>
+                            <Button disabled={!canEditSelectedDate}>
                               Remove
                             </Button>
                           </Popconfirm>
@@ -1884,7 +1763,7 @@ export default function BuildingCage() {
                       <Button
                         onClick={() => addChickenRowsToSection("backWeights")}
                         icon={<PlusOutlined />}
-                        disabled={!isTodaySelected}
+                        disabled={!canEditSelectedDate}
                       >
                         Add Chicken
                       </Button>
@@ -1906,7 +1785,7 @@ export default function BuildingCage() {
               maximumFractionDigits: 2,
             })} kg
           </div>
-          {isTodaySelected && !isWeightValid && (
+          {canEditSelectedDate && !isWeightValid && (
             <div className="text-xs text-red-500">
               {hasInvalidWeightRows
                 ? "Zero values are not allowed. Please enter a value greater than 0 for all rows."
@@ -1919,18 +1798,16 @@ export default function BuildingCage() {
           <Button className="!flex-1" onClick={closeWeightModal}>
             Cancel
           </Button>
-          {isTodaySelected && (
-            <Button
-              type="primary"
-              className="!flex-1"
-              style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-              onClick={handleUpdateWeight}
-              disabled={!isWeightValid}
-              loading={isWeightSubmitting}
-            >
-              Update
-            </Button>
-          )}
+          <Button
+            type="primary"
+            className="!flex-1"
+            style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+            onClick={handleUpdateWeight}
+            disabled={!canEditSelectedDate || !isWeightValid}
+            loading={isWeightSubmitting}
+          >
+            Update
+          </Button>
         </div>
       </Drawer>
       <NotificationToast

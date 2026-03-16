@@ -57,10 +57,11 @@ export type CreateGrowLogInput = {
   mortality?: Int8 | null;
   thinning?: Int8 | null;
   takeOut?: Int8 | null;
+  createdAt?: Timestamp | null;
 };
 
 export type UpdateGrowLogInput = Partial<
-  Pick<GrowLogRecord, "growId" | "subbuildingId" | "actualTotalAnimals" | "mortality" | "thinning" | "takeOut">
+  Pick<GrowLogRecord, "growId" | "subbuildingId" | "actualTotalAnimals" | "mortality" | "thinning" | "takeOut" | "createdAt">
 >;
 
 export type CreateGrowReductionTransactionInput = {
@@ -71,12 +72,13 @@ export type CreateGrowReductionTransactionInput = {
   animalCount: Int8;
   reductionType: ReductionType;
   remarks?: string | null;
+  createdAt?: Timestamp | null;
 };
 
 export type UpdateGrowReductionTransactionInput = Partial<
   Pick<
     GrowReductionTransactionRecord,
-    "buildingId" | "subbuildingId" | "growId" | "growLogId" | "animalCount" | "reductionType" | "remarks"
+    "buildingId" | "subbuildingId" | "growId" | "growLogId" | "animalCount" | "reductionType" | "remarks" | "createdAt"
   >
 >;
 

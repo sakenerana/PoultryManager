@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Layout, Typography, Button, Divider, Grid, Slider, Card } from "antd";
-import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined } from "@ant-design/icons";
+import { FaSignOutAlt } from "react-icons/fa";
+import { IoMdArrowRoundBack } from "react-icons/io";
+import { IoHome } from "react-icons/io5";
 import { useNavigate } from "react-router-dom";
 import { applyUserSettings, DEFAULT_USER_SETTINGS, loadUserSettings, saveUserSettings } from "../utils/userSettings";
 import type { UserSettings } from "../utils/userSettings";
@@ -21,6 +23,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+  const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
   const isStandalone =
     window.matchMedia("(display-mode: standalone)").matches ||
     ((window.navigator as Navigator & { standalone?: boolean }).standalone ?? false);
@@ -114,14 +117,22 @@ export default function SettingsPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
+          isMobile ? "!px-3 !h-auto !min-h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
-        style={{ backgroundColor: PRIMARY }}
+        style={{
+          backgroundColor: PRIMARY,
+          ...(isMobile
+            ? {
+              paddingTop: mobileSafeAreaTop,
+              height: `calc(56px + ${mobileSafeAreaTop})`,
+            }
+            : {}),
+        }}
       >
         <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
-            icon={<ArrowLeftOutlined />}
+            icon={<IoMdArrowRoundBack size={20} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate(-1)}
             aria-label="Back"
@@ -129,7 +140,7 @@ export default function SettingsPage() {
           <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Button
             type="text"
-            icon={<HomeOutlined />}
+            icon={<IoHome size={18} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
@@ -152,7 +163,7 @@ export default function SettingsPage() {
         </div>
         <Button
           type="text"
-          icon={<LogoutOutlined />}
+          icon={<FaSignOutAlt size={18} />}
           className="!text-white hover:!text-white/90"
           onClick={handleSignOut}
         />

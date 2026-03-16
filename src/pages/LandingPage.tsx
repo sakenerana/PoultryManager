@@ -1,9 +1,11 @@
 // LandingPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { SyncOutlined } from "@ant-design/icons";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { checkForAppUpdate } from "../serviceWorkerRegistration";
 
 type TileKey =
     | "inventory"
@@ -25,16 +27,16 @@ type Tile = {
 const tiles: Tile[] = [
     {
         key: "inventory",
-        title: "Inventory",
+        title: "Preharvest",
         accent: "text-[#008822]",
         icon: (
             <img
                 src="/img/chicken-head.svg"
-                alt="Inventory"
+                alt="Preharvest"
                 className="h-10 w-10"
             />
         ),
-        largeText: "Inventory",
+        largeText: "Preharvest",
         link: "/buildings",
     },
     {
@@ -112,9 +114,11 @@ type AppRole = "Admin" | "Supervisor" | "Staff" | null;
 export default function LandingPage() {
     const [active, setActive] = useState<TileKey | null>(null);
     const [role, setRole] = useState<AppRole>(null);
+    const [isSyncingUpdate, setIsSyncingUpdate] = useState(false);
     const navigate = useNavigate();
     const { user } = useAuth();
-    const headerHeight = 64;
+    const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
+    const headerHeight = `calc(64px + ${mobileSafeAreaTop})`;
 
     useEffect(() => {
         let isMounted = true;
@@ -175,12 +179,27 @@ export default function LandingPage() {
         console.log("clicked:", tile.key);
     };
 
+    const handleSyncUpdate = async () => {
+        if (isSyncingUpdate) return;
+        try {
+            setIsSyncingUpdate(true);
+            await checkForAppUpdate();
+        } finally {
+            window.setTimeout(() => {
+                setIsSyncingUpdate(false);
+            }, 1200);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col">
             {/* HEADER */}
             <header
                 className="relative text-white"
-                style={{ height: headerHeight }}
+                style={{
+                    height: headerHeight,
+                    paddingTop: mobileSafeAreaTop,
+                }}
             >
                 {/* gradient like the screenshot */}
                 <div className="absolute inset-0 bg-gradient-to-b from-[#008822] to-[#006e1b]" />
@@ -247,6 +266,29 @@ export default function LandingPage() {
                     ))}
                 </div>
             </main>
+
+            <button
+                type="button"
+                onClick={handleSyncUpdate}
+                disabled={isSyncingUpdate}
+                className={[
+                    "fixed bottom-6 right-5 z-40",
+                    "flex items-center gap-2 rounded-full px-4 py-3",
+                    "bg-[#ffa600] text-white shadow-[0_10px_24px_rgba(255,166,0,0.35)]",
+                    "transition-all duration-200",
+                    isSyncingUpdate ? "cursor-wait opacity-95" : "hover:bg-[#e69600] active:scale-[0.98]",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ffa600]/50 focus-visible:ring-offset-2",
+                ].join(" ")}
+                aria-label={isSyncingUpdate ? "Syncing latest update" : "Sync latest update"}
+                title={isSyncingUpdate ? "Syncing latest update" : "Sync latest update"}
+            >
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20">
+                    <SyncOutlined spin={isSyncingUpdate} className="text-sm" />
+                </span>
+                <span className="text-sm font-semibold tracking-[0.02em]">
+                    {isSyncingUpdate ? "Syncing..." : "Update"}
+                </span>
+            </button>
 
         </div>
     );

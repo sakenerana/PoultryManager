@@ -2,15 +2,23 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout, Typography, Card, Button, Tag, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
-import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
+import { FaSignOutAlt } from "react-icons/fa";
+import { IoMdArrowRoundBack } from "react-icons/io";
+import { IoHome } from "react-icons/io5";
 import dayjs, { Dayjs } from "dayjs";
+import utc from "dayjs/plugin/utc";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
-import { addBuilding, loadBuildings } from "../controller/buildingCrud";
+import { addBuilding, deleteBuilding, loadBuildings } from "../controller/buildingCrud";
+import { addSubBuildings } from "../controller/subbuildingsCrud";
 import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import type { BuildingRecord } from "../type/building.type";
 import { useAuth } from "../context/AuthContext";
+import { resolveBodyWeightAverage } from "../utils/bodyWeight";
 import supabase from "../utils/supabase";
+
+dayjs.extend(utc);
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -37,6 +45,8 @@ type BuildingStats = {
   thinning: number;
   takeOut: number;
 };
+
+type MetricKey = "mortality" | "thinning" | "takeOut";
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
@@ -69,15 +79,6 @@ const toNonNegativeInt = (value: unknown): number => {
   return Math.max(0, Math.floor(n));
 };
 
-const toWeightArray = (value: unknown): number[] => {
-  if (!Array.isArray(value)) return [0];
-  const mapped = value
-    .map((item) => Number(item))
-    .filter((n) => Number.isFinite(n))
-    .map((n) => Math.max(0, n));
-  return mapped.length > 0 ? mapped : [0];
-};
-
 const normalizeBuildingStatus = (value: unknown): BuildingStats["status"] => {
   if (typeof value !== "string") return "Ready";
   const normalized = value.trim().toLowerCase();
@@ -104,14 +105,35 @@ function StatPill({
   value,
   leftIcon,
   rightIcon,
+  onClick,
 }: {
   label: string;
   value: React.ReactNode;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+    <div
+      className={[
+        "rounded-lg bg-slate-50 px-2 py-1.5",
+        onClick ? "cursor-pointer hover:bg-slate-100 transition" : "",
+      ].join(" ")}
+      onClick={(e) => {
+        if (!onClick) return;
+        e.stopPropagation();
+        onClick();
+      }}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (!onClick) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.stopPropagation();
+          onClick();
+        }
+      }}
+    >
       <div className="text-[10px] text-slate-500 leading-none">{label}</div>
       <div className="mt-0.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-900 leading-none">
@@ -181,16 +203,20 @@ function ChickenState({
 function BuildingRow({
   b,
   onOpen,
+  onMetricOpen,
   isMobile,
   stats,
   canLoad,
+  canOpen,
   selectedDate,
 }: {
   b: Building;
   onOpen: () => void;
+  onMetricOpen: (metric: MetricKey) => void;
   isMobile: boolean;
   stats: BuildingStats;
   canLoad: boolean;
+  canOpen: boolean;
   selectedDate: string;
 }) {
   const navigate = useNavigate();
@@ -199,10 +225,11 @@ function BuildingRow({
 
   return (
     <Card
-      hoverable
-      onClick={onOpen}
+      hoverable={canOpen}
+      onClick={canOpen ? onOpen : undefined}
       className={[
-        "!border-0 shadow-sm hover:shadow-md transition cursor-pointer h-full",
+        "!border-0 shadow-sm transition h-full",
+        canOpen ? "hover:shadow-md cursor-pointer" : "cursor-default",
         !isMobile ? "border border-slate-200/80 bg-white/95" : "",
         isMobile ? "!rounded-sm" : "!rounded-sm",
       ].join(" ")}
@@ -272,7 +299,7 @@ function BuildingRow({
           {/* Stats Grid */}
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
             <StatPill
-              label="Total Birds / Remaining"
+              label="Total Birds Load / Current"
               value={(
                 <span>
                   {stats.total.toLocaleString()} / {stats.remaining.toLocaleString()}{" "}
@@ -297,16 +324,22 @@ function BuildingRow({
               label="Mortality"
               value={stats.mortality.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
+              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
+              onClick={() => onMetricOpen("mortality")}
             />
             <StatPill
               label="Thinning"
               value={stats.thinning.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
+              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
+              onClick={() => onMetricOpen("thinning")}
             />
             <StatPill
               label="Take Out"
               value={stats.takeOut.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
+              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
+              onClick={() => onMetricOpen("takeOut")}
             />
           </div>
         </div>
@@ -323,6 +356,7 @@ export default function BuildingOverviewPage() {
   const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+  const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -609,10 +643,16 @@ export default function BuildingOverviewPage() {
 
       const nextStatsByBuildingId: Record<string, BuildingStats> = {};
       const avgWeightByBuildingId: Record<number, number> = {};
+      const growIdToBuildingId: Record<number, number> = {};
+      Object.entries(latestGrowByBuilding).forEach(([buildingIdKey, grow]) => {
+        const buildingId = Number(buildingIdKey);
+        if (!Number.isFinite(buildingId)) return;
+        growIdToBuildingId[grow.growId] = buildingId;
+      });
 
       const { data: selectedDayBodyWeightRows, error: selectedDayBodyWeightError } = await supabase
         .from(BODY_WEIGHT_LOGS_TABLE)
-        .select("building_id, subbuilding_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
+        .select("building_id, subbuilding_id, grow_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
         .in("building_id", buildingIds)
         .gte("created_at", selectedDayStart)
         .lt("created_at", selectedDayEnd)
@@ -624,23 +664,19 @@ export default function BuildingOverviewPage() {
       ((selectedDayBodyWeightRows ?? []) as Array<{
         building_id: number | null;
         subbuilding_id: number | null;
+        grow_id: number | null;
         avg_weight: number | null;
         front_weight: unknown;
         middle_weight: unknown;
         back_weight: unknown;
       }>).forEach((row) => {
         if (row.building_id == null || row.subbuilding_id == null) return;
+        const latestGrow = latestGrowByBuilding[row.building_id];
+        if (!latestGrow || row.grow_id !== latestGrow.growId) return;
         const key = `${row.building_id}-${row.subbuilding_id}`;
         if (latestSelectedWeightByBuildingAndSubbuilding[key] != null) return;
-        const frontWeights = toWeightArray(row.front_weight);
-        const middleWeights = toWeightArray(row.middle_weight);
-        const backWeights = toWeightArray(row.back_weight);
-        const totalWeight =
-          frontWeights.reduce((sum, value) => sum + value, 0) +
-          middleWeights.reduce((sum, value) => sum + value, 0) +
-          backWeights.reduce((sum, value) => sum + value, 0);
-        const totalChicken = frontWeights.length + middleWeights.length + backWeights.length;
-        const weight = totalChicken > 0 ? totalWeight / totalChicken : 0;
+        const weight = resolveBodyWeightAverage(row);
+        if (weight == null) return;
         latestSelectedWeightByBuildingAndSubbuilding[key] = weight;
       });
 
@@ -653,12 +689,16 @@ export default function BuildingOverviewPage() {
         weightValuesByBuilding[buildingId].push(weight);
       });
 
-      if ((selectedDayBodyWeightRows ?? []).length === 0) {
+      const missingWeightGrowIds = Object.values(latestGrowByBuilding)
+        .filter((grow) => (weightValuesByBuilding[growIdToBuildingId[grow.growId]] ?? []).length === 0)
+        .map((grow) => grow.growId);
+
+      if (missingWeightGrowIds.length > 0) {
         const { data: previousBodyWeightRows, error: previousBodyWeightError } = await supabase
           .from(BODY_WEIGHT_LOGS_TABLE)
-          .select("building_id, subbuilding_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
-          .in("building_id", buildingIds)
-          .lt("created_at", selectedDayEnd)
+          .select("building_id, subbuilding_id, grow_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
+          .in("grow_id", missingWeightGrowIds)
+          .lt("created_at", selectedDayStart)
           .order("created_at", { ascending: false });
 
         if (previousBodyWeightError) throw previousBodyWeightError;
@@ -667,23 +707,19 @@ export default function BuildingOverviewPage() {
         ((previousBodyWeightRows ?? []) as Array<{
           building_id: number | null;
           subbuilding_id: number | null;
+          grow_id: number | null;
           avg_weight: number | null;
           front_weight: unknown;
           middle_weight: unknown;
           back_weight: unknown;
         }>).forEach((row) => {
-          if (row.building_id == null || row.subbuilding_id == null) return;
+          if (row.building_id == null || row.subbuilding_id == null || row.grow_id == null) return;
+          const expectedBuildingId = growIdToBuildingId[row.grow_id];
+          if (expectedBuildingId !== row.building_id) return;
           const key = `${row.building_id}-${row.subbuilding_id}`;
           if (latestPreviousWeightByBuildingAndSubbuilding[key] != null) return;
-          const frontWeights = toWeightArray(row.front_weight);
-          const middleWeights = toWeightArray(row.middle_weight);
-          const backWeights = toWeightArray(row.back_weight);
-          const totalWeight =
-            frontWeights.reduce((sum, value) => sum + value, 0) +
-            middleWeights.reduce((sum, value) => sum + value, 0) +
-            backWeights.reduce((sum, value) => sum + value, 0);
-          const totalChicken = frontWeights.length + middleWeights.length + backWeights.length;
-          const weight = totalChicken > 0 ? totalWeight / totalChicken : 0;
+          const weight = resolveBodyWeightAverage(row);
+          if (weight == null) return;
           latestPreviousWeightByBuildingAndSubbuilding[key] = weight;
         });
 
@@ -713,7 +749,10 @@ export default function BuildingOverviewPage() {
           ? Math.max(0, total - overallMetrics.mortality - overallMetrics.thinning - overallMetrics.takeOut)
           : growLog?.actualTotalAnimals ?? total;
         const days = grow
-          ? Math.max(0, dayjs(selectedDate).startOf("day").diff(dayjs(grow.createdAt).startOf("day"), "day")) + 1
+          ? Math.max(
+            0,
+            dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day").diff(dayjs.utc(grow.createdAt).startOf("day"), "day")
+          ) + 1
           : 0;
 
         nextStatsByBuildingId[building.id] = {
@@ -768,16 +807,38 @@ export default function BuildingOverviewPage() {
   };
 
   const handleSubmitAdd = async () => {
+    let createdBuilding: BuildingRecord | null = null;
+
     try {
       setIsAddSubmitting(true);
       const values = await addForm.validateFields();
-      await addBuilding({ name: values.name });
+      createdBuilding = await addBuilding({ name: values.name });
+      const createdBuildingId = Number(createdBuilding.id);
+
+      await addSubBuildings(
+        Array.from({ length: 6 }, (_, index) => ({
+          buildingId: createdBuildingId,
+          name: `Cage ${index + 1}`,
+        }))
+      );
+
       await fetchBuildings();
       handleCloseAdd();
       setToastMessage(`Successfully added ${values.name}`);
       setIsToastOpen(true);
     } catch (error) {
       if (error && typeof error === "object" && "errorFields" in error) return;
+      if (createdBuilding) {
+        try {
+          await deleteBuilding(createdBuilding.id);
+        } catch (rollbackError) {
+          setToastMessage(
+            `Failed to add building: ${getErrorMessage(error)}. Rollback also failed: ${getErrorMessage(rollbackError)}`
+          );
+          setIsToastOpen(true);
+          return;
+        }
+      }
       setToastMessage(`Failed to add building: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
     } finally {
@@ -849,14 +910,22 @@ export default function BuildingOverviewPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
+          isMobile ? "!px-3 !h-auto !min-h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
-        style={{ backgroundColor: PRIMARY }}
+        style={{
+          backgroundColor: PRIMARY,
+          ...(isMobile
+            ? {
+              paddingTop: mobileSafeAreaTop,
+              height: `calc(56px + ${mobileSafeAreaTop})`,
+            }
+            : {}),
+        }}
       >
         <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
-            icon={<ArrowLeftOutlined />}
+            icon={<IoMdArrowRoundBack size={20} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate(-1)}
             aria-label="Back"
@@ -867,7 +936,7 @@ export default function BuildingOverviewPage() {
           />
           <Button
             type="text"
-            icon={<HomeOutlined />}
+            icon={<IoHome size={18} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
@@ -893,7 +962,7 @@ export default function BuildingOverviewPage() {
         </div>
         <Button
           type="text"
-          icon={<LogoutOutlined />}
+          icon={<FaSignOutAlt size={18} />}
           className="!text-white hover:!text-white/90"
           onClick={handleSignOut}
         />
@@ -1033,17 +1102,25 @@ export default function BuildingOverviewPage() {
               <Divider className={isMobile ? "!my-2" : "!my-3"} />
 
             <div className={isMobile ? "flex flex-col gap-3" : "grid grid-cols-2 gap-4"}>
-              {sortedBuildings.map((b) => (
-                <BuildingRow
-                  key={b.id}
-                  b={b}
-                  stats={getStatsForBuilding(b)}
-                  isMobile={isMobile}
-                  onOpen={() => navigate(`/building-cage/${b.id}`)}
-                  canLoad={isTodaySelected}
-                  selectedDate={selectedDate}
-                />
-              ))}
+              {sortedBuildings.map((b) => {
+                const stats = getStatsForBuilding(b);
+                const canLoadBuilding = isTodaySelected && (stats.status !== "Growing" || userRole === "Admin");
+                const canOpenBuilding = stats.status !== "Growing";
+
+                return (
+                  <BuildingRow
+                    key={b.id}
+                    b={b}
+                    stats={stats}
+                    isMobile={isMobile}
+                    onOpen={() => navigate(`/building-cage/${b.id}`)}
+                    onMetricOpen={(metric) => navigate(`/building-metric-history/${b.id}/${metric}?date=${selectedDate}`)}
+                    canLoad={canLoadBuilding}
+                    canOpen={canOpenBuilding}
+                    selectedDate={selectedDate}
+                  />
+                );
+              })}
             </div>
             </div>
           </>

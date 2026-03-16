@@ -83,6 +83,21 @@ export async function addSubBuilding(input: CreateSubBuildingInput): Promise<Sub
   return mapRowToSubBuilding(data as SubBuildingRow);
 }
 
+export async function addSubBuildings(inputs: CreateSubBuildingInput[]): Promise<SubBuildingRecord[]> {
+  const payload = inputs.map((input) => ({
+    building_id: input.buildingId,
+    name: input.name.trim(),
+  }));
+
+  const { data, error } = await supabase
+    .from(SUBBUILDINGS_TABLE)
+    .insert(payload)
+    .select("*");
+
+  if (error) throw error;
+  return (data as SubBuildingRow[]).map(mapRowToSubBuilding);
+}
+
 export async function updateSubBuilding(
   subBuildingId: string,
   input: UpdateSubBuildingInput

@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
-import { ArrowLeftOutlined, HomeOutlined, LogoutOutlined, PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
+import { FaSignOutAlt } from "react-icons/fa";
+import { IoMdArrowRoundBack } from "react-icons/io";
+import { IoHome } from "react-icons/io5";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
@@ -210,6 +213,7 @@ export default function HarvestTruckPage() {
   const { id: buildingIdParam } = useParams<{ id: string }>();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+  const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
@@ -585,14 +589,22 @@ export default function HarvestTruckPage() {
         className={[
           "sticky top-0 z-40",
           "flex items-center justify-between",
-          isMobile ? "!px-3 !h-14" : "!px-8 !h-[74px]",
+          isMobile ? "!px-3 !h-auto !min-h-14" : "!px-8 !h-[74px]",
         ].join(" ")}
-        style={{ backgroundColor: PRIMARY }}
+        style={{
+          backgroundColor: PRIMARY,
+          ...(isMobile
+            ? {
+              paddingTop: mobileSafeAreaTop,
+              height: `calc(56px + ${mobileSafeAreaTop})`,
+            }
+            : {}),
+        }}
       >
         <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
           <Button
             type="text"
-            icon={<ArrowLeftOutlined />}
+            icon={<IoMdArrowRoundBack size={20} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate(-1)}
             aria-label="Back"
@@ -600,7 +612,7 @@ export default function HarvestTruckPage() {
           <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Button
             type="text"
-            icon={<HomeOutlined />}
+            icon={<IoHome size={18} />}
             className="!text-white hover:!text-white/90"
             onClick={() => navigate("/landing-page")}
             aria-label="Home"
@@ -624,7 +636,7 @@ export default function HarvestTruckPage() {
 
         <Button
           type="text"
-          icon={<LogoutOutlined />}
+          icon={<FaSignOutAlt size={18} />}
           className="!text-white hover:!text-white/90"
           onClick={handleSignOut}
         />

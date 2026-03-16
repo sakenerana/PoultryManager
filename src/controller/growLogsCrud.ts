@@ -56,6 +56,7 @@ export async function addGrowLog(input: CreateGrowLogInput): Promise<GrowLogReco
     mortality: input.mortality ?? null,
     thinning: input.thinning ?? null,
     take_out: input.takeOut ?? null,
+    created_at: input.createdAt ?? undefined,
   };
 
   const { data, error } = await supabase
@@ -79,6 +80,7 @@ export async function updateGrowLog(
   if ("mortality" in input) payload.mortality = input.mortality ?? null;
   if ("thinning" in input) payload.thinning = input.thinning ?? null;
   if ("takeOut" in input) payload.take_out = input.takeOut ?? null;
+  if ("createdAt" in input) payload.created_at = input.createdAt ?? null;
 
   const { data, error } = await supabase
     .from(GROW_LOGS_TABLE)
@@ -112,6 +114,7 @@ export async function addGrowReductionTransaction(
     grow_log_id: input.growLogId,
     reduction_type: input.reductionType,
     remarks: input.remarks ?? null,
+    created_at: input.createdAt ?? undefined,
   };
   payload[REDUCTION_ANIMAL_COUNT_COLUMN] = input.animalCount;
 
@@ -137,6 +140,7 @@ export async function updateGrowReductionTransaction(
   if ("animalCount" in input) payload[REDUCTION_ANIMAL_COUNT_COLUMN] = input.animalCount ?? null;
   if ("reductionType" in input) payload.reduction_type = input.reductionType ?? null;
   if ("remarks" in input) payload.remarks = input.remarks ?? null;
+  if ("createdAt" in input) payload.created_at = input.createdAt ?? null;
 
   const { data, error } = await supabase
     .from(GROW_REDUCTION_TRANSACTIONS_TABLE)
@@ -179,6 +183,7 @@ export async function createGrowReductionBundle(input: CreateGrowReductionBundle
       animalCount: input.reduction.animalCount,
       reductionType: input.reduction.reductionType,
       remarks: input.reduction.remarks ?? null,
+      createdAt: input.reduction.createdAt ?? input.growLog.createdAt ?? null,
     });
 
     return { growLog, reductionTransaction };

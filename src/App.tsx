@@ -6,6 +6,7 @@ import LandingPage from "./pages/LandingPage";
 import BuildingOverviewPage from "./pages/BuildingPage";
 import BuildingLoadPage from "./pages/BuildingLoadPage";
 import BuildingCage from "./pages/BuildingCage";
+import BuildingMetricHistoryPage from "./pages/BuildingMetricHistoryPage";
 import ReportPage from "./pages/ReportPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
@@ -13,34 +14,39 @@ import SettingsPage from "./pages/SettingsPage";
 import AccountsPage from "./pages/AccountsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import AppUpdateIndicator from "./components/AppUpdateIndicator";
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <>
+      <AppUpdateIndicator />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-        <Route element={<PublicRoute />}>
-          <Route path="/" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        </Route>
+          <Route element={<PublicRoute />}>
+            <Route path="/" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          </Route>
 
-        <Route element={<ProtectedRoute />}>
-          <Route path="/landing-page" element={<LandingPage />} />
-          <Route path="/buildings" element={<BuildingOverviewPage />} />
-          <Route path="/building-load/:id" element={<BuildingLoadPage />} />
-          <Route path="/building-cage/:id" element={<BuildingCage />} />
-          <Route path="/harvest" element={<HarvestBuildingPage />} />
-          <Route path="/truck/:id" element={<HarvestTruckPage />} />
-          <Route path="/reports" element={<ReportPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/accounts" element={<AccountsPage />} />
-        </Route>
+          <Route element={<ProtectedRoute />}>
+            <Route path="/landing-page" element={<LandingPage />} />
+            <Route path="/buildings" element={<BuildingOverviewPage />} />
+            <Route path="/building-load/:id" element={<BuildingLoadPage />} />
+            <Route path="/building-cage/:id" element={<BuildingCage />} />
+            <Route path="/building-metric-history/:id/:metric" element={<BuildingMetricHistoryPage />} />
+            <Route path="/harvest" element={<HarvestBuildingPage />} />
+            <Route path="/truck/:id" element={<HarvestTruckPage />} />
+            <Route path="/reports" element={<ReportPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/accounts" element={<AccountsPage />} />
+          </Route>
 
-        {/* Redirect unknown routes */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Redirect unknown routes */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </>
   );
 }
 

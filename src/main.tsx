@@ -4,16 +4,10 @@ import './index.css'
 import App from './App.tsx'
 import { applyUserSettings, loadUserSettings } from './utils/userSettings.ts'
 import { AuthProvider } from './context/AuthContext.tsx'
+import { registerServiceWorker } from './serviceWorkerRegistration.js'
 
 applyUserSettings(loadUserSettings())
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .catch((error) => console.error('Service worker registration failed:', error))
-  })
-}
+registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

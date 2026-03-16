@@ -83,6 +83,7 @@ export async function addBodyWeightLog(input: CreateBodyWeightInput): Promise<Bo
     middle_weight: input.middleWeight ?? null,
     back_weight: input.backWeight ?? null,
     grow_id: input.growId ?? null,
+    created_at: input.createdAt ?? undefined,
   };
 
   const { data, error } = await supabase
@@ -107,6 +108,7 @@ export async function updateBodyWeightLog(
   if ("middleWeight" in input) payload.middle_weight = input.middleWeight ?? null;
   if ("backWeight" in input) payload.back_weight = input.backWeight ?? null;
   if ("growId" in input) payload.grow_id = input.growId ?? null;
+  if ("createdAt" in input) payload.created_at = input.createdAt ?? null;
 
   const { data, error } = await supabase
     .from(BODY_WEIGHT_TABLE)

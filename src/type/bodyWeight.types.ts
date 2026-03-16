@@ -38,12 +38,13 @@ export type CreateBodyWeightInput = {
   middleWeight?: JsonValue | null;
   backWeight?: JsonValue | null;
   growId?: Int8 | null;
+  createdAt?: Timestamp | null;
 };
 
 export type UpdateBodyWeightInput = Partial<
   Pick<
     BodyWeightRecord,
-    "buildingId" | "subbuildingId" | "avgWeight" | "frontWeight" | "middleWeight" | "backWeight" | "growId"
+    "buildingId" | "subbuildingId" | "avgWeight" | "frontWeight" | "middleWeight" | "backWeight" | "growId" | "createdAt"
   >
 >;
 
