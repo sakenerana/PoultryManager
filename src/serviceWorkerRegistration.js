@@ -1,9 +1,11 @@
 const UPDATE_EVENT = "pwa-update-state";
+const AUTO_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 let hasRegisteredControllerChange = false;
 let isReloadingForUpdate = false;
 let activeRegistration = null;
 let clearMessageTimeout = null;
+let lastAutoUpdateCheckAt = 0;
 
 function clearPendingMessageReset() {
   if (clearMessageTimeout != null) {
@@ -35,7 +37,14 @@ function forceRefreshToLatestBuild() {
   window.location.replace(nextUrl.toString());
 }
 
-function promptWaitingWorker(worker) {
+function dispatchReadyState() {
+  dispatchUpdateState({
+    status: "ready",
+    message: "A new version is available.",
+  });
+}
+
+function activateWaitingWorker(worker) {
   if (!worker) return;
   dispatchUpdateState({
     status: "updating",
@@ -54,7 +63,7 @@ function trackInstallingWorker(worker) {
 
   worker.addEventListener("statechange", () => {
     if (worker.state === "installed") {
-      promptWaitingWorker(worker);
+      dispatchReadyState();
     }
   });
 }
@@ -86,7 +95,7 @@ export function registerServiceWorker() {
       attachControllerChangeReload();
 
       if (registration.waiting) {
-        promptWaitingWorker(registration.waiting);
+        dispatchReadyState();
       }
 
       if (registration.installing) {
@@ -97,18 +106,17 @@ export function registerServiceWorker() {
         trackInstallingWorker(registration.installing);
       });
 
-      const requestUpdateCheck = () => {
-        void checkForAppUpdate();
+      const requestSilentUpdateCheck = () => {
+        const now = Date.now();
+        if (now - lastAutoUpdateCheckAt < AUTO_UPDATE_CHECK_INTERVAL_MS) {
+          return;
+        }
+        lastAutoUpdateCheckAt = now;
+        void checkForAppUpdate({ silent: true });
       };
 
-      window.addEventListener("focus", requestUpdateCheck);
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-          requestUpdateCheck();
-        }
-      });
-
-      window.setInterval(requestUpdateCheck, 5 * 60 * 1000);
+      window.setTimeout(requestSilentUpdateCheck, 30 * 1000);
+      window.setInterval(requestSilentUpdateCheck, AUTO_UPDATE_CHECK_INTERVAL_MS);
     } catch (error) {
       console.error("Service worker registration failed:", error);
       dispatchUpdateState({
@@ -119,60 +127,92 @@ export function registerServiceWorker() {
   });
 }
 
-export async function checkForAppUpdate() {
+export async function checkForAppUpdate(options = {}) {
+  const isSilent = options.silent === true;
   if (!("serviceWorker" in navigator)) {
-    dispatchUpdateState({
-      status: "reloading",
-      message: "Refreshing to check for the latest version...",
-    });
-    window.setTimeout(() => {
-      forceRefreshToLatestBuild();
-    }, 500);
-    return true;
+    if (!isSilent) {
+      dispatchUpdateState({
+        status: "reloading",
+        message: "Refreshing to check for the latest version...",
+      });
+      window.setTimeout(() => {
+        forceRefreshToLatestBuild();
+      }, 500);
+      return true;
+    }
+    return false;
   }
 
   try {
     const registration = activeRegistration ?? (await navigator.serviceWorker.getRegistration());
     if (!registration) {
-      dispatchTemporaryState({
-        status: "error",
-        message: "Update service is not ready yet.",
-      });
+      if (!isSilent) {
+        dispatchTemporaryState({
+          status: "error",
+          message: "Update service is not ready yet.",
+        });
+      }
       return false;
     }
 
     activeRegistration = registration;
 
-    dispatchUpdateState({
-      status: "updating",
-      message: "Syncing and checking for updates... Please reopen the app after the update is installed.",
-    });
+    if (!isSilent) {
+      dispatchUpdateState({
+        status: "updating",
+        message: "Checking for updates...",
+      });
+    }
 
     if (registration.waiting) {
-      promptWaitingWorker(registration.waiting);
+      dispatchReadyState();
       return true;
     }
 
     await registration.update();
 
     if (registration.waiting) {
-      promptWaitingWorker(registration.waiting);
+      dispatchReadyState();
       return true;
     }
 
+    if (!isSilent) {
+      dispatchTemporaryState({
+        status: "success",
+        message: "You already have the latest version.",
+      });
+    }
+    return false;
+  } catch (error) {
+    console.error("Failed to check for updates:", error);
+    if (!isSilent) {
+      dispatchTemporaryState({
+        status: "error",
+        message: "Unable to sync updates right now.",
+      });
+    }
+    return false;
+  }
+}
+
+export async function applyAppUpdate() {
+  if (!("serviceWorker" in navigator)) {
+    forceRefreshToLatestBuild();
+    return false;
+  }
+
+  const registration = activeRegistration ?? (await navigator.serviceWorker.getRegistration());
+  if (!registration?.waiting) {
     dispatchTemporaryState({
       status: "success",
       message: "You already have the latest version.",
     });
     return false;
-  } catch (error) {
-    console.error("Failed to check for updates:", error);
-    dispatchTemporaryState({
-      status: "error",
-      message: "Unable to sync updates right now.",
-    });
-    return false;
   }
+
+  activeRegistration = registration;
+  activateWaitingWorker(registration.waiting);
+  return true;
 }
 
 export { UPDATE_EVENT };
