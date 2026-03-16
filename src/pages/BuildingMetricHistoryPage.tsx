@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Layout, Typography, Button, Divider, Grid } from "antd";
 import { MinusCircleFilled, PlusCircleFilled } from "@ant-design/icons";
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FaSignOutAlt } from "react-icons/fa";
@@ -19,6 +20,8 @@ import supabase from "../utils/supabase";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
+
+dayjs.extend(utc);
 
 const PRIMARY = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
@@ -157,9 +160,9 @@ export default function BuildingMetricHistoryPage() {
           loadGrowLogsByGrowId(growRow.id),
           loadBodyWeightLogsByBuildingId(buildingId),
         ]);
-        const logsUntilSelectedDate = growLogs.filter((row) => dayjs(row.createdAt).valueOf() < dayjs(selectedDayEnd).valueOf());
+        const logsUntilSelectedDate = growLogs.filter((row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf());
         const logsByDate = logsUntilSelectedDate.reduce<Record<string, typeof growLogs>>((acc, row) => {
-          const dateKey = dayjs(row.createdAt).format("YYYY-MM-DD");
+          const dateKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
           if (!acc[dateKey]) acc[dateKey] = [];
           acc[dateKey].push(row);
           return acc;
@@ -167,22 +170,24 @@ export default function BuildingMetricHistoryPage() {
         const bodyWeightLogsUntilSelectedDate = bodyWeightLogs.filter(
           (row) =>
             row.growId === growRow.id &&
-            dayjs(row.createdAt).valueOf() < dayjs(selectedDayEnd).valueOf()
+            dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
         );
         const bodyWeightLogsByDate = bodyWeightLogsUntilSelectedDate.reduce<Record<string, typeof bodyWeightLogs>>((acc, row) => {
-          const dateKey = dayjs(row.createdAt).format("YYYY-MM-DD");
+          const dateKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
           if (!acc[dateKey]) acc[dateKey] = [];
           acc[dateKey].push(row);
           return acc;
         }, {});
 
-        const startDate = dayjs(growRow.created_at).startOf("day");
-        const endDate = dayjs(selectedDate).startOf("day");
+        const startDate = dayjs.utc(growRow.created_at).startOf("day");
+        const endDate = dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day");
         const nextRows: HistoryRow[] = [];
 
         for (let cursor = startDate; cursor.isBefore(endDate) || cursor.isSame(endDate, "day"); cursor = cursor.add(1, "day")) {
           const dateKey = cursor.format("YYYY-MM-DD");
-          const dayRows = [...(logsByDate[dateKey] ?? [])].sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf());
+          const dayRows = [...(logsByDate[dateKey] ?? [])].sort(
+            (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
+          );
           const latestRow = dayRows[0] ?? null;
 
           const latestByCage: Record<string, { mortality: number; thinning: number; takeOut: number }> = {};
@@ -202,7 +207,7 @@ export default function BuildingMetricHistoryPage() {
               ? Object.values(latestByCage).reduce((sum, row) => sum + row[metricKey], 0)
               : toNonNegativeInt(latestRow?.[metricKey] ?? 0);
           const dayWeightRows = [...(bodyWeightLogsByDate[dateKey] ?? [])].sort(
-            (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+            (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
           );
           const latestWeightByCage: Record<string, number> = {};
 
