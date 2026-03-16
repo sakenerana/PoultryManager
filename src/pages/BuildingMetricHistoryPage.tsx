@@ -183,7 +183,11 @@ export default function BuildingMetricHistoryPage() {
         const endDate = dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day");
         const nextRows: HistoryRow[] = [];
 
-        for (let cursor = startDate; cursor.isBefore(endDate) || cursor.isSame(endDate, "day"); cursor = cursor.add(1, "day")) {
+        for (
+          let cursor = startDate.add(1, "day");
+          cursor.isBefore(endDate) || cursor.isSame(endDate, "day");
+          cursor = cursor.add(1, "day")
+        ) {
           const dateKey = cursor.format("YYYY-MM-DD");
           const dayRows = [...(logsByDate[dateKey] ?? [])].sort(
             (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
@@ -228,7 +232,7 @@ export default function BuildingMetricHistoryPage() {
 
           nextRows.push({
             date: dateKey,
-            dayNumber: cursor.diff(startDate, "day") + 1,
+            dayNumber: cursor.diff(startDate, "day"),
             value,
             avgWeight,
             sourceTime: latestRow?.createdAt ?? null,

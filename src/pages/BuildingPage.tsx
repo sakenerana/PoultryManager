@@ -718,7 +718,7 @@ export default function BuildingOverviewPage() {
           ? Math.max(
             0,
             dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day").diff(dayjs.utc(grow.createdAt).startOf("day"), "day")
-          ) + 1
+          )
           : 0;
 
         nextStatsByBuildingId[building.id] = {
