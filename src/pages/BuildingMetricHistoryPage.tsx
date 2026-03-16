@@ -34,6 +34,7 @@ type HistoryRow = {
   dayNumber: number;
   value: number;
   avgWeight: number | null;
+  expectedDailyDeaths: number | null;
   sourceTime: string | null;
 };
 
@@ -48,6 +49,39 @@ const METRIC_TABS: Array<{ key: MetricKey; label: string; activeBg: string; acti
   { key: "thinning", label: "Thinning", activeBg: "#008822", activeText: "#ffffff", icon: "minus" },
   { key: "takeOut", label: "Take Out", activeBg: "#f59e0b", activeText: "#ffffff", icon: "plus" },
 ];
+
+const EXPECTED_DAILY_DEATHS: Record<number, number> = {
+  1: 150,
+  2: 160,
+  3: 170,
+  4: 180,
+  5: 190,
+  6: 180,
+  7: 160,
+  8: 120,
+  9: 110,
+  10: 100,
+  11: 95,
+  12: 90,
+  13: 85,
+  14: 80,
+  15: 75,
+  16: 70,
+  17: 65,
+  18: 60,
+  19: 55,
+  20: 50,
+  21: 45,
+  22: 40,
+  23: 38,
+  24: 36,
+  25: 34,
+  26: 32,
+  27: 30,
+  28: 28,
+  29: 25,
+  30: 22,
+};
 
 const getErrorMessage = (error: unknown): string => {
   if (error && typeof error === "object") {
@@ -118,6 +152,7 @@ export default function BuildingMetricHistoryPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [buildingName, setBuildingName] = useState("");
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
+  const [totalBirdsLoaded, setTotalBirdsLoaded] = useState(0);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
@@ -127,6 +162,7 @@ export default function BuildingMetricHistoryPage() {
       if (!Number.isFinite(buildingId)) {
         setHistoryRows([]);
         setBuildingName("");
+        setTotalBirdsLoaded(0);
         return;
       }
 
@@ -138,7 +174,7 @@ export default function BuildingMetricHistoryPage() {
           supabase.from(BUILDINGS_TABLE).select("name").eq("id", buildingId).maybeSingle(),
           supabase
             .from(GROWS_TABLE)
-            .select("id, created_at")
+            .select("id, created_at, total_animals")
             .eq("building_id", buildingId)
             .lt("created_at", selectedDayEnd)
             .order("created_at", { ascending: false })
@@ -150,11 +186,13 @@ export default function BuildingMetricHistoryPage() {
 
         setBuildingName(typeof buildingData?.name === "string" ? buildingData.name : "");
 
-        const growRow = ((growRows ?? []) as Array<{ id: number | null; created_at: string }>)[0];
+        const growRow = ((growRows ?? []) as Array<{ id: number | null; created_at: string; total_animals: number | null }>)[0];
         if (!growRow?.id) {
           setHistoryRows([]);
+          setTotalBirdsLoaded(0);
           return;
         }
+        setTotalBirdsLoaded(toNonNegativeInt(growRow.total_animals));
 
         const [growLogs, bodyWeightLogs] = await Promise.all([
           loadGrowLogsByGrowId(growRow.id),
@@ -235,6 +273,7 @@ export default function BuildingMetricHistoryPage() {
             dayNumber: cursor.diff(startDate, "day"),
             value,
             avgWeight,
+            expectedDailyDeaths: EXPECTED_DAILY_DEATHS[cursor.diff(startDate, "day")] ?? null,
             sourceTime: latestRow?.createdAt ?? null,
           });
         }
@@ -269,6 +308,7 @@ export default function BuildingMetricHistoryPage() {
         unit: "mm",
         format: "a4",
       });
+      let runningMortality = 0;
 
       const generatedAt = dayjs();
       const fileMetricName = METRIC_META[metricKey].title.toLowerCase().replace(/\s+/g, "-");
@@ -304,6 +344,7 @@ export default function BuildingMetricHistoryPage() {
       doc.setFontSize(10.5);
       doc.text(`Days Listed: ${historyRows.length}`, 14, 57);
       doc.text(`Total ${METRIC_META[metricKey].title}: ${totalValue.toLocaleString()}`, 72, 57);
+      doc.text(`Total Birds Loaded: ${totalBirdsLoaded.toLocaleString()}`, 14, 63);
       doc.text(
         `Avg Weight: ${
           totalAvgWeight != null
@@ -313,7 +354,7 @@ export default function BuildingMetricHistoryPage() {
               })} kg`
             : "-"
         }`,
-        14,
+        72,
         63
       );
 
@@ -332,29 +373,52 @@ export default function BuildingMetricHistoryPage() {
           lineWidth: 0.1,
         },
         columnStyles: {
-          0: { cellWidth: 22 },
-          1: { cellWidth: 38 },
-          2: { cellWidth: 28 },
-          3: { cellWidth: 28 },
-          4: { cellWidth: 68 },
+          0: { cellWidth: 18 },
+          1: { cellWidth: 34 },
+          2: { cellWidth: 24 },
+          3: { cellWidth: 24 },
+          4: { cellWidth: 24 },
+          5: { cellWidth: 30 },
+          6: { cellWidth: 28 },
         },
-        head: [["Day", "Date", METRIC_META[metricKey].title, "Avg Wt", "Status"]],
-        body: historyRows.map((row) => [
-          String(row.dayNumber),
-          dayjs(row.date).format("MMM D, YYYY"),
-          row.value.toLocaleString(),
-          row.avgWeight != null
-            ? `${row.avgWeight.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })} kg`
-            : "-",
-          row.sourceTime ? "Recorded" : "No log for this date",
-        ]),
+        head: [[
+          "Day",
+          "Date",
+          ...(metricKey === "mortality" ? ["Expected Deaths"] : []),
+          METRIC_META[metricKey].title,
+          ...(metricKey === "mortality" ? ["Birds Alive"] : []),
+          "Avg Wt",
+          "Status",
+        ]],
+        body: historyRows.map((row) => {
+          if (metricKey === "mortality") {
+            runningMortality += row.value;
+          }
+          const birdsAlive = Math.max(0, totalBirdsLoaded - runningMortality);
+
+          return [
+            String(row.dayNumber),
+            dayjs(row.date).format("MMM D, YYYY"),
+            ...(metricKey === "mortality"
+              ? [row.expectedDailyDeaths != null ? row.expectedDailyDeaths.toLocaleString() : "-"]
+              : []),
+            row.value.toLocaleString(),
+            ...(metricKey === "mortality" ? [birdsAlive.toLocaleString()] : []),
+            row.avgWeight != null
+              ? `${row.avgWeight.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })} kg`
+              : "-",
+            row.sourceTime ? "Recorded" : "No log for this date",
+          ];
+        }),
         foot: [[
           "",
           "Total",
+          ...(metricKey === "mortality" ? [""] : []),
           totalValue.toLocaleString(),
+          ...(metricKey === "mortality" ? [Math.max(0, totalBirdsLoaded - totalValue).toLocaleString()] : []),
           totalAvgWeight != null
             ? `${totalAvgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
@@ -550,10 +614,10 @@ export default function BuildingMetricHistoryPage() {
                       handleHistoryRowClick(row.date);
                     }
                   }}
-                  className="rounded-sm border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-emerald-200 hover:shadow-md cursor-pointer"
+                  className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md cursor-pointer"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span
                           className={[
@@ -571,17 +635,29 @@ export default function BuildingMetricHistoryPage() {
                         {row.sourceTime ? `Latest log ${dayjs(row.sourceTime).format("h:mm A")}` : "No log for this date"}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">{METRIC_META[metricKey].title}</div>
-                      <div className="mt-1 text-2xl font-bold text-slate-900">{row.value.toLocaleString()}</div>
-                      <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">Avg. Weight</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-700">
-                        {row.avgWeight !== null
-                          ? `${row.avgWeight.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })} kg`
-                          : "-"}
+                    <div className="min-w-[108px] text-right">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">{METRIC_META[metricKey].title}</div>
+                      <div className="mt-0.5 text-2xl font-bold leading-none text-slate-900">{row.value.toLocaleString()}</div>
+                      <div className="mt-2 grid gap-1 text-[10px] text-slate-500">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="uppercase tracking-wide">Avg. Weight</span>
+                          <span className="text-xs font-semibold text-slate-700">
+                            {row.avgWeight !== null
+                              ? `${row.avgWeight.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })} kg`
+                              : "-"}
+                          </span>
+                        </div>
+                        {metricKey === "mortality" ? (
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="uppercase tracking-wide">Expected</span>
+                            <span className="text-xs font-semibold text-slate-700">
+                              {row.expectedDailyDeaths != null ? row.expectedDailyDeaths.toLocaleString() : "-"}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>
