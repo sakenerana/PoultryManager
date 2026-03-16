@@ -145,7 +145,7 @@ export async function checkForAppUpdate() {
 
     dispatchUpdateState({
       status: "updating",
-      message: "Syncing and checking for updates...",
+      message: "Syncing and checking for updates... Please reopen the app after the update is installed.",
     });
 
     if (registration.waiting) {
