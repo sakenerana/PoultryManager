@@ -7,7 +7,7 @@
   "display": "standalone",
   "display_override": ["standalone", "fullscreen"],
   "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "theme_color": "#008822",
   "icons": [
     {
       "src": "/icons/balao-logo-192.png",
