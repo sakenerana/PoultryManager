@@ -317,7 +317,7 @@ function BuildingRow({
               value={`${stats.avgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
-              })} kg`}
+              })} g`}
             />
             <StatPill label="Status" value={<StatusBadge status={stats.status} />} />
             <StatPill
@@ -1059,7 +1059,7 @@ export default function BuildingOverviewPage() {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}{" "}
-                        kg
+                        g
                       </div>
                     </div>
                   </div>

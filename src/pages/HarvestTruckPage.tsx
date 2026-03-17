@@ -187,16 +187,16 @@ function TruckRow({
             <StatPill label="Plate No." value={truck.plateNo?.trim() ? truck.plateNo : "N/A"} />
             <StatPill
               label="Weight(No Load)"
-              value={truck.weightNoLoad > 0 ? `${truck.weightNoLoad.toLocaleString()} kg` : "0 kg"}
+              value={truck.weightNoLoad > 0 ? `${truck.weightNoLoad.toLocaleString()} g` : "0 g"}
             />
             <StatPill
               label="Weight(Load)"
-              value={truck.weightLoad > 0 ? `${truck.weightLoad.toLocaleString()} kg` : "0 kg"}
+              value={truck.weightLoad > 0 ? `${truck.weightLoad.toLocaleString()} g` : "0 g"}
             />
             <StatPill label="Birds Load" value={truck.birdsLoad > 0 ? truck.birdsLoad.toLocaleString() : "0"} />
             <StatPill
               label="Avg. Weight"
-              value={avgWeight !== null ? `${avgWeight.toFixed(2)} kg/bird` : "N/A"}
+              value={avgWeight !== null ? `${avgWeight.toFixed(2)} g/bird` : "N/A"}
             />
             <StatPill label="Status" value={<StatusBadge status={truck.status} />} />
           </div>
@@ -694,7 +694,7 @@ export default function HarvestTruckPage() {
                         {overviewStats.avgWeightLoaded.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
-                        })} kg/bird
+                        })} g/bird
                       </div>
                     </div>
                   </div>
@@ -744,7 +744,7 @@ export default function HarvestTruckPage() {
                 </div>
                 <div className="text-slate-600">
                   Total Weight (Load):{" "}
-                  <span className="font-semibold text-slate-900">{totals.totalWeightLoad.toLocaleString()} kg</span>
+                  <span className="font-semibold text-slate-900">{totals.totalWeightLoad.toLocaleString()} g</span>
                 </div>
               </div>
 
@@ -886,7 +886,7 @@ export default function HarvestTruckPage() {
           <div className="text-slate-600 text-sm mt-1">
             Avg. Weight Truck:{" "}
             <span className="font-semibold text-slate-900">
-              {loadDrawerAvgWeight !== null ? `${loadDrawerAvgWeight.toFixed(2)} kg/bird` : "N/A"}
+              {loadDrawerAvgWeight !== null ? `${loadDrawerAvgWeight.toFixed(2)} g/bird` : "N/A"}
             </span>
           </div>
         </div>

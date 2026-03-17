@@ -381,7 +381,7 @@ export default function BuildingMetricHistoryPage() {
             ? `${totalAvgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
-              })} kg`
+              })} g`
             : "-"
         }`,
         72,
@@ -438,7 +438,7 @@ export default function BuildingMetricHistoryPage() {
               ? `${row.avgWeight.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
-                })} kg`
+                })} g`
               : "-",
             row.sourceTime ? "Recorded" : "No log for this date",
           ];
@@ -453,7 +453,7 @@ export default function BuildingMetricHistoryPage() {
             ? `${totalAvgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
-              })} kg`
+              })} g`
             : "-",
           `Up to ${selectedDateLabel}`,
         ]],
@@ -662,7 +662,16 @@ export default function BuildingMetricHistoryPage() {
                       </div>
                       <div className="mt-1 text-sm text-slate-600">{dayjs(row.date).format("MMMM D, YYYY")}</div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {row.sourceTime ? `Latest log ${dayjs(row.sourceTime).format("h:mm A")}` : "No log for this date"}
+                        {metricKey === "mortality" ? (
+                          <>
+                            Expected Death{" "}
+                            <span className="font-semibold text-slate-700">
+                              {row.expectedDailyDeaths != null ? row.expectedDailyDeaths.toLocaleString() : "-"}
+                            </span>
+                          </>
+                        ) : (
+                          ""
+                        )}
                       </div>
                     </div>
                     <div className="min-w-[108px] text-right">
@@ -676,18 +685,10 @@ export default function BuildingMetricHistoryPage() {
                               ? `${row.avgWeight.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
-                              })} kg`
+                              })} g`
                               : "-"}
                           </span>
                         </div>
-                        {metricKey === "mortality" ? (
-                          <div className="flex items-baseline justify-between gap-3">
-                            <span className="uppercase tracking-wide">Expected</span>
-                            <span className="text-xs font-semibold text-slate-700">
-                              {row.expectedDailyDeaths != null ? row.expectedDailyDeaths.toLocaleString() : "-"}
-                            </span>
-                          </div>
-                        ) : null}
                       </div>
                     </div>
                   </div>
