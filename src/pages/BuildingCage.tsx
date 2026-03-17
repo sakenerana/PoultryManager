@@ -596,7 +596,7 @@ export default function BuildingCage() {
   };
 
   const isSameSelectedDate = (dateTime: string): boolean =>
-    dayjs(dateTime).format("YYYY-MM-DD") === selectedDate;
+    dayjs.utc(dateTime).format("YYYY-MM-DD") === selectedDate;
 
   const resolveGrowForDate = async (
     buildingId: number,
@@ -740,12 +740,12 @@ export default function BuildingCage() {
       const mortalityRemarksByCage: Record<string, string> = {};
       const thinningRemarksByCage: Record<string, string> = {};
       const takeOutRemarksByCage: Record<string, string> = {};
-      const effectiveDate = dayjs(selectedDayGrowLog.createdAt).format("YYYY-MM-DD");
+      const effectiveDate = dayjs.utc(selectedDayGrowLog.createdAt).format("YYYY-MM-DD");
       const effectiveGrowId = selectedDayGrowLog.growId;
       if (typeof selectedDayGrowLog.growId === "number") {
         const reductions = await loadGrowReductionTransactionsByGrowId(selectedDayGrowLog.growId);
         const selectedDayRows = reductions.filter(
-          (row) => dayjs(row.createdAt).format("YYYY-MM-DD") === effectiveDate
+          (row) => dayjs.utc(row.createdAt).format("YYYY-MM-DD") === effectiveDate
         );
         const latestByCageAndType: Record<string, (typeof selectedDayRows)[number]> = {};
 
@@ -753,7 +753,7 @@ export default function BuildingCage() {
           if (row.subbuildingId == null || !row.reductionType) return;
           const key = `${row.subbuildingId}-${row.reductionType}`;
           const previous = latestByCageAndType[key];
-          if (!previous || dayjs(row.createdAt).isAfter(dayjs(previous.createdAt))) {
+          if (!previous || dayjs.utc(row.createdAt).isAfter(dayjs.utc(previous.createdAt))) {
             latestByCageAndType[key] = row;
           }
         });
