@@ -394,9 +394,13 @@ export default function BuildingCage() {
         : [];
       const byCage: Record<string, WeightEntry> = {};
 
-      logsForDisplay.forEach((row) => {
+      [...logsForDisplay]
+        .sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf())
+        .forEach((row) => {
         if (row.subbuildingId == null) return;
-        byCage[String(row.subbuildingId)] = {
+        const cageId = String(row.subbuildingId);
+        if (byCage[cageId]) return;
+        byCage[cageId] = {
           frontWeights: toNumberArray(row.frontWeight),
           middleWeights: toNumberArray(row.middleWeight),
           backWeights: toNumberArray(row.backWeight),
@@ -757,12 +761,16 @@ export default function BuildingCage() {
         Object.values(latestByCageAndType).forEach((row) => {
           if (row.subbuildingId == null || !row.reductionType) return;
           const cageId = String(row.subbuildingId);
+          const animalCount = Math.max(0, Math.floor(row.animalCount ?? 0));
           const remarks = row.remarks ?? "";
           if (row.reductionType === "mortality") {
+            mortalityByCage[cageId] = animalCount;
             mortalityRemarksByCage[cageId] = remarks;
           } else if (row.reductionType === "thinning") {
+            thinningByCage[cageId] = animalCount;
             thinningRemarksByCage[cageId] = remarks;
           } else if (row.reductionType === "take_out") {
+            takeOutByCage[cageId] = animalCount;
             takeOutRemarksByCage[cageId] = remarks;
           }
         });
@@ -799,9 +807,15 @@ export default function BuildingCage() {
         });
 
         Object.entries(latestByCage).forEach(([cageId, stats]) => {
-          mortalityByCage[cageId] = stats.mortality;
-          thinningByCage[cageId] = stats.thinning;
-          takeOutByCage[cageId] = stats.takeOut;
+          if (mortalityByCage[cageId] == null) {
+            mortalityByCage[cageId] = stats.mortality;
+          }
+          if (thinningByCage[cageId] == null) {
+            thinningByCage[cageId] = stats.thinning;
+          }
+          if (takeOutByCage[cageId] == null) {
+            takeOutByCage[cageId] = stats.takeOut;
+          }
         });
       }
 
@@ -1103,7 +1117,7 @@ export default function BuildingCage() {
           frontWeight: clean.frontWeights,
           middleWeight: clean.middleWeights,
           backWeight: clean.backWeights,
-          createdAt: selectedDateTimestamp,
+          createdAt: existing.createdAt,
         });
       } else {
         await addBodyWeightLog({

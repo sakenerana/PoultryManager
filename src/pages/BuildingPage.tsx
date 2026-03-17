@@ -15,6 +15,7 @@ import { addSubBuildings } from "../controller/subbuildingsCrud";
 import type { BuildingRecord } from "../type/building.type";
 import { useAuth } from "../context/AuthContext";
 import { resolveBodyWeightAverage } from "../utils/bodyWeight";
+import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import supabase from "../utils/supabase";
 
 dayjs.extend(utc);
@@ -556,6 +557,48 @@ export default function BuildingOverviewPage() {
 
       const overallMetricsByGrowId: Record<number, { mortality: number; thinning: number; takeOut: number }> = {};
       if (latestGrowIds.length > 0) {
+        const reductionTransactionsByGrowIdEntries = await Promise.all(
+          latestGrowIds.map(async (growId) => {
+            const transactions = await loadGrowReductionTransactionsByGrowId(growId);
+            return [growId, transactions] as const;
+          })
+        );
+        const reductionTransactionsByGrowId = Object.fromEntries(reductionTransactionsByGrowIdEntries);
+
+        latestGrowIds.forEach((growId) => {
+          const transactions = (reductionTransactionsByGrowId[growId] ?? []).filter(
+            (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
+          );
+          const latestByDayCageAndType: Record<string, { animalCount: number; reductionType: string | null }> = {};
+
+          transactions
+            .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
+            .forEach((row) => {
+              if (row.subbuildingId == null || !row.reductionType) return;
+              const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+              const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
+              if (latestByDayCageAndType[key]) return;
+              latestByDayCageAndType[key] = {
+                animalCount: toNonNegativeInt(row.animalCount),
+                reductionType: row.reductionType,
+              };
+            });
+
+          const totals = Object.values(latestByDayCageAndType).reduce(
+            (acc, row) => {
+              if (row.reductionType === "mortality") acc.mortality += row.animalCount;
+              if (row.reductionType === "thinning") acc.thinning += row.animalCount;
+              if (row.reductionType === "take_out") acc.takeOut += row.animalCount;
+              return acc;
+            },
+            { mortality: 0, thinning: 0, takeOut: 0 }
+          );
+
+          if (totals.mortality > 0 || totals.thinning > 0 || totals.takeOut > 0) {
+            overallMetricsByGrowId[growId] = totals;
+          }
+        });
+
         const { data: growMetricRows, error: growMetricRowsError } = await supabase
           .from(GROW_LOGS_TABLE)
           .select("grow_id, subbuilding_id, mortality, thinning, take_out, created_at")
@@ -589,10 +632,10 @@ export default function BuildingOverviewPage() {
         Object.values(latestByGrowDayAndCage).forEach((row) => {
           if (!overallMetricsByGrowId[row.growId]) {
             overallMetricsByGrowId[row.growId] = { mortality: 0, thinning: 0, takeOut: 0 };
+            overallMetricsByGrowId[row.growId].mortality += row.mortality;
+            overallMetricsByGrowId[row.growId].thinning += row.thinning;
+            overallMetricsByGrowId[row.growId].takeOut += row.takeOut;
           }
-          overallMetricsByGrowId[row.growId].mortality += row.mortality;
-          overallMetricsByGrowId[row.growId].thinning += row.thinning;
-          overallMetricsByGrowId[row.growId].takeOut += row.takeOut;
         });
 
         latestGrowIds.forEach((growId) => {

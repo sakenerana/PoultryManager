@@ -13,7 +13,7 @@ import { MdOutlinePictureAsPdf } from "react-icons/md";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import { loadBodyWeightLogsByBuildingId } from "../controller/bodyWeightCrud";
-import { loadGrowLogsByGrowId } from "../controller/growLogsCrud";
+import { loadGrowLogsByGrowId, loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import { resolveBodyWeightAverage } from "../utils/bodyWeight";
 import supabase from "../utils/supabase";
 
@@ -140,6 +140,11 @@ const toNonNegativeInt = (value: unknown): number => {
   return Math.max(0, Math.floor(n));
 };
 
+const toReductionType = (metricKey: MetricKey): "mortality" | "thinning" | "take_out" => {
+  if (metricKey === "takeOut") return "take_out";
+  return metricKey;
+};
+
 export default function BuildingMetricHistoryPage() {
   const navigate = useNavigate();
   const { id, metric } = useParams();
@@ -194,12 +199,24 @@ export default function BuildingMetricHistoryPage() {
         }
         setTotalBirdsLoaded(toNonNegativeInt(growRow.total_animals));
 
-        const [growLogs, bodyWeightLogs] = await Promise.all([
+        const [growLogs, reductionTransactions, bodyWeightLogs] = await Promise.all([
           loadGrowLogsByGrowId(growRow.id),
+          loadGrowReductionTransactionsByGrowId(growRow.id),
           loadBodyWeightLogsByBuildingId(buildingId),
         ]);
         const logsUntilSelectedDate = growLogs.filter((row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf());
         const logsByDate = logsUntilSelectedDate.reduce<Record<string, typeof growLogs>>((acc, row) => {
+          const dateKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+          if (!acc[dateKey]) acc[dateKey] = [];
+          acc[dateKey].push(row);
+          return acc;
+        }, {});
+        const reductionTransactionsUntilSelectedDate = reductionTransactions.filter(
+          (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
+        );
+        const reductionTransactionsByDate = reductionTransactionsUntilSelectedDate.reduce<
+          Record<string, typeof reductionTransactions>
+        >((acc, row) => {
           const dateKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
           if (!acc[dateKey]) acc[dateKey] = [];
           acc[dateKey].push(row);
@@ -231,6 +248,9 @@ export default function BuildingMetricHistoryPage() {
             (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
           );
           const latestRow = dayRows[0] ?? null;
+          const dayReductionRows = [...(reductionTransactionsByDate[dateKey] ?? [])]
+            .filter((row) => row.reductionType === toReductionType(metricKey))
+            .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf());
 
           const latestByCage: Record<string, { mortality: number; thinning: number; takeOut: number }> = {};
           dayRows.forEach((row) => {
@@ -244,8 +264,18 @@ export default function BuildingMetricHistoryPage() {
             };
           });
 
+          const latestReductionByCage: Record<string, number> = {};
+          dayReductionRows.forEach((row) => {
+            if (row.subbuildingId == null) return;
+            const cageId = String(row.subbuildingId);
+            if (latestReductionByCage[cageId] != null) return;
+            latestReductionByCage[cageId] = toNonNegativeInt(row.animalCount);
+          });
+
           const value =
-            Object.keys(latestByCage).length > 0
+            Object.keys(latestReductionByCage).length > 0
+              ? Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0)
+              : Object.keys(latestByCage).length > 0
               ? Object.values(latestByCage).reduce((sum, row) => sum + row[metricKey], 0)
               : toNonNegativeInt(latestRow?.[metricKey] ?? 0);
           const dayWeightRows = [...(bodyWeightLogsByDate[dateKey] ?? [])].sort(
@@ -274,7 +304,7 @@ export default function BuildingMetricHistoryPage() {
             value,
             avgWeight,
             expectedDailyDeaths: EXPECTED_DAILY_DEATHS[cursor.diff(startDate, "day")] ?? null,
-            sourceTime: latestRow?.createdAt ?? null,
+            sourceTime: dayReductionRows[0]?.createdAt ?? latestRow?.createdAt ?? null,
           });
         }
 
