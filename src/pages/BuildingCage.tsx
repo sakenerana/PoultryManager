@@ -899,6 +899,13 @@ export default function BuildingCage() {
 
     const value = Math.max(0, Math.floor(metricDraft || 0));
     const reductionType = activeMetric === "takeOut" ? "take_out" : activeMetric;
+    const now = dayjs();
+    const metricTimestamp = dayjs(selectedDate, "YYYY-MM-DD")
+      .hour(now.hour())
+      .minute(now.minute())
+      .second(now.second())
+      .millisecond(now.millisecond())
+      .toISOString();
 
     try {
       setIsMetricSubmitting(true);
@@ -973,7 +980,6 @@ export default function BuildingCage() {
           selectedCageTotals.takeOut - previousValueForThisTx + value
         );
       }
-
       const totalReductionFromOtherDays = growLogs
         .filter((row) => !isSameSelectedDate(row.createdAt))
         .reduce(
@@ -996,7 +1002,7 @@ export default function BuildingCage() {
         thinning: selectedCageTotals.thinning,
         takeOut: selectedCageTotals.takeOut,
         actualTotalAnimals,
-        createdAt: selectedDateTimestamp,
+        createdAt: metricTimestamp,
       });
 
       if (existingReductionTx) {
@@ -1004,7 +1010,7 @@ export default function BuildingCage() {
           growLogId: Number(savedGrowLog.id),
           animalCount: value,
           remarks: metricRemarksDraft.trim() || null,
-          createdAt: selectedDateTimestamp,
+          createdAt: metricTimestamp,
         });
       } else {
         await addGrowReductionTransaction({
@@ -1015,7 +1021,7 @@ export default function BuildingCage() {
           animalCount: value,
           reductionType,
           remarks: metricRemarksDraft.trim() || null,
-          createdAt: selectedDateTimestamp,
+          createdAt: metricTimestamp,
         });
       }
 
