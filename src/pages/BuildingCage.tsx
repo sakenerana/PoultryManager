@@ -488,7 +488,12 @@ export default function BuildingCage() {
 
   const isPreviousDateSelected = dayjs(selectedDate).isBefore(dayjs().format("YYYY-MM-DD"), "day");
   const canEditSelectedDate = !isPreviousDateSelected || userRole === "Admin";
-  const selectedDateTimestamp = `${selectedDate}T12:00:00+00:00`;
+  const selectedDateTimestamp = dayjs(selectedDate, "YYYY-MM-DD")
+    .hour(12)
+    .minute(0)
+    .second(0)
+    .millisecond(0)
+    .toISOString();
 
   const getStatsForCage = useMemo(() => {
     return (cage: Cage): CageStats => {
@@ -1117,7 +1122,7 @@ export default function BuildingCage() {
           frontWeight: clean.frontWeights,
           middleWeight: clean.middleWeights,
           backWeight: clean.backWeights,
-          createdAt: existing.createdAt,
+          createdAt: selectedDateTimestamp,
         });
       } else {
         await addBodyWeightLog({
