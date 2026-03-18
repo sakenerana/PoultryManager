@@ -6,6 +6,7 @@ import { FaSignOutAlt } from "react-icons/fa";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
@@ -21,13 +22,14 @@ import {
   addGrowLog,
   addGrowReductionTransaction,
   loadGrowReductionTransactionsByGrowId,
-  loadGrowLogsByGrowId,
   updateGrowReductionTransaction,
 } from "../controller/growLogsCrud";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
+
+dayjs.extend(utc);
 
 export type Cage = {
   id: string;
@@ -488,7 +490,7 @@ export default function BuildingCage() {
 
   const isPreviousDateSelected = dayjs(selectedDate).isBefore(dayjs().format("YYYY-MM-DD"), "day");
   const canEditSelectedDate = !isPreviousDateSelected || userRole === "Admin";
-  const selectedDateTimestamp = dayjs(selectedDate, "YYYY-MM-DD")
+  const selectedDateTimestamp = dayjs.utc(selectedDate, "YYYY-MM-DD")
     .hour(12)
     .minute(0)
     .second(0)
@@ -899,12 +901,11 @@ export default function BuildingCage() {
 
     const value = Math.max(0, Math.floor(metricDraft || 0));
     const reductionType = activeMetric === "takeOut" ? "take_out" : activeMetric;
-    const now = dayjs();
-    const metricTimestamp = dayjs(selectedDate, "YYYY-MM-DD")
-      .hour(now.hour())
-      .minute(now.minute())
-      .second(now.second())
-      .millisecond(now.millisecond())
+    const metricTimestamp = dayjs.utc(selectedDate, "YYYY-MM-DD")
+      .hour(12)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
       .toISOString();
 
     try {
@@ -916,7 +917,6 @@ export default function BuildingCage() {
         return;
       }
       const growId = latestGrow.id;
-      const growLogs = await loadGrowLogsByGrowId(growId);
       const reductions = await loadGrowReductionTransactionsByGrowId(growId);
 
       const selectedDayReductions = reductions.filter((row) => isSameSelectedDate(row.createdAt));
@@ -980,10 +980,10 @@ export default function BuildingCage() {
           selectedCageTotals.takeOut - previousValueForThisTx + value
         );
       }
-      const totalReductionFromOtherDays = growLogs
+      const totalReductionFromOtherDays = reductions
         .filter((row) => !isSameSelectedDate(row.createdAt))
         .reduce(
-          (sum, row) => sum + (row.mortality ?? 0) + (row.thinning ?? 0) + (row.takeOut ?? 0),
+          (sum, row) => sum + (row.animalCount ?? 0),
           0
         );
 

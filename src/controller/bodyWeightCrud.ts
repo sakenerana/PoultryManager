@@ -1,4 +1,6 @@
 import supabase from "../utils/supabase";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
 import type {
   BodyWeightRecord,
   BodyWeightRow,
@@ -8,6 +10,8 @@ import type {
 } from "../type/bodyWeight.types";
 
 const BODY_WEIGHT_TABLE = import.meta.env.VITE_SUPABASE_BODY_WEIGHT_LOGS_TABLE ?? "BodyWeightLogs";
+
+dayjs.extend(utc);
 
 function mapRowToBodyWeight(row: BodyWeightRow): BodyWeightRecord {
   return {
@@ -51,14 +55,13 @@ export async function loadBodyWeightLogsByBuildingIdAndDate(
   buildingId: number,
   date: string
 ): Promise<BodyWeightRecord[]> {
-  const startDate = new Date(`${date}T00:00:00`);
-  const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + 1);
+  const startDate = dayjs.utc(date, "YYYY-MM-DD").startOf("day").toISOString();
+  const endDate = dayjs.utc(date, "YYYY-MM-DD").add(1, "day").startOf("day").subtract(1, "millisecond").toISOString();
 
   return listBodyWeightLogs({
     buildingId,
-    createdFrom: startDate.toISOString(),
-    createdTo: endDate.toISOString(),
+    createdFrom: startDate,
+    createdTo: endDate,
     ascending: true,
   });
 }
