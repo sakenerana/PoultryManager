@@ -39,13 +39,13 @@ type HistoryRow = {
 };
 
 const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
-  mortality: { title: "Mortality", accent: "bg-red-500" },
+  mortality: { title: "Actual Death", accent: "bg-red-500" },
   thinning: { title: "Thinning", accent: "bg-slate-400" },
   takeOut: { title: "Take Out", accent: "bg-amber-500" },
 };
 
 const METRIC_TABS: Array<{ key: MetricKey; label: string; activeBg: string; activeText: string; icon: "plus" | "minus" }> = [
-  { key: "mortality", label: "Mortality", activeBg: "#ffa600", activeText: "#ffffff", icon: "minus" },
+  { key: "mortality", label: "Actual Death", activeBg: "#ffa600", activeText: "#ffffff", icon: "minus" },
   { key: "thinning", label: "Thinning", activeBg: "#008822", activeText: "#ffffff", icon: "minus" },
   { key: "takeOut", label: "Take Out", activeBg: "#f59e0b", activeText: "#ffffff", icon: "plus" },
 ];
@@ -414,7 +414,7 @@ export default function BuildingMetricHistoryPage() {
         head: [[
           "Day",
           "Date",
-          ...(metricKey === "mortality" ? ["Expected Deaths"] : []),
+          ...(metricKey === "mortality" ? ["Standard Deaths"] : []),
           METRIC_META[metricKey].title,
           ...(metricKey === "mortality" ? ["Birds Alive"] : []),
           "Avg Wt",
@@ -661,10 +661,10 @@ export default function BuildingMetricHistoryPage() {
                         </div>
                       </div>
                       <div className="mt-1 text-sm text-slate-600">{dayjs(row.date).format("MMMM D, YYYY")}</div>
-                      <div className="mt-1 text-xs text-slate-500">
+                      <div className="mt-1 text-[10px] text-slate-500">
                         {metricKey === "mortality" ? (
                           <>
-                            Expected Death{" "}
+                            Standard Death{" "}
                             <span className="font-semibold text-slate-700">
                               {row.expectedDailyDeaths != null ? row.expectedDailyDeaths.toLocaleString() : "-"}
                             </span>
