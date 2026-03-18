@@ -1198,6 +1198,17 @@ export default function BuildingCage() {
       { totalCages: 0, totalMortality: 0, totalThinning: 0, totalTakeOut: 0, totalAvgWeight: 0 }
     );
   }, [filteredCages, getStatsForCage]);
+
+  const growLogPreviewText = useMemo(() => {
+    if (!growLogPreview) {
+      return "No record on selected date";
+    }
+
+    const previewDate = dayjs.utc(growLogPreview.createdAt);
+    const isLatestPrevious = previewDate.format("YYYY-MM-DD") !== selectedDate;
+
+    return `${previewDate.format("MMMM D, YYYY h:mm A")} UTC${isLatestPrevious ? " (latest previous)" : ""} (M:${growLogPreview.mortality}, T:${growLogPreview.thinning}, O:${growLogPreview.takeOut})`;
+  }, [growLogPreview, selectedDate]);
   const avgWeightAcrossCages =
     overviewStats.totalCages > 0 ? overviewStats.totalAvgWeight / overviewStats.totalCages : 0;
 
@@ -1320,9 +1331,7 @@ export default function BuildingCage() {
                 <div className="mt-1 text-xs text-slate-600">
                   GrowLogs:{" "}
                   <span className="font-semibold text-slate-800">
-                    {growLogPreview
-                      ? `${dayjs(growLogPreview.createdAt).format("MMMM D, YYYY h:mm A")}${dayjs(growLogPreview.createdAt).format("YYYY-MM-DD") !== selectedDate ? " (latest previous)" : ""} (M:${growLogPreview.mortality}, T:${growLogPreview.thinning}, O:${growLogPreview.takeOut})`
-                      : "No record on selected date"}
+                    {growLogPreviewText}
                   </span>
                 </div>
               </div>
@@ -1377,9 +1386,7 @@ export default function BuildingCage() {
                   <div className="mt-2 text-xs text-slate-600">
                     GrowLogs:{" "}
                     <span className="font-semibold text-slate-800">
-                      {growLogPreview
-                        ? `${dayjs(growLogPreview.createdAt).format("MMMM D, YYYY h:mm A")}${dayjs(growLogPreview.createdAt).format("YYYY-MM-DD") !== selectedDate ? " (latest previous)" : ""} (M:${growLogPreview.mortality}, T:${growLogPreview.thinning}, O:${growLogPreview.takeOut})`
-                        : "No record on selected date"}
+                      {growLogPreviewText}
                     </span>
                   </div>
                 </div>
