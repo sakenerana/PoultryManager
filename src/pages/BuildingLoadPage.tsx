@@ -4,6 +4,7 @@ import { Layout, Button, Divider, Grid, Typography, Modal } from "antd";
 import { FaSignOutAlt } from "react-icons/fa";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
+import { FiEdit2, FiTrash2, FiX, FiCheck } from "react-icons/fi";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
@@ -19,6 +20,16 @@ const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 type UserAccess = {
   role: "Admin" | "Supervisor" | "Staff" | null;
   isActive: boolean;
+};
+
+type HistoryEntry = {
+  growId: number | null;
+  loadId: number | null;
+  transactionId: number | null;
+  date: string;
+  dateTime: string;
+  status: string;
+  total: number;
 };
 
 export default function BuildingLoadPage() {
@@ -40,9 +51,7 @@ export default function BuildingLoadPage() {
     () => dayjs(selectedDate).format("MMMM D, YYYY"),
     [selectedDate]
   );
-  const [historyEntries, setHistoryEntries] = useState<
-    Array<{ date: string; dateTime: string; status: string; total: number }>
-  >([]);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [totalInput, setTotalInput] = useState("");
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -50,6 +59,9 @@ export default function BuildingLoadPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null);
+  const [editingTotalInput, setEditingTotalInput] = useState("");
+  const [isEditingSaving, setIsEditingSaving] = useState(false);
   const [activeGrowId, setActiveGrowId] = useState<number | null>(null);
   const [activeGrowStatus, setActiveGrowStatus] = useState<string>("");
   const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
@@ -77,6 +89,7 @@ export default function BuildingLoadPage() {
   }, [historyEntries]);
   const isCompleted = activeGrowStatus.toLowerCase() === "growing";
   const canUndoCompletion = userRole === "Admin" && isCompleted;
+  const canEditHistory = userRole === "Admin";
 
   const resolveUserAccess = async (): Promise<UserAccess> => {
     if (!user?.id) return { role: null, isActive: false };
@@ -178,7 +191,7 @@ export default function BuildingLoadPage() {
 
       const { data: loadTransactions, error: loadTransactionsError } = await supabase
         .from(LOAD_TRANSACTIONS_TABLE)
-        .select("created_at, load_id, animal_count")
+        .select("id, created_at, load_id, animal_count")
         .in("load_id", loadIds)
         .order("created_at", { ascending: true });
 
@@ -187,10 +200,13 @@ export default function BuildingLoadPage() {
       }
 
       const mapped =
-        ((loadTransactions ?? []) as Array<{ created_at: string; load_id: number | null; animal_count?: number | null }>).map((row) => {
+        ((loadTransactions ?? []) as Array<{ id: number; created_at: string; load_id: number | null; animal_count?: number | null }>).map((row) => {
           const growId = row.load_id != null ? loadGrowMap.get(row.load_id) ?? null : null;
           const status = growId != null ? growStatusMap.get(growId) ?? "" : "";
           return {
+            growId,
+            loadId: row.load_id ?? null,
+            transactionId: row.id ?? null,
             date: dayjs(row.created_at).format("YYYY-MM-DD"),
             dateTime: dayjs(row.created_at).format("MMMM D, YYYY h:mm A"),
             status,
@@ -221,6 +237,47 @@ export default function BuildingLoadPage() {
     void fetchUserAccess();
   }, [user?.id]);
 
+  const resetEditState = () => {
+    setEditingTransactionId(null);
+    setEditingTotalInput("");
+  };
+
+  const recalculateGrowTotal = async (growId: number) => {
+    const { data: loadsForGrow, error: loadsForGrowError } = await supabase
+      .from(LOAD_TABLE)
+      .select("id")
+      .eq("grow_id", growId);
+
+    if (loadsForGrowError) {
+      throw new Error(loadsForGrowError.message || "Failed to load related loads for grow.");
+    }
+
+    const loadIds = (loadsForGrow ?? []).map((row: { id: number }) => row.id);
+
+    const { data: loadTransactions, error: loadTransactionsError } = await supabase
+      .from(LOAD_TRANSACTIONS_TABLE)
+      .select("animal_count")
+      .in("load_id", loadIds.length > 0 ? loadIds : [-1]);
+
+    if (loadTransactionsError) {
+      throw new Error(loadTransactionsError.message || "Failed to compute total animals from load transactions.");
+    }
+
+    const summedTotal = (loadTransactions ?? []).reduce(
+      (sum: number, row: { animal_count?: number | null }) => sum + (row.animal_count ?? 0),
+      0
+    );
+
+    const { error: growTotalError } = await supabase
+      .from(GROWS_TABLE)
+      .update({ total_animals: summedTotal })
+      .eq("id", growId);
+
+    if (growTotalError) {
+      throw new Error(growTotalError.message || "Failed to update grow total_animals.");
+    }
+  };
+
   const handleSaveOrUpdate = async () => {
     const parsed = Number(totalInput);
     if (!Number.isFinite(parsed) || parsed < 0) return;
@@ -234,6 +291,24 @@ export default function BuildingLoadPage() {
 
     const total = Math.floor(parsed);
     const actionLabel = hasTodayRecord ? "updated" : "saved";
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: hasTodayRecord ? "Update Building Load" : "Save Building Load",
+        content: hasTodayRecord
+          ? `Are you sure you want to update this load entry to ${total.toLocaleString()}?`
+          : `Are you sure you want to save this load entry with ${total.toLocaleString()} birds?`,
+        okText: hasTodayRecord ? "Update" : "Save",
+        cancelText: "Cancel",
+        okButtonProps: {
+          style: { backgroundColor: BRAND, borderColor: BRAND },
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+
     setIsSaving(true);
 
     try {
@@ -305,39 +380,7 @@ export default function BuildingLoadPage() {
         throw new Error(txError.message || "Failed to insert load transactions.");
       }
 
-      const { data: loadsForGrow, error: loadsForGrowError } = await supabase
-        .from(LOAD_TABLE)
-        .select("id")
-        .eq("grow_id", grow.id);
-
-      if (loadsForGrowError) {
-        throw new Error(loadsForGrowError.message || "Failed to load related loads for grow.");
-      }
-
-      const loadIds = (loadsForGrow ?? []).map((row: { id: number }) => row.id);
-
-      const { data: loadTransactions, error: loadTransactionsError } = await supabase
-        .from(LOAD_TRANSACTIONS_TABLE)
-        .select("animal_count")
-        .in("load_id", loadIds.length > 0 ? loadIds : [-1]);
-
-      if (loadTransactionsError) {
-        throw new Error(loadTransactionsError.message || "Failed to compute total animals from load transactions.");
-      }
-
-      const summedTotal = (loadTransactions ?? []).reduce(
-        (sum: number, row: { animal_count?: number | null }) => sum + (row.animal_count ?? 0),
-        0
-      );
-
-      const { error: growTotalError } = await supabase
-        .from(GROWS_TABLE)
-        .update({ total_animals: summedTotal })
-        .eq("id", grow.id);
-
-      if (growTotalError) {
-        throw new Error(growTotalError.message || "Failed to update grow total_animals.");
-      }
+      await recalculateGrowTotal(grow.id);
 
       await fetchHistoryByStatus();
       setTotalInput("");
@@ -352,6 +395,188 @@ export default function BuildingLoadPage() {
       setIsToastOpen(true);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const startEditingEntry = (entry: HistoryEntry) => {
+    if (!canEditHistory || entry.transactionId == null) return;
+    setEditingTransactionId(entry.transactionId);
+    setEditingTotalInput(String(entry.total));
+  };
+
+  const handleEditSave = async (entry: HistoryEntry) => {
+    if (!canEditHistory) {
+      setToastType("error");
+      setToastMessage("Only Admin can edit history entries.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    if (entry.transactionId == null || entry.growId == null || entry.loadId == null) {
+      setToastType("error");
+      setToastMessage("This history entry cannot be edited.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const parsed = Number(editingTotalInput);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setToastType("error");
+      setToastMessage("Please enter a valid total.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const nextTotal = Math.floor(parsed);
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Save Edited History Entry",
+        content: `Are you sure you want to save this change to ${nextTotal.toLocaleString()}?`,
+        okText: "Save",
+        cancelText: "Cancel",
+        okButtonProps: {
+          style: { backgroundColor: BRAND, borderColor: BRAND },
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+
+    setIsEditingSaving(true);
+    try {
+      const { error: transactionError } = await supabase
+        .from(LOAD_TRANSACTIONS_TABLE)
+        .update({ animal_count: nextTotal })
+        .eq("id", entry.transactionId);
+
+      if (transactionError) {
+        throw new Error(transactionError.message || "Failed to update load transaction.");
+      }
+
+      const { error: loadError } = await supabase
+        .from(LOAD_TABLE)
+        .update({ status: entry.status || "Pending" })
+        .eq("id", entry.loadId);
+
+      if (loadError) {
+        throw new Error(loadError.message || "Failed to update load record.");
+      }
+
+      await recalculateGrowTotal(entry.growId);
+
+      const { error: growError } = await supabase
+        .from(GROWS_TABLE)
+        .update({ status: entry.status || "Loading" })
+        .eq("id", entry.growId);
+
+      if (growError) {
+        throw new Error(growError.message || "Failed to update grow record.");
+      }
+
+      await fetchHistoryByStatus();
+      resetEditState();
+      setToastType("success");
+      setToastMessage("History entry updated successfully.");
+      setIsToastOpen(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to update history entry. Please try again.";
+      setToastType("error");
+      setToastMessage(message);
+      setIsToastOpen(true);
+    } finally {
+      setIsEditingSaving(false);
+    }
+  };
+
+  const handleDeleteEntry = async (entry: HistoryEntry) => {
+    if (!canEditHistory) {
+      setToastType("error");
+      setToastMessage("Only Admin can delete history entries.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    if (entry.transactionId == null || entry.growId == null || entry.loadId == null) {
+      setToastType("error");
+      setToastMessage("This history entry cannot be deleted.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Delete History Entry",
+        content:
+          "Are you sure you want to delete or remove this entry? This will recalculate the grow total, and the related load record may also be removed if this is its last transaction.",
+        okText: "Delete",
+        cancelText: "Cancel",
+        okButtonProps: {
+          danger: true,
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+
+    setIsEditingSaving(true);
+    try {
+      const { error: deleteTransactionError } = await supabase
+        .from(LOAD_TRANSACTIONS_TABLE)
+        .delete()
+        .eq("id", entry.transactionId);
+
+      if (deleteTransactionError) {
+        throw new Error(deleteTransactionError.message || "Failed to delete load transaction.");
+      }
+
+      const { data: remainingTransactions, error: remainingTransactionsError } = await supabase
+        .from(LOAD_TRANSACTIONS_TABLE)
+        .select("id")
+        .eq("load_id", entry.loadId)
+        .limit(1);
+
+      if (remainingTransactionsError) {
+        throw new Error(remainingTransactionsError.message || "Failed to check remaining load transactions.");
+      }
+
+      if ((remainingTransactions ?? []).length === 0) {
+        const { error: deleteLoadError } = await supabase
+          .from(LOAD_TABLE)
+          .delete()
+          .eq("id", entry.loadId);
+
+        if (deleteLoadError) {
+          throw new Error(deleteLoadError.message || "Failed to remove empty load record.");
+        }
+      }
+
+      await recalculateGrowTotal(entry.growId);
+
+      const { error: growError } = await supabase
+        .from(GROWS_TABLE)
+        .update({ status: entry.status || "Loading" })
+        .eq("id", entry.growId);
+
+      if (growError) {
+        throw new Error(growError.message || "Failed to update grow record.");
+      }
+
+      await fetchHistoryByStatus();
+      resetEditState();
+      setToastType("success");
+      setToastMessage("History entry deleted successfully.");
+      setIsToastOpen(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to delete history entry. Please try again.";
+      setToastType("error");
+      setToastMessage(message);
+      setIsToastOpen(true);
+    } finally {
+      setIsEditingSaving(false);
     }
   };
 
@@ -538,6 +763,165 @@ export default function BuildingLoadPage() {
     await signOutAndRedirect(navigate);
   };
 
+  const renderHistoryRow = (item: HistoryEntry, index: number, compact = false) => {
+    const isEditing = editingTransactionId != null && editingTransactionId === item.transactionId;
+    const isEditingValueValid =
+      editingTotalInput.trim() !== "" &&
+      Number.isFinite(Number(editingTotalInput)) &&
+      Number(editingTotalInput) >= 0;
+
+    if (compact) {
+      return (
+        <li key={`${item.transactionId ?? item.dateTime}-${index}`} className="rounded-sm border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+          <div className="flex items-center gap-3">
+            <span className="w-10 text-slate-500">#{index + 1}</span>
+            <span className="flex-1">{item.dateTime}</span>
+            {isEditing ? (
+              <input
+                className="w-24 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-right text-[16px] outline-none focus:ring-2 focus:ring-[#008822]/30"
+                value={editingTotalInput}
+                onChange={(e) => setEditingTotalInput(e.target.value)}
+                inputMode="numeric"
+              />
+            ) : (
+              <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-900 shadow-sm">
+                {item.total.toLocaleString()}
+              </span>
+            )}
+          </div>
+          {canEditHistory && (
+            <div className="mt-1.5 flex justify-end">
+              {isEditing ? (
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-white px-1.5 py-1 shadow-sm">
+                  <button
+                    type="button"
+                    className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={resetEditState}
+                    disabled={isEditingSaving}
+                    aria-label="Cancel editing"
+                  >
+                    <FiX size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-7 min-w-7 items-center justify-center rounded-full bg-[#008822] px-2.5 text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void handleEditSave(item)}
+                    disabled={!isEditingValueValid || isEditingSaving}
+                    aria-label="Save entry"
+                  >
+                    {isEditingSaving ? (
+                      <span className="text-[11px] font-semibold">...</span>
+                    ) : (
+                      <>
+                        <FiCheck size={12} />
+                        <span className="ml-1 text-[10px] font-semibold">Save</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                  <button
+                    type="button"
+                    className="flex h-7 items-center gap-1 rounded-full bg-emerald-50 px-2 text-[10px] font-semibold text-emerald-700"
+                    onClick={() => startEditingEntry(item)}
+                  >
+                    <FiEdit2 size={11} />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-7 items-center gap-1 rounded-full bg-red-50 px-2 text-[10px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void handleDeleteEntry(item)}
+                    disabled={isEditingSaving}
+                  >
+                    <FiTrash2 size={11} />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </li>
+      );
+    }
+
+    return (
+      <li
+        key={`${item.transactionId ?? item.dateTime}-${index}`}
+        className="rounded-sm border border-slate-100 bg-slate-50/60 px-3 py-2.5"
+      >
+        <div className="grid grid-cols-[52px_1fr_auto] items-center gap-3">
+          <span className="text-xs font-semibold text-slate-500">#{index + 1}</span>
+          <span className="text-sm text-slate-700">{item.dateTime}</span>
+          {isEditing ? (
+            <input
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-right text-sm outline-none focus:ring-2 focus:ring-[#008822]/30"
+              value={editingTotalInput}
+              onChange={(e) => setEditingTotalInput(e.target.value)}
+              inputMode="numeric"
+            />
+          ) : (
+            <span className="text-sm font-semibold text-slate-900">{item.total.toLocaleString()}</span>
+          )}
+        </div>
+        {canEditHistory && (
+          <div className="mt-2 flex justify-end">
+            {isEditing ? (
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-2 py-1 shadow-sm">
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={resetEditState}
+                  disabled={isEditingSaving}
+                  aria-label="Cancel editing"
+                >
+                  <FiX size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-8 min-w-8 items-center justify-center rounded-full bg-[#008822] px-3 text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => void handleEditSave(item)}
+                  disabled={!isEditingValueValid || isEditingSaving}
+                  aria-label="Save entry"
+                >
+                  {isEditingSaving ? (
+                    <span className="text-[11px] font-semibold">...</span>
+                  ) : (
+                    <>
+                      <FiCheck size={13} />
+                      <span className="ml-1 text-[11px] font-semibold">Save</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm">
+                <button
+                  type="button"
+                  className="flex h-8 items-center gap-1 rounded-full bg-emerald-50 px-3 text-[11px] font-semibold text-emerald-700"
+                  onClick={() => startEditingEntry(item)}
+                >
+                  <FiEdit2 size={12} />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex h-8 items-center gap-1 rounded-full bg-red-50 px-3 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => void handleDeleteEntry(item)}
+                  disabled={isEditingSaving}
+                >
+                  <FiTrash2 size={12} />
+                  <span>Remove</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </li>
+    );
+  };
+
   return (
     <Layout className="min-h-screen bg-slate-100">
       <Header
@@ -626,11 +1010,7 @@ export default function BuildingLoadPage() {
               ) : (
                 <ul className="text-sm text-slate-700 space-y-1">
                   {history.map((item, index) => (
-                    <li key={`${item.dateTime}-${index}`} className="flex items-center gap-3">
-                      <span className="w-10 text-slate-500">#{index + 1}</span>
-                      <span className="flex-1">{item.dateTime}</span>
-                      <span className="font-semibold">{item.total.toLocaleString()}</span>
-                    </li>
+                    renderHistoryRow(item, index, true)
                   ))}
                 </ul>
               )}
@@ -777,14 +1157,7 @@ export default function BuildingLoadPage() {
                     ) : (
                       <ul className="space-y-2">
                         {history.map((item, index) => (
-                          <li
-                            key={`${item.dateTime}-${index}`}
-                            className="grid grid-cols-[52px_1fr_auto] items-center gap-3 rounded-sm border border-slate-100 bg-slate-50/60 px-3 py-2.5"
-                          >
-                            <span className="text-xs font-semibold text-slate-500">#{index + 1}</span>
-                            <span className="text-sm text-slate-700">{item.dateTime}</span>
-                            <span className="text-sm font-semibold text-slate-900">{item.total.toLocaleString()}</span>
-                          </li>
+                          renderHistoryRow(item, index)
                         ))}
                       </ul>
                     )}

@@ -51,6 +51,7 @@ const METRIC_TABS: Array<{ key: MetricKey; label: string; activeBg: string; acti
 ];
 
 const EXPECTED_DAILY_DEATHS: Record<number, number> = {
+  0: 0,
   1: 150,
   2: 160,
   3: 170,
@@ -239,7 +240,7 @@ export default function BuildingMetricHistoryPage() {
         const nextRows: HistoryRow[] = [];
 
         for (
-          let cursor = startDate.add(1, "day");
+          let cursor = startDate;
           cursor.isBefore(endDate) || cursor.isSame(endDate, "day");
           cursor = cursor.add(1, "day")
         ) {
@@ -617,7 +618,7 @@ export default function BuildingMetricHistoryPage() {
               </div>
               <div className="mt-1 text-xl font-bold text-slate-900">{METRIC_META[metricKey].title} Daily History</div>
               <div className="mt-2 text-sm text-slate-600">
-                Showing day 1 to {dayjs(selectedDate).format("MMMM D, YYYY")}
+                Showing day 0 to {dayjs(selectedDate).format("MMMM D, YYYY")}
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2.5">
                 <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
