@@ -103,6 +103,35 @@ const getErrorMessage = (error: unknown): string => {
   return "Unknown error";
 };
 
+type ReductionSnapshot = {
+  createdAt: string;
+  subbuildingId: number | null;
+  reductionType: string | null;
+  animalCount: number | null;
+};
+
+const calculateActualTotalAnimals = (
+  totalAnimals: number,
+  reductions: ReductionSnapshot[],
+  endExclusive: dayjs.Dayjs
+): number => {
+  const latestByDayCageAndType: Record<string, number> = {};
+
+  reductions
+    .filter((row) => dayjs.utc(row.createdAt).valueOf() < endExclusive.valueOf())
+    .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
+    .forEach((row) => {
+      if (row.subbuildingId == null || !row.reductionType) return;
+      const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+      const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
+      if (latestByDayCageAndType[key] != null) return;
+      latestByDayCageAndType[key] = Math.max(0, Math.floor(row.animalCount ?? 0));
+    });
+
+  const totalReductionUpToDate = Object.values(latestByDayCageAndType).reduce((sum, value) => sum + value, 0);
+  return Math.max(0, totalAnimals - totalReductionUpToDate);
+};
+
 function StatPill({
   label,
   value,
@@ -980,20 +1009,32 @@ export default function BuildingCage() {
           selectedCageTotals.takeOut - previousValueForThisTx + value
         );
       }
-      const totalReductionFromOtherDays = reductions
-        .filter((row) => !isSameSelectedDate(row.createdAt))
-        .reduce(
-          (sum, row) => sum + (row.animalCount ?? 0),
-          0
-        );
+      const nextReductionRows = reductions.map((row) =>
+        existingReductionTx && row.id === existingReductionTx.id
+          ? {
+            ...row,
+            animalCount: value,
+            createdAt: metricTimestamp,
+          }
+          : row
+      );
 
-      const totalReductionWithSelectedDay =
-        totalReductionFromOtherDays +
-        selectedDayTotals.mortality +
-        selectedDayTotals.thinning +
-        selectedDayTotals.takeOut;
+      if (!existingReductionTx) {
+        nextReductionRows.push({
+          id: "__pending__",
+          createdAt: metricTimestamp,
+          buildingId,
+          subbuildingId,
+          growId,
+          growLogId: null,
+          animalCount: value,
+          reductionType,
+          remarks: metricRemarksDraft.trim() || null,
+        });
+      }
 
-      const actualTotalAnimals = Math.max(0, latestGrow.totalAnimals - totalReductionWithSelectedDay);
+      const selectedDayEnd = dayjs.utc(selectedDate, "YYYY-MM-DD").add(1, "day").startOf("day");
+      const actualTotalAnimals = calculateActualTotalAnimals(latestGrow.totalAnimals, nextReductionRows, selectedDayEnd);
 
       const savedGrowLog = await addGrowLog({
         growId,
@@ -1023,6 +1064,36 @@ export default function BuildingCage() {
           remarks: metricRemarksDraft.trim() || null,
           createdAt: metricTimestamp,
         });
+      }
+
+      const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
+        .from(GROW_LOGS_TABLE)
+        .select("created_at")
+        .eq("grow_id", growId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestGrowLogRowError) throw latestGrowLogRowError;
+
+      if (latestGrowLogRow?.created_at) {
+        const latestLogDate = dayjs.utc(latestGrowLogRow.created_at).format("YYYY-MM-DD");
+        const latestLogStart = dayjs.utc(latestLogDate, "YYYY-MM-DD").startOf("day");
+        const latestLogEnd = latestLogStart.add(1, "day");
+        const latestActualTotalAnimals = calculateActualTotalAnimals(
+          latestGrow.totalAnimals,
+          nextReductionRows,
+          latestLogEnd
+        );
+
+        const { error: latestGrowLogUpdateError } = await supabase
+          .from(GROW_LOGS_TABLE)
+          .update({ actual_total_animals: latestActualTotalAnimals })
+          .eq("grow_id", growId)
+          .gte("created_at", latestLogStart.toISOString())
+          .lt("created_at", latestLogEnd.toISOString());
+
+        if (latestGrowLogUpdateError) throw latestGrowLogUpdateError;
       }
 
       setMetricOverrides((prev) => {
