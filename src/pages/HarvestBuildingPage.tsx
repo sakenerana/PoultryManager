@@ -410,8 +410,8 @@ export default function HarvestBuildingPage() {
         const latest = latestByBuildingId[buildingId];
         const days = Math.max(
           0,
-          dayjs(selectedDate).startOf("day").diff(dayjs(latest.createdAt).startOf("day"), "day")
-        ) + 1;
+          dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day").diff(dayjs.utc(latest.createdAt).startOf("day"), "day")
+        );
         const growStatus: Building["growStatus"] = latest.status === "harvested" ? "Harvested" : "Growing";
         return {
           id: String(buildingId),
