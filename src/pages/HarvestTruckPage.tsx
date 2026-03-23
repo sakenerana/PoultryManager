@@ -40,6 +40,7 @@ type Truck = {
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -304,6 +305,36 @@ export default function HarvestTruckPage() {
 
   const getGrowTotalAnimals = async (growId: number | null, fallbackBuildingId: number): Promise<number | null> => {
     if (growId !== null) {
+      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
+      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
+      const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
+        .from(GROW_LOGS_TABLE)
+        .select("actual_total_animals, created_at")
+        .eq("grow_id", growId)
+        .gte("created_at", selectedDayStart)
+        .lt("created_at", selectedDayEnd)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (selectedDayGrowLogsError) throw selectedDayGrowLogsError;
+      if (selectedDayGrowLogs && selectedDayGrowLogs.length > 0) {
+        return Math.max(0, Math.floor(Number(selectedDayGrowLogs[0]?.actual_total_animals ?? 0)));
+      }
+
+      const { data: previousGrowLogs, error: previousGrowLogsError } = await supabase
+        .from(GROW_LOGS_TABLE)
+        .select("actual_total_animals, created_at")
+        .eq("grow_id", growId)
+        .lt("created_at", selectedDayStart)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (previousGrowLogsError) throw previousGrowLogsError;
+      if (previousGrowLogs && previousGrowLogs.length > 0) {
+        return Math.max(0, Math.floor(Number(previousGrowLogs[0]?.actual_total_animals ?? 0)));
+      }
+
       const { data, error } = await supabase
         .from(GROWS_TABLE)
         .select("total_animals")

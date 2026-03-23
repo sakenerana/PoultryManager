@@ -36,6 +36,9 @@ type BuildingStats = {
   days: number;
   total: number;
   status: "Growing" | "Harvested";
+  avgWeight: number;
+  reduction: number;
+  totalHarvested: number;
   mortality: number;
   thinning: number;
   takeOut: number;
@@ -48,6 +51,7 @@ const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
+const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const REDUCTION_TYPE_BY_METRIC: Record<EditableMetric, HarvestReductionType> = {
   mortality: "mortality",
   thinning: "thinning",
@@ -109,15 +113,28 @@ function StatPill({
 }
 
 function StatusBadge({ status }: { status: BuildingStats["status"] }) {
-  const styles: Record<BuildingStats["status"], { dot: string; text: string }> = {
-    Growing: { dot: "bg-emerald-500", text: "text-emerald-700" },
-    Harvested: { dot: "bg-amber-500", text: "text-amber-800" },
+  const styles: Record<BuildingStats["status"], { pill: string; dot: string; text: string }> = {
+    Growing: {
+      pill: "bg-emerald-100 border-emerald-200",
+      dot: "bg-emerald-500",
+      text: "text-emerald-700",
+    },
+    Harvested: {
+      pill: "bg-amber-100 border-amber-200",
+      dot: "bg-amber-500",
+      text: "text-amber-800",
+    },
   };
 
   const style = styles[status];
 
   return (
-    <span className="inline-flex items-center gap-2 text-[11px] font-semibold">
+    <span
+      className={[
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow-sm",
+        style.pill,
+      ].join(" ")}
+    >
       <span className={["h-2 w-2 rounded-full", style.dot].join(" ")} />
       <span className={style.text}>{status}</span>
     </span>
@@ -225,16 +242,21 @@ function BuildingRow({
               </div>
             </div>
 
-            <div />
+            <div className="shrink-0">
+              <StatusBadge status={stats.status} />
+            </div>
           </div>
 
-          {/* Stats Grid */}
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
             <StatPill
-              label="Total Birds / Remaining"
+              label="Total Birds"
+              value={stats.total.toLocaleString()}
+            />
+            <StatPill
+              label="Current"
               value={(
                 <span>
-                  {stats.total.toLocaleString()} / {remainingBirds.toLocaleString()}{" "}
+                  {remainingBirds.toLocaleString()}{" "}
                   <span className="text-[10px] font-medium text-slate-500">
                     ({remainingPercentage.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
@@ -244,7 +266,17 @@ function BuildingRow({
                 </span>
               )}
             />
-            <StatPill label="Status" value={<StatusBadge status={stats.status} />} />
+            <StatPill
+              label="Avg Weight"
+              value={`${stats.avgWeight.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} g`}
+            />
+            <StatPill
+              label="Total Birds Harvested"
+              value={stats.totalHarvested.toLocaleString()}
+            />
             <StatPill
               label="Mortality"
               value={stats.mortality.toLocaleString()}
@@ -276,8 +308,6 @@ function BuildingRow({
           </div>
         </div>
 
-        {/* Chevron - hide on mobile to reduce clutter */}
-        {!isMobile && <div className="text-slate-300 text-lg mt-2">{">"}</div>}
       </div>
     </Card>
   );
@@ -294,6 +324,8 @@ export default function HarvestBuildingPage() {
   const [isSavingMetric, setIsSavingMetric] = useState(false);
   const [hasTruckByBuildingId, setHasTruckByBuildingId] = useState<Record<string, { harvestId: number | null; hasTruck: boolean }>>({});
   const [harvestAnimalsOutByBuilding, setHarvestAnimalsOutByBuilding] = useState<Record<string, Record<string, number>>>({});
+  const [currentTotalByBuildingId, setCurrentTotalByBuildingId] = useState<Record<string, number>>({});
+  const [avgWeightByBuildingId, setAvgWeightByBuildingId] = useState<Record<string, Record<string, number>>>({});
   const [metricOverrides, setMetricOverrides] = useState<Record<EditableMetric, Record<string, Record<string, number>>>>({
     mortality: {},
     thinning: {},
@@ -404,6 +436,84 @@ export default function HarvestBuildingPage() {
     void fetchBuildingsFromGrows();
   }, [selectedDate]);
 
+  const fetchCurrentTotalsByDate = async () => {
+    if (buildings.length === 0) {
+      setCurrentTotalByBuildingId({});
+      return;
+    }
+
+    try {
+      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
+      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+      const growIds = buildings
+        .map((building) => building.growId)
+        .filter((growId): growId is number => Number.isFinite(growId));
+
+      if (growIds.length === 0) {
+        setCurrentTotalByBuildingId({});
+        return;
+      }
+
+      const latestGrowLogByGrowId: Record<number, number> = {};
+
+      const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
+        .from(GROW_LOGS_TABLE)
+        .select("grow_id, actual_total_animals, created_at")
+        .in("grow_id", growIds)
+        .gte("created_at", selectedDayStart)
+        .lt("created_at", selectedDayEnd)
+        .order("created_at", { ascending: false });
+
+      if (selectedDayGrowLogsError) throw selectedDayGrowLogsError;
+
+      ((selectedDayGrowLogs ?? []) as Array<{
+        grow_id: number | null;
+        actual_total_animals: number | null;
+      }>).forEach((row) => {
+        if (row.grow_id == null || latestGrowLogByGrowId[row.grow_id] != null) return;
+        latestGrowLogByGrowId[row.grow_id] = Math.max(0, Math.floor(Number(row.actual_total_animals ?? 0)));
+      });
+
+      const missingGrowIds = growIds.filter((growId) => latestGrowLogByGrowId[growId] == null);
+      if (missingGrowIds.length > 0) {
+        const { data: previousGrowLogs, error: previousGrowLogsError } = await supabase
+          .from(GROW_LOGS_TABLE)
+          .select("grow_id, actual_total_animals, created_at")
+          .in("grow_id", missingGrowIds)
+          .lt("created_at", selectedDayStart)
+          .order("created_at", { ascending: false });
+
+        if (previousGrowLogsError) throw previousGrowLogsError;
+
+        ((previousGrowLogs ?? []) as Array<{
+          grow_id: number | null;
+          actual_total_animals: number | null;
+        }>).forEach((row) => {
+          if (row.grow_id == null || latestGrowLogByGrowId[row.grow_id] != null) return;
+          latestGrowLogByGrowId[row.grow_id] = Math.max(0, Math.floor(Number(row.actual_total_animals ?? 0)));
+        });
+      }
+
+      const nextCurrentTotals = Object.fromEntries(
+        buildings.map((building) => [
+          building.id,
+          latestGrowLogByGrowId[building.growId] ?? building.total,
+        ])
+      );
+
+      setCurrentTotalByBuildingId(nextCurrentTotals);
+    } catch (error) {
+      console.error("Failed to load current harvest totals:", error);
+      setCurrentTotalByBuildingId(
+        Object.fromEntries(buildings.map((building) => [building.id, building.total]))
+      );
+    }
+  };
+
+  useEffect(() => {
+    void fetchCurrentTotalsByDate();
+  }, [buildings, selectedDate]);
+
   const isSameSelectedDate = (dateTime: string): boolean =>
     dayjs(dateTime).format("YYYY-MM-DD") === selectedDate;
 
@@ -494,6 +604,7 @@ export default function HarvestBuildingPage() {
       const defectRemarksByBuilding: Record<string, string> = {};
       const editMap: Record<string, { harvestId: number | null; hasTruck: boolean }> = {};
       const harvestAnimalsOutMap: Record<string, number> = {};
+      const avgWeightMap: Record<string, number> = {};
 
       await Promise.all(
         buildings.map(async (building) => {
@@ -505,12 +616,21 @@ export default function HarvestBuildingPage() {
           }
 
           const [trucks, reductions] = await Promise.all([
-            loadHarvestTrucks({ harvestId: harvestInfo.harvestId, limit: 1 }),
+            loadHarvestTrucks({ harvestId: harvestInfo.harvestId, limit: 500 }),
             loadHarvestReductionTransactionsByHarvestId(harvestInfo.harvestId),
           ]);
 
           editMap[building.id] = { harvestId: harvestInfo.harvestId, hasTruck: trucks.length > 0 };
           harvestAnimalsOutMap[building.id] = harvestInfo.totalAnimalsOut;
+          const totalBirdsLoaded = trucks.reduce(
+            (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
+            0
+          );
+          const totalNetWeight = trucks.reduce(
+            (sum, truck) => sum + Math.max(0, Number(truck.weightWithLoad ?? 0) - Number(truck.weightNoLoad ?? 0)),
+            0
+          );
+          avgWeightMap[building.id] = totalBirdsLoaded > 0 ? totalNetWeight / totalBirdsLoaded : 0;
 
           const selectedDayRows = reductions.filter((row) => isSameSelectedDate(row.createdAt));
           mortalityByBuilding[building.id] = 0;
@@ -544,6 +664,10 @@ export default function HarvestBuildingPage() {
       setHarvestAnimalsOutByBuilding((prev) => ({
         ...prev,
         [selectedDate]: harvestAnimalsOutMap,
+      }));
+      setAvgWeightByBuildingId((prev) => ({
+        ...prev,
+        [selectedDate]: avgWeightMap,
       }));
       setMetricOverrides((prev) => ({
         ...prev,
@@ -619,12 +743,18 @@ export default function HarvestBuildingPage() {
     if (editInfo.harvestId != null) {
       void getHarvestById(editInfo.harvestId)
         .then(async (harvest) => {
-          const { growTotalAnimals } = await resolveGrowTotalAnimalsByHarvest(editInfo.harvestId as number, Number(buildingId));
-          if (growTotalAnimals === null) {
+          const currentTotal =
+            currentTotalByBuildingId[buildingId] ??
+            selectedBuilding?.total ??
+            null;
+          if (currentTotal === null) {
             setActiveMetricRemaining(null);
             return;
           }
-          const remaining = Math.max(0, growTotalAnimals - Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0))));
+          const remaining = Math.max(
+            0,
+            currentTotal - Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0)))
+          );
           setActiveMetricRemaining(remaining);
         })
         .catch(() => {
@@ -743,7 +873,11 @@ export default function HarvestBuildingPage() {
         harvestId,
         Number(activeBuildingId)
       );
-      if (growId !== null && growTotalAnimals !== null && nextTotalAnimalsOut >= growTotalAnimals) {
+      const currentTotalForBuilding =
+        currentTotalByBuildingId[activeBuildingId] ??
+        buildings.find((building) => building.id === activeBuildingId)?.total ??
+        growTotalAnimals;
+      if (growId !== null && currentTotalForBuilding !== null && nextTotalAnimalsOut >= currentTotalForBuilding) {
         const { error: growUpdateError } = await supabase
           .from(GROWS_TABLE)
           .update({
@@ -786,16 +920,22 @@ export default function HarvestBuildingPage() {
 
   const getStatsForBuilding = useMemo(() => {
     return (building: Building): BuildingStats => {
+      const currentTotal = currentTotalByBuildingId[building.id] ?? building.total;
       const mortality = metricOverrides.mortality[selectedDate]?.[building.id] ?? 0;
       const thinning = metricOverrides.thinning[selectedDate]?.[building.id] ?? 0;
       const takeOut = metricOverrides.takeOut[selectedDate]?.[building.id] ?? 0;
       const defect = metricOverrides.defect[selectedDate]?.[building.id] ?? 0;
       const totalAnimalsOut = harvestAnimalsOutByBuilding[selectedDate]?.[building.id] ?? 0;
-      const remaining = Math.max(0, building.total - totalAnimalsOut);
+      const avgWeight = avgWeightByBuildingId[selectedDate]?.[building.id] ?? 0;
+      const reduction = mortality + thinning + takeOut + defect;
+      const remaining = Math.max(0, currentTotal - totalAnimalsOut);
       return {
         days: building.days,
-        total: building.total,
+        total: currentTotal,
         status: building.growStatus,
+        avgWeight,
+        reduction,
+        totalHarvested: totalAnimalsOut,
         mortality,
         thinning,
         takeOut,
@@ -803,7 +943,7 @@ export default function HarvestBuildingPage() {
         defect,
       };
     };
-  }, [harvestAnimalsOutByBuilding, metricOverrides, selectedDate]);
+  }, [avgWeightByBuildingId, currentTotalByBuildingId, harvestAnimalsOutByBuilding, metricOverrides, selectedDate]);
 
   const isMetricValid = metricDraft > 0;
   const maxMetricAllowed = activeMetricRemaining === null ? null : activeMetricRemaining + activeMetricPreviousValue;
@@ -986,13 +1126,13 @@ export default function HarvestBuildingPage() {
                 {buildings.map((b) => (
                   <BuildingRow
                     key={b.id}
-                  b={b}
-                  stats={getStatsForBuilding(b)}
-                  isMobile={isMobile}
-                  onMetricClick={openMetricModal}
-                  onOpen={() => navigate(`/truck/${b.id}`)}
-                />
-              ))}
+                    b={b}
+                    stats={getStatsForBuilding(b)}
+                    isMobile={isMobile}
+                    onMetricClick={openMetricModal}
+                    onOpen={() => navigate(`/truck/${b.id}`)}
+                  />
+                ))}
               </div>
             </div>
           </>

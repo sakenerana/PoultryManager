@@ -41,6 +41,7 @@ type BuildingStats = {
   remaining: number;
   avgWeight: number;
   status: "Loading" | "Growing" | "Harvested" | "Ready";
+  reduction: number;
   mortality: number;
   thinning: number;
   takeOut: number;
@@ -147,18 +148,39 @@ function StatPill({
 }
 
 function StatusBadge({ status }: { status: BuildingStats["status"] }) {
-  const styles: Record<BuildingStats["status"], { dot: string; text: string }> = {
-    Loading: { dot: "bg-blue-500", text: "text-blue-700" },
-    Growing: { dot: "bg-emerald-500", text: "text-emerald-700" },
-    Harvested: { dot: "bg-amber-500", text: "text-amber-800" },
-    Ready: { dot: "bg-slate-500", text: "text-slate-700" },
+  const styles: Record<BuildingStats["status"], { pill: string; dot: string; text: string }> = {
+    Loading: {
+      pill: "bg-sky-100 border-sky-200",
+      dot: "bg-sky-500",
+      text: "text-sky-700",
+    },
+    Growing: {
+      pill: "bg-emerald-100 border-emerald-200",
+      dot: "bg-emerald-500",
+      text: "text-emerald-700",
+    },
+    Harvested: {
+      pill: "bg-amber-100 border-amber-200",
+      dot: "bg-amber-500",
+      text: "text-amber-800",
+    },
+    Ready: {
+      pill: "bg-slate-100 border-slate-200",
+      dot: "bg-slate-500",
+      text: "text-slate-700",
+    },
   };
 
   const style = styles[status];
 
   return (
-    <span className="inline-flex items-center gap-2 text-[11px] font-semibold">
-      <span className={["h-2 w-2 rounded-full", style.dot].join(" ")} />
+    <span
+      className={[
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow-sm",
+        style.pill,
+      ].join(" ")}
+    >
+      <span className={["h-1.5 w-1.5 rounded-full", style.dot].join(" ")} />
       <span className={style.text}>{status}</span>
     </span>
   );
@@ -206,7 +228,6 @@ function BuildingRow({
   onMetricOpen,
   isMobile,
   stats,
-  canLoad,
   canOpen,
   selectedDate,
 }: {
@@ -215,7 +236,6 @@ function BuildingRow({
   onMetricOpen: (metric: MetricKey) => void;
   isMobile: boolean;
   stats: BuildingStats;
-  canLoad: boolean;
   canOpen: boolean;
   selectedDate: string;
 }) {
@@ -274,35 +294,24 @@ function BuildingRow({
               {/* <div className="text-xs text-slate-500 mt-1 truncate">{b.category}</div> */}
             </div>
 
-            {/* Load button: compact on mobile */}
-            {canLoad && (
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  console.log("open data for", b.id);
-                  navigate(`/building-load/${b.id}?date=${selectedDate}`);
-                }}
-                className={[
-                  "!font-medium shadow-sm !rounded-md",
-                  isMobile ? "!px-3 !h-6 !text-[12px]" : "!px-4 !h-8 !text-[12px]",
-                ].join(" ")}
-                style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
-              >
-                Load
-              </Button>
-            )}
+            <div className="shrink-0">
+              <StatusBadge status={stats.status} />
+            </div>
           </div>
 
           {/* Stats Grid */}
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
             <StatPill
-              label="Total Birds Load / Current"
+              label="Total Birds Loaded"
+              value={stats.total.toLocaleString()}
+              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
+              onClick={() => navigate(`/building-load/${b.id}?date=${selectedDate}`)}
+            />
+            <StatPill
+              label="Current"
               value={(
                 <span>
-                  {stats.total.toLocaleString()} / {stats.remaining.toLocaleString()}{" "}
+                  {stats.remaining.toLocaleString()}{" "}
                   <span className="text-[10px] font-medium text-slate-500">
                     ({remainingPercentage.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
@@ -313,39 +322,21 @@ function BuildingRow({
               )}
             />
             <StatPill
-              label="Body Weight"
+              label="Avg Weight"
               value={`${stats.avgWeight.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })} g`}
             />
-            <StatPill label="Status" value={<StatusBadge status={stats.status} />} />
             <StatPill
-              label="Mortality"
-              value={stats.mortality.toLocaleString()}
+              label="Reduction"
+              value={stats.reduction.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
               onClick={() => onMetricOpen("mortality")}
             />
-            <StatPill
-              label="Thinning"
-              value={stats.thinning.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
-              onClick={() => onMetricOpen("thinning")}
-            />
-            <StatPill
-              label="Take Out"
-              value={stats.takeOut.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
-              onClick={() => onMetricOpen("takeOut")}
-            />
           </div>
         </div>
-
-        {/* Chevron - hide on mobile to reduce clutter */}
-        {!isMobile && <div className="text-slate-300 text-lg mt-2">›</div>}
       </div>
     </Card>
   );
@@ -773,6 +764,10 @@ export default function BuildingOverviewPage() {
           mortality: overallMetrics?.mortality ?? growLog?.mortality ?? 0,
           thinning: overallMetrics?.thinning ?? growLog?.thinning ?? 0,
           takeOut: overallMetrics?.takeOut ?? growLog?.takeOut ?? 0,
+          reduction:
+            (overallMetrics?.mortality ?? growLog?.mortality ?? 0) +
+            (overallMetrics?.thinning ?? growLog?.thinning ?? 0) +
+            (overallMetrics?.takeOut ?? growLog?.takeOut ?? 0),
         };
       });
 
@@ -865,6 +860,7 @@ export default function BuildingOverviewPage() {
         remaining: building.total,
         avgWeight: building.avgWeight,
         status: "Ready",
+        reduction: building.mortality + building.thinning + building.takeOut,
         mortality: building.mortality,
         thinning: building.thinning,
         takeOut: building.takeOut,
@@ -1113,7 +1109,6 @@ export default function BuildingOverviewPage() {
             <div className={isMobile ? "flex flex-col gap-3" : "grid grid-cols-2 gap-4"}>
               {sortedBuildings.map((b) => {
                 const stats = getStatsForBuilding(b);
-                const canLoadBuilding = isTodaySelected && (stats.status !== "Growing" || userRole === "Admin");
                 const canOpenBuilding = stats.status !== "Growing";
 
                 return (
@@ -1124,7 +1119,6 @@ export default function BuildingOverviewPage() {
                     isMobile={isMobile}
                     onOpen={() => navigate(`/building-cage/${b.id}`)}
                     onMetricOpen={(metric) => navigate(`/building-metric-history/${b.id}/${metric}?date=${selectedDate}`)}
-                    canLoad={canLoadBuilding}
                     canOpen={canOpenBuilding}
                     selectedDate={selectedDate}
                   />
@@ -1135,33 +1129,6 @@ export default function BuildingOverviewPage() {
           </>
         )}
 
-        {/* Floating Add Button - full width on mobile */}
-        {isMobile && isTodaySelected && buildings.length > 0 && !isPageLoading && (
-          canManageBuildings ? (
-            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-              <Button
-                type="primary"
-                size="large"
-                icon={
-                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/90">
-                    <PlusOutlined className="text-[12px]" style={{ color: SECONDARY }} />
-                  </span>
-                }
-                className="shadow-lg !rounded-full !px-4 !h-10 !text-sm !font-semibold"
-                style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
-                onClick={handleOpenAdd}
-              >
-                Add
-              </Button>
-            </div>
-          ) : (
-            <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
-              <div className="rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-md">
-                Contact Admin/Supervisor to add building.
-              </div>
-            </div>
-          )
-        )}
       </Content>
 
       <Drawer
@@ -1216,3 +1183,5 @@ export default function BuildingOverviewPage() {
     </Layout>
   );
 }
+
+

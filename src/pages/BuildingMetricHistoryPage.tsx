@@ -27,7 +27,7 @@ const PRIMARY = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 
-type MetricKey = "mortality" | "thinning" | "takeOut";
+type MetricKey = "mortality" | "thinning" | "takeOut" | "reduction";
 
 type HistoryRow = {
   date: string;
@@ -42,10 +42,11 @@ const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   mortality: { title: "Actual Death", accent: "bg-red-500" },
   thinning: { title: "Thinning", accent: "bg-slate-400" },
   takeOut: { title: "Take Out", accent: "bg-amber-500" },
+  reduction: { title: "Reduction", accent: "bg-rose-500" },
 };
 
 const METRIC_TABS: Array<{ key: MetricKey; label: string; activeBg: string; activeText: string; icon: "plus" | "minus" }> = [
-  { key: "mortality", label: "Actual Death", activeBg: "#ffa600", activeText: "#ffffff", icon: "minus" },
+  { key: "mortality", label: "Mortality", activeBg: "#ffa600", activeText: "#ffffff", icon: "minus" },
   { key: "thinning", label: "Thinning", activeBg: "#008822", activeText: "#ffffff", icon: "minus" },
   { key: "takeOut", label: "Take Out", activeBg: "#f59e0b", activeText: "#ffffff", icon: "plus" },
 ];
@@ -129,7 +130,7 @@ function ChickenState({
 }
 
 const toMetricKey = (value: string | undefined): MetricKey => {
-  if (value === "mortality" || value === "thinning" || value === "takeOut") {
+  if (value === "mortality" || value === "thinning" || value === "takeOut" || value === "reduction") {
     return value;
   }
   return "mortality";
@@ -141,7 +142,7 @@ const toNonNegativeInt = (value: unknown): number => {
   return Math.max(0, Math.floor(n));
 };
 
-const toReductionType = (metricKey: MetricKey): "mortality" | "thinning" | "take_out" => {
+const toReductionType = (metricKey: Exclude<MetricKey, "reduction">): "mortality" | "thinning" | "take_out" => {
   if (metricKey === "takeOut") return "take_out";
   return metricKey;
 };
@@ -250,7 +251,11 @@ export default function BuildingMetricHistoryPage() {
           );
           const latestRow = dayRows[0] ?? null;
           const dayReductionRows = [...(reductionTransactionsByDate[dateKey] ?? [])]
-            .filter((row) => row.reductionType === toReductionType(metricKey))
+            .filter((row) => (
+              metricKey === "reduction"
+                ? row.reductionType === "mortality" || row.reductionType === "thinning" || row.reductionType === "take_out"
+                : row.reductionType === toReductionType(metricKey)
+            ))
             .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf());
 
           const latestByCage: Record<string, { mortality: number; thinning: number; takeOut: number }> = {};
@@ -265,19 +270,33 @@ export default function BuildingMetricHistoryPage() {
             };
           });
 
-          const latestReductionByCage: Record<string, number> = {};
-          dayReductionRows.forEach((row) => {
-            if (row.subbuildingId == null) return;
-            const cageId = String(row.subbuildingId);
-            if (latestReductionByCage[cageId] != null) return;
-            latestReductionByCage[cageId] = toNonNegativeInt(row.animalCount);
-          });
+          const latestReductionByCage = dayReductionRows.reduce<Record<string, number>>((acc, row) => {
+            if (row.subbuildingId == null || row.reductionType == null) return acc;
+            const reductionType = row.reductionType;
+            const reductionKey =
+              reductionType === "take_out" || reductionType === "mortality" || reductionType === "thinning"
+                ? reductionType
+                : null;
+            if (!reductionKey) return acc;
+            const key = `${row.subbuildingId}-${reductionKey}`;
+            if (acc[key] != null) return acc;
+            acc[key] = toNonNegativeInt(row.animalCount);
+            return acc;
+          }, {});
 
           const value =
             Object.keys(latestReductionByCage).length > 0
               ? Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0)
               : Object.keys(latestByCage).length > 0
-              ? Object.values(latestByCage).reduce((sum, row) => sum + row[metricKey], 0)
+              ? Object.values(latestByCage).reduce((sum, row) => (
+                  metricKey === "reduction"
+                    ? sum + row.mortality + row.thinning + row.takeOut
+                    : sum + row[metricKey]
+                ), 0)
+              : metricKey === "reduction"
+              ? toNonNegativeInt(latestRow?.mortality ?? 0) +
+                toNonNegativeInt(latestRow?.thinning ?? 0) +
+                toNonNegativeInt(latestRow?.takeOut ?? 0)
               : toNonNegativeInt(latestRow?.[metricKey] ?? 0);
           const dayWeightRows = [...(bodyWeightLogsByDate[dateKey] ?? [])].sort(
             (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
@@ -304,7 +323,7 @@ export default function BuildingMetricHistoryPage() {
             dayNumber: cursor.diff(startDate, "day"),
             value,
             avgWeight,
-            expectedDailyDeaths: EXPECTED_DAILY_DEATHS[cursor.diff(startDate, "day")] ?? null,
+            expectedDailyDeaths: metricKey === "mortality" ? EXPECTED_DAILY_DEATHS[cursor.diff(startDate, "day")] ?? null : null,
             sourceTime: dayReductionRows[0]?.createdAt ?? latestRow?.createdAt ?? null,
           });
         }

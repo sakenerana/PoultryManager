@@ -1,8 +1,13 @@
 // LandingPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { SyncOutlined } from "@ant-design/icons";
+import { PlusOutlined, SyncOutlined } from "@ant-design/icons";
+import { Button, Drawer, Form, Input } from "antd";
+import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
+import { addBuilding, deleteBuilding } from "../controller/buildingCrud";
+import { addSubBuildings } from "../controller/subbuildingsCrud";
+import type { BuildingRecord } from "../type/building.type";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import { checkForAppUpdate } from "../serviceWorkerRegistration";
@@ -115,10 +120,17 @@ export default function LandingPage() {
     const [active, setActive] = useState<TileKey | null>(null);
     const [role, setRole] = useState<AppRole>(null);
     const [isSyncingUpdate, setIsSyncingUpdate] = useState(false);
+    const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
+    const [isAddSubmitting, setIsAddSubmitting] = useState(false);
+    const [isToastOpen, setIsToastOpen] = useState(false);
+    const [toastMessage, setToastMessage] = useState("");
+    const [addForm] = Form.useForm();
     const navigate = useNavigate();
     const { user } = useAuth();
     const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
     const headerHeight = `calc(64px + ${mobileSafeAreaTop})`;
+    const footerHeight = "calc(56px + env(safe-area-inset-bottom, 0px))";
+    const canManageBuildings = role === "Admin" || role === "Supervisor";
 
     useEffect(() => {
         let isMounted = true;
@@ -191,6 +203,71 @@ export default function LandingPage() {
         }
     };
 
+    const handleOpenAddDrawer = () => {
+        if (!canManageBuildings) {
+            setToastMessage("Please contact an Admin or Supervisor to add a new building.");
+            setIsToastOpen(true);
+            return;
+        }
+
+        addForm.setFieldsValue({ name: "" });
+        setIsAddDrawerOpen(true);
+    };
+
+    const handleCloseAddDrawer = () => {
+        setIsAddDrawerOpen(false);
+        addForm.resetFields();
+    };
+
+    const handleSubmitAdd = async () => {
+        let createdBuilding: BuildingRecord | null = null;
+
+        try {
+            setIsAddSubmitting(true);
+            const values = await addForm.validateFields();
+            createdBuilding = await addBuilding({ name: values.name });
+            const createdBuildingId = Number(createdBuilding.id);
+
+            await addSubBuildings(
+                Array.from({ length: 6 }, (_, index) => ({
+                    buildingId: createdBuildingId,
+                    name: `Cage ${index + 1}`,
+                }))
+            );
+
+            handleCloseAddDrawer();
+            setToastMessage(`Successfully added ${values.name}`);
+            setIsToastOpen(true);
+            navigate("/buildings");
+        } catch (error) {
+            if (error && typeof error === "object" && "errorFields" in error) return;
+
+            const message =
+                error instanceof Error ? error.message : "Unknown error";
+
+            if (createdBuilding) {
+                try {
+                    await deleteBuilding(createdBuilding.id);
+                } catch (rollbackError) {
+                    const rollbackMessage =
+                        rollbackError instanceof Error
+                            ? rollbackError.message
+                            : "Unknown rollback error";
+                    setToastMessage(
+                        `Failed to add building: ${message}. Rollback also failed: ${rollbackMessage}`
+                    );
+                    setIsToastOpen(true);
+                    return;
+                }
+            }
+
+            setToastMessage(`Failed to add building: ${message}`);
+            setIsToastOpen(true);
+        } finally {
+            setIsAddSubmitting(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col">
             {/* HEADER */}
@@ -220,8 +297,13 @@ export default function LandingPage() {
             </header>
 
             {/* CONTENT */}
-            <main className="flex-1 px-3 py-3 sm:px-4 sm:py-4">
-                <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+            <main
+                className="px-3 py-3 pb-20 sm:px-4 sm:py-4 sm:pb-24"
+                style={{
+                    minHeight: `calc(100dvh - ${headerHeight} - ${footerHeight})`,
+                }}
+            >
+                <div className="grid h-full grid-cols-2 auto-rows-fr gap-2.5 sm:gap-4">
                     {visibleTiles.map((tile) => (
                         <button
                             key={tile.key}
@@ -232,7 +314,7 @@ export default function LandingPage() {
                                 isTileDisabled(tile) ? "cursor-not-allowed opacity-60" : "cursor-pointer",
                                 "text-left bg-white rounded-sm shadow-sm",
                                 "p-3 sm:p-6",
-                                "h-[clamp(118px,20vh,170px)] sm:h-[clamp(180px,24vh,230px)]",
+                                "h-full min-h-[118px] sm:h-[clamp(180px,24vh,230px)]",
                                 "transition-all duration-200",
                                 isTileDisabled(tile) ? "" : "hover:shadow-md hover:-translate-y-0.5",
                                 "active:translate-y-0 active:scale-[0.99]",
@@ -267,29 +349,101 @@ export default function LandingPage() {
                 </div>
             </main>
 
-            <button
-                type="button"
-                onClick={handleSyncUpdate}
-                disabled={isSyncingUpdate}
-                className={[
-                    "fixed bottom-6 right-5 z-40",
-                    "flex items-center gap-2 rounded-full px-4 py-3",
-                    "bg-[#ffa600] text-white shadow-[0_10px_24px_rgba(255,166,0,0.35)]",
-                    "transition-all duration-200",
-                    isSyncingUpdate ? "cursor-wait opacity-95" : "hover:bg-[#e69600] active:scale-[0.98]",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ffa600]/50 focus-visible:ring-offset-2",
-                ].join(" ")}
-                aria-label={isSyncingUpdate ? "Syncing latest update" : "Sync latest update"}
-                title={isSyncingUpdate ? "Syncing latest update" : "Sync latest update"}
-            >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20">
-                    <SyncOutlined spin={isSyncingUpdate} className="text-sm" />
-                </span>
-                <span className="text-sm font-semibold tracking-[0.02em]">
-                    {isSyncingUpdate ? "Syncing..." : "Update"}
-                </span>
-            </button>
+            <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm">
+                <div className={`grid ${canManageBuildings ? "grid-cols-2" : "grid-cols-1"}`}>
+                        {canManageBuildings && (
+                            <button
+                                type="button"
+                                onClick={handleOpenAddDrawer}
+                                className={[
+                                    "flex min-h-[56px] items-center justify-center gap-2 px-3 py-2 text-[#008822] transition-all duration-200",
+                                    "hover:bg-[#008822]/5 active:scale-[0.99]",
+                                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008822]/30 focus-visible:ring-inset",
+                                ].join(" ")}
+                                aria-label="Add building"
+                                title="Add building"
+                            >
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#008822]/10">
+                                    <PlusOutlined className="text-sm" />
+                                </span>
+                                <span className="text-sm font-semibold leading-none">
+                                    Add Building
+                                </span>
+                            </button>
+                        )}
 
+                        <button
+                            type="button"
+                            onClick={handleSyncUpdate}
+                            disabled={isSyncingUpdate}
+                            className={[
+                                "flex min-h-[56px] items-center justify-center gap-2 px-3 py-2 text-[#008822] transition-all duration-200",
+                                canManageBuildings ? "border-l border-slate-200" : "",
+                                isSyncingUpdate ? "cursor-wait opacity-80" : "hover:bg-[#008822]/5 active:scale-[0.99]",
+                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008822]/30 focus-visible:ring-inset",
+                            ].join(" ")}
+                            aria-label={isSyncingUpdate ? "Syncing latest update" : "Sync latest update"}
+                            title={isSyncingUpdate ? "Syncing latest update" : "Sync latest update"}
+                        >
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#008822]/10">
+                                <SyncOutlined spin={isSyncingUpdate} className="text-sm" />
+                            </span>
+                            <span className="text-sm font-semibold leading-none">
+                                {isSyncingUpdate ? "Syncing" : "Update"}
+                            </span>
+                        </button>
+                </div>
+            </div>
+
+            <Drawer
+                open={isAddDrawerOpen}
+                onClose={handleCloseAddDrawer}
+                placement="bottom"
+                height="56%"
+                className="add-building-drawer"
+                bodyStyle={{ padding: 16 }}
+            >
+                <div className="mb-4">
+                    <h2 className="text-lg font-bold text-slate-900">
+                        Add New Building
+                    </h2>
+                    <div className="mt-1 text-sm text-slate-500">
+                        Enter the building name to create a new record.
+                    </div>
+                </div>
+
+                <Form form={addForm} layout="vertical" requiredMark={false}>
+                    <Form.Item
+                        label="Building Name"
+                        name="name"
+                        rules={[{ required: true, message: "Please enter building name" }]}
+                    >
+                        <Input
+                            placeholder="e.g., Building #"
+                            size="large"
+                            className="!text-base"
+                        />
+                    </Form.Item>
+
+                    <Button
+                        type="primary"
+                        size="large"
+                        className="!mt-4 !h-12 !w-full !rounded-lg !font-semibold"
+                        style={{ backgroundColor: "#008822", borderColor: "#008822" }}
+                        onClick={handleSubmitAdd}
+                        loading={isAddSubmitting}
+                    >
+                        Add Building
+                    </Button>
+                </Form>
+            </Drawer>
+
+            <NotificationToast
+                open={isToastOpen}
+                message={toastMessage}
+                type="success"
+                onClose={() => setIsToastOpen(false)}
+            />
         </div>
     );
 }
