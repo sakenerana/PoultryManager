@@ -5,7 +5,7 @@ import { PlusOutlined, SyncOutlined } from "@ant-design/icons";
 import { Button, Drawer, Form, Input } from "antd";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
-import { addBuilding, deleteBuilding } from "../controller/buildingCrud";
+import { addBuilding, deleteBuilding, loadBuildings } from "../controller/buildingCrud";
 import { addSubBuildings } from "../controller/subbuildingsCrud";
 import type { BuildingRecord } from "../type/building.type";
 import { signOutAndRedirect } from "../utils/auth";
@@ -24,6 +24,7 @@ type Tile = {
     key: TileKey;
     title: string;
     accent: string;
+    borderColor: string;
     icon: React.ReactNode;
     largeText: string;
     link?: string;
@@ -34,6 +35,7 @@ const tiles: Tile[] = [
         key: "inventory",
         title: "Preharvest",
         accent: "text-[#008822]",
+        borderColor: "#22c55e",
         icon: (
             <img
                 src="/img/chicken-head.svg"
@@ -48,6 +50,7 @@ const tiles: Tile[] = [
         key: "harvest",
         title: "Harvest",
         accent: "text-[#008822]",
+        borderColor: "#84cc16",
         icon: (
             <img
                 src="/img/chicken-harvest.svg"
@@ -62,6 +65,7 @@ const tiles: Tile[] = [
         key: "reports",
         title: "Reports",
         accent: "text-[#008822]",
+        borderColor: "#0ea5e9",
         icon: (
             <img
                 src="/img/report.svg"
@@ -76,6 +80,7 @@ const tiles: Tile[] = [
         key: "userAccess",
         title: "Accounts",
         accent: "text-[#008822]",
+        borderColor: "#a855f7",
         icon: <img
             src="/img/accounts.svg"
             alt="Accounts"
@@ -88,6 +93,7 @@ const tiles: Tile[] = [
         key: "settings",
         title: "Settings",
         accent: "text-[#008822]",
+        borderColor: "#f59e0b",
         icon: (
             <img
                 src="/img/settings.svg"
@@ -102,6 +108,7 @@ const tiles: Tile[] = [
         key: "signOut",
         title: "Sign Out",
         accent: "text-[#d97706]",
+        borderColor: "#f97316",
         icon: (
             <img
                 src="/img/logout.svg"
@@ -124,6 +131,7 @@ export default function LandingPage() {
     const [isAddSubmitting, setIsAddSubmitting] = useState(false);
     const [isToastOpen, setIsToastOpen] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
+    const [nextBuildingSequence, setNextBuildingSequence] = useState(1);
     const [addForm] = Form.useForm();
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -210,8 +218,20 @@ export default function LandingPage() {
             return;
         }
 
-        addForm.setFieldsValue({ name: "" });
-        setIsAddDrawerOpen(true);
+        void (async () => {
+            try {
+                const buildings = await loadBuildings();
+                const nextIndex = buildings.length + 1;
+                setNextBuildingSequence(nextIndex);
+                addForm.setFieldsValue({ name: `Bldg ${nextIndex}` });
+            } catch (error) {
+                console.error("Failed to load buildings for naming suggestion:", error);
+                setNextBuildingSequence(1);
+                addForm.setFieldsValue({ name: "Bldg 1" });
+            } finally {
+                setIsAddDrawerOpen(true);
+            }
+        })();
     };
 
     const handleCloseAddDrawer = () => {
@@ -310,9 +330,10 @@ export default function LandingPage() {
                             type="button"
                             disabled={isTileDisabled(tile)}
                             onClick={() => handleTileClick(tile)}
+                            style={{ borderColor: tile.borderColor }}
                             className={[
                                 isTileDisabled(tile) ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-                                "text-left bg-white rounded-sm shadow-sm",
+                                "text-left bg-white rounded-sm shadow-sm border-2",
                                 "p-3 sm:p-6",
                                 "h-full min-h-[118px] sm:h-[clamp(180px,24vh,230px)]",
                                 "transition-all duration-200",
@@ -419,7 +440,7 @@ export default function LandingPage() {
                         rules={[{ required: true, message: "Please enter building name" }]}
                     >
                         <Input
-                            placeholder="e.g., Building #"
+                            placeholder={`e.g., Bldg ${nextBuildingSequence}`}
                             size="large"
                             className="!text-base"
                         />

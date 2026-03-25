@@ -9,6 +9,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
+import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import supabase from "../utils/supabase";
 
 const { Header, Content } = Layout;
@@ -69,6 +70,8 @@ export default function BuildingLoadPage() {
   const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
   const LOAD_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TABLE ?? "Load";
   const LOAD_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TRANSACTIONS_TABLE ?? "LoadTransactions";
+  const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
+  const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 
   const entriesForSelectedDate = useMemo(
     () => historyEntries.filter((entry) => entry.date === selectedDate),
@@ -242,6 +245,114 @@ export default function BuildingLoadPage() {
     setEditingTotalInput("");
   };
 
+  const resolveDisplayedCurrentAnimals = async (growId: number, totalAnimals: number) => {
+    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const transactions = (await loadGrowReductionTransactionsByGrowId(growId)).filter(
+      (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
+    );
+
+    const latestByDayCageAndType: Record<string, number> = {};
+
+    transactions
+      .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
+      .forEach((row) => {
+        if (row.subbuildingId == null || !row.reductionType) return;
+        const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+        const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
+        if (latestByDayCageAndType[key] != null) return;
+        latestByDayCageAndType[key] = Math.max(0, Math.floor(Number(row.animalCount ?? 0)));
+      });
+
+    const reductionTotal = Object.values(latestByDayCageAndType).reduce((sum, value) => sum + value, 0);
+    return Math.max(0, Math.floor(totalAnimals) - reductionTotal);
+  };
+
+  const syncLatestGrowLogActualTotal = async (growId: number, totalAnimals: number) => {
+    const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("created_at")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestGrowLogRowError) {
+      throw new Error(latestGrowLogRowError.message || "Failed to load latest grow log.");
+    }
+
+    if (!latestGrowLogRow?.created_at) return;
+
+    const latestLogDate = dayjs.utc(latestGrowLogRow.created_at).format("YYYY-MM-DD");
+    const latestLogStart = dayjs.utc(latestLogDate, "YYYY-MM-DD").startOf("day");
+    const latestLogEnd = latestLogStart.add(1, "day");
+
+    const { error: latestGrowLogUpdateError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .update({ actual_total_animals: Math.max(0, Math.floor(totalAnimals)) })
+      .eq("grow_id", growId)
+      .gte("created_at", latestLogStart.toISOString())
+      .lt("created_at", latestLogEnd.toISOString());
+
+    if (latestGrowLogUpdateError) {
+      throw new Error(latestGrowLogUpdateError.message || "Failed to sync latest grow log total animals.");
+    }
+  };
+
+  const createGrowLogSnapshotFromLatestDate = async (growId: number, totalAnimals: number, createdAt: string) => {
+    const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("created_at")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestGrowLogRowError) {
+      throw new Error(latestGrowLogRowError.message || "Failed to load latest grow log.");
+    }
+
+    if (!latestGrowLogRow?.created_at) return;
+
+    const latestLogDate = dayjs.utc(latestGrowLogRow.created_at).format("YYYY-MM-DD");
+    const latestLogStart = dayjs.utc(latestLogDate, "YYYY-MM-DD").startOf("day");
+    const latestLogEnd = latestLogStart.add(1, "day");
+
+    const { data: latestGrowLogRows, error: latestGrowLogRowsError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("subbuilding_id, mortality, thinning, take_out")
+      .eq("grow_id", growId)
+      .gte("created_at", latestLogStart.toISOString())
+      .lt("created_at", latestLogEnd.toISOString())
+      .order("created_at", { ascending: false });
+
+    if (latestGrowLogRowsError) {
+      throw new Error(latestGrowLogRowsError.message || "Failed to load latest grow log rows.");
+    }
+
+    const snapshotRows = ((latestGrowLogRows ?? []) as Array<{
+      subbuilding_id: number | null;
+      mortality: number | null;
+      thinning: number | null;
+      take_out: number | null;
+    }>).map((row) => ({
+      grow_id: growId,
+      subbuilding_id: row.subbuilding_id,
+      actual_total_animals: Math.max(0, Math.floor(totalAnimals)),
+      mortality: row.mortality,
+      thinning: row.thinning,
+      take_out: row.take_out,
+      created_at: createdAt,
+    }));
+
+    if (snapshotRows.length === 0) return;
+
+    const { error: insertSnapshotError } = await supabase.from(GROW_LOGS_TABLE).insert(snapshotRows);
+
+    if (insertSnapshotError) {
+      throw new Error(insertSnapshotError.message || "Failed to create grow log snapshot.");
+    }
+  };
+
   const recalculateGrowTotal = async (growId: number) => {
     const { data: loadsForGrow, error: loadsForGrowError } = await supabase
       .from(LOAD_TABLE)
@@ -263,10 +374,26 @@ export default function BuildingLoadPage() {
       throw new Error(loadTransactionsError.message || "Failed to compute total animals from load transactions.");
     }
 
-    const summedTotal = (loadTransactions ?? []).reduce(
+    const loadedAnimalsTotal = (loadTransactions ?? []).reduce(
       (sum: number, row: { animal_count?: number | null }) => sum + (row.animal_count ?? 0),
       0
     );
+
+    const { data: doaTransactions, error: doaTransactionsError } = await supabase
+      .from(DOA_TRANSACTIONS_TABLE)
+      .select("total_animals_count")
+      .eq("grow_id", growId);
+
+    if (doaTransactionsError) {
+      throw new Error(doaTransactionsError.message || "Failed to compute total DOA animals.");
+    }
+
+    const doaTotal = (doaTransactions ?? []).reduce(
+      (sum: number, row: { total_animals_count?: number | null }) => sum + (row.total_animals_count ?? 0),
+      0
+    );
+
+    const summedTotal = Math.max(0, loadedAnimalsTotal - doaTotal);
 
     const { error: growTotalError } = await supabase
       .from(GROWS_TABLE)
@@ -276,6 +403,8 @@ export default function BuildingLoadPage() {
     if (growTotalError) {
       throw new Error(growTotalError.message || "Failed to update grow total_animals.");
     }
+
+    return summedTotal;
   };
 
   const handleSaveOrUpdate = async () => {
@@ -380,7 +509,16 @@ export default function BuildingLoadPage() {
         throw new Error(txError.message || "Failed to insert load transactions.");
       }
 
-      await recalculateGrowTotal(grow.id);
+      const recalculatedTotal = await recalculateGrowTotal(grow.id);
+      const displayedCurrentAnimals = await resolveDisplayedCurrentAnimals(grow.id, recalculatedTotal);
+      const snapshotCreatedAt = dayjs(selectedDate)
+        .hour(dayjs().hour())
+        .minute(dayjs().minute())
+        .second(dayjs().second())
+        .millisecond(0)
+        .toISOString();
+      await createGrowLogSnapshotFromLatestDate(grow.id, displayedCurrentAnimals, snapshotCreatedAt);
+      await syncLatestGrowLogActualTotal(grow.id, displayedCurrentAnimals);
 
       await fetchHistoryByStatus();
       setTotalInput("");
@@ -463,7 +601,16 @@ export default function BuildingLoadPage() {
         throw new Error(loadError.message || "Failed to update load record.");
       }
 
-      await recalculateGrowTotal(entry.growId);
+      const recalculatedTotal = await recalculateGrowTotal(entry.growId);
+      const displayedCurrentAnimals = await resolveDisplayedCurrentAnimals(entry.growId, recalculatedTotal);
+      const snapshotCreatedAt = dayjs(selectedDate)
+        .hour(dayjs().hour())
+        .minute(dayjs().minute())
+        .second(dayjs().second())
+        .millisecond(0)
+        .toISOString();
+      await createGrowLogSnapshotFromLatestDate(entry.growId, displayedCurrentAnimals, snapshotCreatedAt);
+      await syncLatestGrowLogActualTotal(entry.growId, displayedCurrentAnimals);
 
       const { error: growError } = await supabase
         .from(GROWS_TABLE)
@@ -553,7 +700,16 @@ export default function BuildingLoadPage() {
         }
       }
 
-      await recalculateGrowTotal(entry.growId);
+      const recalculatedTotal = await recalculateGrowTotal(entry.growId);
+      const displayedCurrentAnimals = await resolveDisplayedCurrentAnimals(entry.growId, recalculatedTotal);
+      const snapshotCreatedAt = dayjs(selectedDate)
+        .hour(dayjs().hour())
+        .minute(dayjs().minute())
+        .second(dayjs().second())
+        .millisecond(0)
+        .toISOString();
+      await createGrowLogSnapshotFromLatestDate(entry.growId, displayedCurrentAnimals, snapshotCreatedAt);
+      await syncLatestGrowLogActualTotal(entry.growId, displayedCurrentAnimals);
 
       const { error: growError } = await supabase
         .from(GROWS_TABLE)

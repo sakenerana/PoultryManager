@@ -226,6 +226,7 @@ function BuildingRow({
   b,
   onOpen,
   onMetricOpen,
+  onAvgWeightOpen,
   isMobile,
   stats,
   canOpen,
@@ -234,6 +235,7 @@ function BuildingRow({
   b: Building;
   onOpen: () => void;
   onMetricOpen: (metric: MetricKey) => void;
+  onAvgWeightOpen: () => void;
   isMobile: boolean;
   stats: BuildingStats;
   canOpen: boolean;
@@ -327,6 +329,8 @@ function BuildingRow({
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })} g`}
+              rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
+              onClick={onAvgWeightOpen}
             />
             <StatPill
               label="Reduction"
@@ -650,93 +654,60 @@ export default function BuildingOverviewPage() {
         growIdToBuildingId[grow.growId] = buildingId;
       });
 
-      const { data: selectedDayBodyWeightRows, error: selectedDayBodyWeightError } = await supabase
+      const { data: bodyWeightHistoryRows, error: bodyWeightHistoryError } = await supabase
         .from(BODY_WEIGHT_LOGS_TABLE)
         .select("building_id, subbuilding_id, grow_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
-        .in("building_id", buildingIds)
-        .gte("created_at", selectedDayStart)
+        .in("grow_id", latestGrowIds)
         .lt("created_at", selectedDayEnd)
         .order("created_at", { ascending: false });
 
-      if (selectedDayBodyWeightError) throw selectedDayBodyWeightError;
+      if (bodyWeightHistoryError) throw bodyWeightHistoryError;
 
-      const latestSelectedWeightByBuildingAndSubbuilding: Record<string, number> = {};
-      ((selectedDayBodyWeightRows ?? []) as Array<{
+      const latestWeightByBuildingDateAndSubbuilding: Record<string, number> = {};
+      ((bodyWeightHistoryRows ?? []) as Array<{
         building_id: number | null;
         subbuilding_id: number | null;
         grow_id: number | null;
+        created_at: string;
         avg_weight: number | null;
         front_weight: unknown;
         middle_weight: unknown;
         back_weight: unknown;
       }>).forEach((row) => {
-        if (row.building_id == null || row.subbuilding_id == null) return;
-        const latestGrow = latestGrowByBuilding[row.building_id];
-        if (!latestGrow || row.grow_id !== latestGrow.growId) return;
-        const key = `${row.building_id}-${row.subbuilding_id}`;
-        if (latestSelectedWeightByBuildingAndSubbuilding[key] != null) return;
+        if (row.building_id == null || row.subbuilding_id == null || row.grow_id == null) return;
+        const expectedBuildingId = growIdToBuildingId[row.grow_id];
+        if (expectedBuildingId !== row.building_id) return;
+        const dayKey = dayjs.utc(row.created_at).format("YYYY-MM-DD");
+        const key = `${row.building_id}-${dayKey}-${row.subbuilding_id}`;
+        if (latestWeightByBuildingDateAndSubbuilding[key] != null) return;
         const weight = resolveBodyWeightAverage(row);
-        if (weight == null) return;
-        latestSelectedWeightByBuildingAndSubbuilding[key] = weight;
+        if (weight == null || weight <= 0) return;
+        latestWeightByBuildingDateAndSubbuilding[key] = weight;
       });
 
-      const weightValuesByBuilding: Record<number, number[]> = {};
-      Object.entries(latestSelectedWeightByBuildingAndSubbuilding).forEach(([key, weight]) => {
-        const [buildingIdPart] = key.split("-");
+      const dailyWeightValuesByBuilding: Record<number, Record<string, number[]>> = {};
+      Object.entries(latestWeightByBuildingDateAndSubbuilding).forEach(([key, weight]) => {
+        const separatorIndex = key.indexOf("-");
+        if (separatorIndex === -1) return;
+        const buildingIdPart = key.slice(0, separatorIndex);
+        const remainder = key.slice(separatorIndex + 1);
+        const dayKey = remainder.slice(0, 10);
         const buildingId = Number(buildingIdPart);
-        if (!Number.isFinite(buildingId)) return;
-        if (!weightValuesByBuilding[buildingId]) weightValuesByBuilding[buildingId] = [];
-        weightValuesByBuilding[buildingId].push(weight);
+        if (!Number.isFinite(buildingId) || !dayKey) return;
+        if (!dailyWeightValuesByBuilding[buildingId]) dailyWeightValuesByBuilding[buildingId] = {};
+        if (!dailyWeightValuesByBuilding[buildingId][dayKey]) dailyWeightValuesByBuilding[buildingId][dayKey] = [];
+        dailyWeightValuesByBuilding[buildingId][dayKey].push(weight);
       });
 
-      const missingWeightGrowIds = Object.values(latestGrowByBuilding)
-        .filter((grow) => (weightValuesByBuilding[growIdToBuildingId[grow.growId]] ?? []).length === 0)
-        .map((grow) => grow.growId);
-
-      if (missingWeightGrowIds.length > 0) {
-        const { data: previousBodyWeightRows, error: previousBodyWeightError } = await supabase
-          .from(BODY_WEIGHT_LOGS_TABLE)
-          .select("building_id, subbuilding_id, grow_id, avg_weight, front_weight, middle_weight, back_weight, created_at")
-          .in("grow_id", missingWeightGrowIds)
-          .lt("created_at", selectedDayStart)
-          .order("created_at", { ascending: false });
-
-        if (previousBodyWeightError) throw previousBodyWeightError;
-
-        const latestPreviousWeightByBuildingAndSubbuilding: Record<string, number> = {};
-        ((previousBodyWeightRows ?? []) as Array<{
-          building_id: number | null;
-          subbuilding_id: number | null;
-          grow_id: number | null;
-          avg_weight: number | null;
-          front_weight: unknown;
-          middle_weight: unknown;
-          back_weight: unknown;
-        }>).forEach((row) => {
-          if (row.building_id == null || row.subbuilding_id == null || row.grow_id == null) return;
-          const expectedBuildingId = growIdToBuildingId[row.grow_id];
-          if (expectedBuildingId !== row.building_id) return;
-          const key = `${row.building_id}-${row.subbuilding_id}`;
-          if (latestPreviousWeightByBuildingAndSubbuilding[key] != null) return;
-          const weight = resolveBodyWeightAverage(row);
-          if (weight == null) return;
-          latestPreviousWeightByBuildingAndSubbuilding[key] = weight;
-        });
-
-        Object.entries(latestPreviousWeightByBuildingAndSubbuilding).forEach(([key, weight]) => {
-          const [buildingIdPart] = key.split("-");
-          const buildingId = Number(buildingIdPart);
-          if (!Number.isFinite(buildingId)) return;
-          if (!weightValuesByBuilding[buildingId]) weightValuesByBuilding[buildingId] = [];
-          weightValuesByBuilding[buildingId].push(weight);
-        });
-      }
-
-      Object.entries(weightValuesByBuilding).forEach(([buildingIdKey, weights]) => {
+      Object.entries(dailyWeightValuesByBuilding).forEach(([buildingIdKey, weightsByDay]) => {
         const buildingId = Number(buildingIdKey);
-        if (!Number.isFinite(buildingId) || weights.length === 0) return;
-        const totalWeight = weights.reduce((sum, value) => sum + value, 0);
-        avgWeightByBuildingId[buildingId] = totalWeight / weights.length;
+        if (!Number.isFinite(buildingId)) return;
+        const dailyAverages = Object.values(weightsByDay)
+          .filter((weights) => weights.length > 0)
+          .map((weights) => weights.reduce((sum, value) => sum + value, 0) / weights.length);
+        if (dailyAverages.length === 0) return;
+        avgWeightByBuildingId[buildingId] =
+          dailyAverages.reduce((sum, value) => sum + value, 0) / dailyAverages.length;
       });
 
       buildings.forEach((building) => {
@@ -1119,6 +1090,7 @@ export default function BuildingOverviewPage() {
                     isMobile={isMobile}
                     onOpen={() => navigate(`/building-cage/${b.id}`)}
                     onMetricOpen={(metric) => navigate(`/building-metric-history/${b.id}/${metric}?date=${selectedDate}`)}
+                    onAvgWeightOpen={() => navigate(`/building-avg-weight-history/${b.id}?date=${selectedDate}`)}
                     canOpen={canOpenBuilding}
                     selectedDate={selectedDate}
                   />

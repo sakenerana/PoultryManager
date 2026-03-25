@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Layout, Typography, Button, Divider, Grid } from "antd";
-import { MinusCircleFilled, PlusCircleFilled } from "@ant-design/icons";
+import { Layout, Typography, Button, Divider, Grid, Drawer, Input, InputNumber, Modal } from "antd";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FaSignOutAlt } from "react-icons/fa";
+import { FiCheck, FiEdit2, FiTrash2, FiX } from "react-icons/fi";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import { loadBodyWeightLogsByBuildingId } from "../controller/bodyWeightCrud";
 import { loadGrowLogsByGrowId, loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
@@ -26,6 +27,12 @@ dayjs.extend(utc);
 const PRIMARY = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
+const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
+
+type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
 type MetricKey = "mortality" | "thinning" | "takeOut" | "reduction";
 
@@ -38,6 +45,13 @@ type HistoryRow = {
   sourceTime: string | null;
 };
 
+type DoaTransactionRow = {
+  id: number;
+  createdAt: string;
+  totalAnimalsCount: number;
+  remarks: string | null;
+};
+
 const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   mortality: { title: "Actual Death", accent: "bg-red-500" },
   thinning: { title: "Thinning", accent: "bg-slate-400" },
@@ -45,11 +59,23 @@ const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   reduction: { title: "Reduction", accent: "bg-rose-500" },
 };
 
-const METRIC_TABS: Array<{ key: MetricKey; label: string; activeBg: string; activeText: string; icon: "plus" | "minus" }> = [
-  { key: "mortality", label: "Mortality", activeBg: "#ffa600", activeText: "#ffffff", icon: "minus" },
-  { key: "thinning", label: "Thinning", activeBg: "#008822", activeText: "#ffffff", icon: "minus" },
-  { key: "takeOut", label: "Take Out", activeBg: "#f59e0b", activeText: "#ffffff", icon: "plus" },
+const METRIC_TABS: Array<{
+  key: MetricKey;
+  label: string;
+  activeBg: string;
+  activeText: string;
+  borderColor: string;
+  icon: "plus" | "minus";
+  disabled?: boolean;
+}> = [
+  { key: "mortality", label: "Mortality", activeBg: "#ffa600", activeText: "#ffffff", borderColor: "#ffa600", icon: "minus" },
+  { key: "thinning", label: "Thinning", activeBg: PRIMARY, activeText: "#ffffff", borderColor: PRIMARY, icon: "minus" },
+  { key: "takeOut", label: "Take Out", activeBg: "#f59e0b", activeText: "#ffffff", borderColor: "#f59e0b", icon: "plus" },
+  { key: "mortality", label: "DOA", activeBg: "#ffffff", activeText: "#0f172a", borderColor: PRIMARY, icon: "minus", disabled: true },
+  { key: "mortality", label: "Culled", activeBg: "#ffffff", activeText: "#0f172a", borderColor: PRIMARY, icon: "minus", disabled: true },
 ];
+
+const PRIMARY_METRIC_TAB_LABELS = new Set(["Mortality", "Thinning", "Take Out"]);
 
 const EXPECTED_DAILY_DEATHS: Record<number, number> = {
   0: 0,
@@ -149,6 +175,7 @@ const toReductionType = (metricKey: Exclude<MetricKey, "reduction">): "mortality
 
 export default function BuildingMetricHistoryPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { id, metric } = useParams();
   const [searchParams] = useSearchParams();
   const screens = useBreakpoint();
@@ -160,8 +187,57 @@ export default function BuildingMetricHistoryPage() {
   const [buildingName, setBuildingName] = useState("");
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
   const [totalBirdsLoaded, setTotalBirdsLoaded] = useState(0);
+  const [activeGrowId, setActiveGrowId] = useState<number | null>(null);
+  const [activeGrowStatus, setActiveGrowStatus] = useState("");
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [isDoaDrawerOpen, setIsDoaDrawerOpen] = useState(false);
+  const [doaCount, setDoaCount] = useState(0);
+  const [doaRemarks, setDoaRemarks] = useState("");
+  const [doaHistoryRows, setDoaHistoryRows] = useState<DoaTransactionRow[]>([]);
+  const [isSavingDoa, setIsSavingDoa] = useState(false);
+  const [editingDoaTransactionId, setEditingDoaTransactionId] = useState<number | null>(null);
+  const [editingDoaCount, setEditingDoaCount] = useState(0);
+  const [editingDoaRemarks, setEditingDoaRemarks] = useState("");
+  const [isEditingDoa, setIsEditingDoa] = useState(false);
+  const [isCulledDrawerOpen, setIsCulledDrawerOpen] = useState(false);
+  const [culledCount, setCulledCount] = useState(0);
+  const [culledRemarks, setCulledRemarks] = useState("");
+  const [culledHistoryRows, setCulledHistoryRows] = useState<DoaTransactionRow[]>([]);
+  const [isSavingCulled, setIsSavingCulled] = useState(false);
+  const [editingCulledTransactionId, setEditingCulledTransactionId] = useState<number | null>(null);
+  const [editingCulledCount, setEditingCulledCount] = useState(0);
+  const [editingCulledRemarks, setEditingCulledRemarks] = useState("");
+  const [isEditingCulled, setIsEditingCulled] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>(null);
+
+  useEffect(() => {
+    const resolveUserRole = async () => {
+      if (!user?.id) {
+        setUserRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select("role")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        setUserRole(null);
+        return;
+      }
+
+      setUserRole(data?.role === "Admin" || data?.role === "Supervisor" ? data.role : "Staff");
+    };
+
+    void resolveUserRole();
+  }, [user?.id]);
+
+  const canAccessSpecialDrawers = userRole === "Admin" || userRole === "Supervisor";
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -170,6 +246,8 @@ export default function BuildingMetricHistoryPage() {
         setHistoryRows([]);
         setBuildingName("");
         setTotalBirdsLoaded(0);
+        setActiveGrowId(null);
+        setActiveGrowStatus("");
         return;
       }
 
@@ -181,7 +259,7 @@ export default function BuildingMetricHistoryPage() {
           supabase.from(BUILDINGS_TABLE).select("name").eq("id", buildingId).maybeSingle(),
           supabase
             .from(GROWS_TABLE)
-            .select("id, created_at, total_animals")
+            .select("id, created_at, total_animals, status")
             .eq("building_id", buildingId)
             .lt("created_at", selectedDayEnd)
             .order("created_at", { ascending: false })
@@ -193,12 +271,21 @@ export default function BuildingMetricHistoryPage() {
 
         setBuildingName(typeof buildingData?.name === "string" ? buildingData.name : "");
 
-        const growRow = ((growRows ?? []) as Array<{ id: number | null; created_at: string; total_animals: number | null }>)[0];
+        const growRow = ((growRows ?? []) as Array<{
+          id: number | null;
+          created_at: string;
+          total_animals: number | null;
+          status?: string | null;
+        }>)[0];
         if (!growRow?.id) {
           setHistoryRows([]);
           setTotalBirdsLoaded(0);
+          setActiveGrowId(null);
+          setActiveGrowStatus("");
           return;
         }
+        setActiveGrowId(growRow.id);
+        setActiveGrowStatus(typeof growRow.status === "string" ? growRow.status : "");
         setTotalBirdsLoaded(toNonNegativeInt(growRow.total_animals));
 
         const [growLogs, reductionTransactions, bodyWeightLogs] = await Promise.all([
@@ -331,6 +418,8 @@ export default function BuildingMetricHistoryPage() {
         setHistoryRows(nextRows);
       } catch (error) {
         setHistoryRows([]);
+        setActiveGrowId(null);
+        setActiveGrowStatus("");
         setToastMessage(`Failed to load ${METRIC_META[metricKey].title.toLowerCase()} history: ${getErrorMessage(error)}`);
         setIsToastOpen(true);
       } finally {
@@ -511,17 +600,894 @@ export default function BuildingMetricHistoryPage() {
     navigate(`/building-metric-history/${id}/${nextMetric}?date=${selectedDate}`);
   };
 
+  const resolveEffectiveGrowMeta = async (): Promise<{ growId: number | null; status: string }> => {
+    if (activeGrowId != null) {
+      return { growId: activeGrowId, status: activeGrowStatus };
+    }
+
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) return { growId: null, status: "" };
+
+    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const { data: growRows, error: growError } = await supabase
+      .from(GROWS_TABLE)
+      .select("id, status")
+      .eq("building_id", buildingId)
+      .lt("created_at", selectedDayEnd)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (growError) {
+      throw new Error(growError.message || "Failed to load active grow.");
+    }
+
+    const growRow = ((growRows ?? []) as Array<{ id: number | null; status?: string | null }>)[0];
+    const nextGrowId = growRow?.id ?? null;
+    const nextGrowStatus = typeof growRow?.status === "string" ? growRow.status : "";
+    setActiveGrowId(nextGrowId);
+    setActiveGrowStatus(nextGrowStatus);
+    return { growId: nextGrowId, status: nextGrowStatus };
+  };
+
+  const resolveEffectiveGrowId = async (): Promise<number | null> => {
+    const { growId } = await resolveEffectiveGrowMeta();
+    return growId;
+  };
+
+  const resolveGrowAnimalLimit = async (providedGrowId?: number | null): Promise<{ growId: number | null; totalAnimals: number }> => {
+    const growId = providedGrowId ?? await resolveEffectiveGrowId();
+    if (growId == null) {
+      return { growId: null, totalAnimals: 0 };
+    }
+
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("total_animals")
+      .eq("id", growId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || "Failed to load current total animals.");
+    }
+
+    const totalAnimals = toNonNegativeInt(data?.total_animals);
+    setTotalBirdsLoaded(totalAnimals);
+    return { growId, totalAnimals };
+  };
+
+  const updateGrowTotalAnimals = async (growId: number, totalAnimals: number) => {
+    const { error } = await supabase
+      .from(GROWS_TABLE)
+      .update({ total_animals: Math.max(0, Math.floor(totalAnimals)) })
+      .eq("id", growId);
+
+    if (error) {
+      throw new Error(error.message || "Failed to update grow total animals.");
+    }
+  };
+
+  const resolveDisplayedCurrentAnimals = async (growId: number, totalAnimals: number) => {
+    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const transactions = (await loadGrowReductionTransactionsByGrowId(growId)).filter(
+      (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
+    );
+
+    const latestByDayCageAndType: Record<string, { animalCount: number; reductionType: string | null }> = {};
+
+    transactions
+      .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
+      .forEach((row) => {
+        if (row.subbuildingId == null || !row.reductionType) return;
+        const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+        const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
+        if (latestByDayCageAndType[key]) return;
+        latestByDayCageAndType[key] = {
+          animalCount: toNonNegativeInt(row.animalCount),
+          reductionType: row.reductionType,
+        };
+      });
+
+    const reductionTotals = Object.values(latestByDayCageAndType).reduce(
+      (sum, row) => sum + row.animalCount,
+      0
+    );
+
+    return Math.max(0, Math.floor(totalAnimals) - reductionTotals);
+  };
+
+  const syncLatestGrowLogActualTotal = async (growId: number, totalAnimals: number) => {
+    const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("created_at")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestGrowLogRowError) {
+      throw new Error(latestGrowLogRowError.message || "Failed to load latest grow log.");
+    }
+
+    if (!latestGrowLogRow?.created_at) return;
+
+    const latestLogDate = dayjs.utc(latestGrowLogRow.created_at).format("YYYY-MM-DD");
+    const latestLogStart = dayjs.utc(latestLogDate, "YYYY-MM-DD").startOf("day");
+    const latestLogEnd = latestLogStart.add(1, "day");
+    const normalizedTotalAnimals = Math.max(0, Math.floor(totalAnimals));
+
+    const { error: latestGrowLogUpdateError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .update({ actual_total_animals: normalizedTotalAnimals })
+      .eq("grow_id", growId)
+      .gte("created_at", latestLogStart.toISOString())
+      .lt("created_at", latestLogEnd.toISOString());
+
+    if (latestGrowLogUpdateError) {
+      throw new Error(latestGrowLogUpdateError.message || "Failed to sync latest grow log total animals.");
+    }
+  };
+
+  const createGrowLogSnapshotFromLatestDate = async (
+    growId: number,
+    totalAnimals: number,
+    createdAt: string
+  ) => {
+    const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("created_at")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestGrowLogRowError) {
+      throw new Error(latestGrowLogRowError.message || "Failed to load latest grow log.");
+    }
+
+    if (!latestGrowLogRow?.created_at) return;
+
+    const latestLogDate = dayjs.utc(latestGrowLogRow.created_at).format("YYYY-MM-DD");
+    const latestLogStart = dayjs.utc(latestLogDate, "YYYY-MM-DD").startOf("day");
+    const latestLogEnd = latestLogStart.add(1, "day");
+
+    const { data: latestGrowLogRows, error: latestGrowLogRowsError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("subbuilding_id, mortality, thinning, take_out")
+      .eq("grow_id", growId)
+      .gte("created_at", latestLogStart.toISOString())
+      .lt("created_at", latestLogEnd.toISOString())
+      .order("created_at", { ascending: false });
+
+    if (latestGrowLogRowsError) {
+      throw new Error(latestGrowLogRowsError.message || "Failed to load latest grow log rows.");
+    }
+
+    const snapshotRows = ((latestGrowLogRows ?? []) as Array<{
+      subbuilding_id: number | null;
+      mortality: number | null;
+      thinning: number | null;
+      take_out: number | null;
+    }>).map((row) => ({
+      grow_id: growId,
+      subbuilding_id: row.subbuilding_id,
+      actual_total_animals: Math.max(0, Math.floor(totalAnimals)),
+      mortality: row.mortality,
+      thinning: row.thinning,
+      take_out: row.take_out,
+      created_at: createdAt,
+    }));
+
+    if (snapshotRows.length === 0) return;
+
+    const { error: insertSnapshotError } = await supabase.from(GROW_LOGS_TABLE).insert(snapshotRows);
+
+    if (insertSnapshotError) {
+      throw new Error(insertSnapshotError.message || "Failed to create grow log snapshot.");
+    }
+  };
+
+  const ensureCountWithinGrowTotal = (count: number, totalAnimals: number, label: string): boolean => {
+    if (count > totalAnimals) {
+      setToastMessage(`${label} cannot exceed current total animals (${totalAnimals.toLocaleString()}).`);
+      setIsToastOpen(true);
+      return false;
+    }
+
+    return true;
+  };
+
+  const loadDoaHistory = async () => {
+    const { growId, status } = await resolveEffectiveGrowMeta();
+    if (growId == null || (status !== "Loading" && status !== "Growing")) {
+      setDoaHistoryRows([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from(DOA_TRANSACTIONS_TABLE)
+      .select("id, created_at, total_animals_count, remarks")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(error.message || "Failed to load DOA history.");
+    }
+
+    const rows = ((data ?? []) as Array<{
+      id: number;
+      created_at: string;
+      total_animals_count: number | null;
+      remarks: string | null;
+    }>).map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      totalAnimalsCount: toNonNegativeInt(row.total_animals_count),
+      remarks: typeof row.remarks === "string" ? row.remarks : null,
+    }));
+
+    setDoaHistoryRows(rows);
+  };
+
+  const loadCulledHistory = async () => {
+    const { growId, status } = await resolveEffectiveGrowMeta();
+    if (growId == null || (status !== "Loading" && status !== "Growing")) {
+      setCulledHistoryRows([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from(CULLED_TRANSACTIONS_TABLE)
+      .select("id, created_at, total_animals_count, remarks")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(error.message || "Failed to load culled history.");
+    }
+
+    const rows = ((data ?? []) as Array<{
+      id: number;
+      created_at: string;
+      total_animals_count: number | null;
+      remarks: string | null;
+    }>).map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      totalAnimalsCount: toNonNegativeInt(row.total_animals_count),
+      remarks: typeof row.remarks === "string" ? row.remarks : null,
+    }));
+
+    setCulledHistoryRows(rows);
+  };
+
+  useEffect(() => {
+    if (metricKey === "reduction") {
+      setDoaHistoryRows([]);
+      return;
+    }
+
+    const fetchDoaHistory = async () => {
+      try {
+        await loadDoaHistory();
+      } catch (error) {
+        setDoaHistoryRows([]);
+        setToastMessage(getErrorMessage(error));
+        setIsToastOpen(true);
+      }
+    };
+
+    void fetchDoaHistory();
+  }, [metricKey, activeGrowId, activeGrowStatus, id, selectedDate]);
+
+  useEffect(() => {
+    if (!isDoaDrawerOpen) return;
+
+    const fetchDoaHistory = async () => {
+      try {
+        await loadDoaHistory();
+      } catch (error) {
+        setDoaHistoryRows([]);
+        setToastMessage(getErrorMessage(error));
+        setIsToastOpen(true);
+      }
+    };
+
+    void fetchDoaHistory();
+  }, [isDoaDrawerOpen, activeGrowId, id, selectedDate]);
+
+  useEffect(() => {
+    if (!isCulledDrawerOpen) return;
+
+    const fetchCulledHistory = async () => {
+      try {
+        await loadCulledHistory();
+      } catch (error) {
+        setCulledHistoryRows([]);
+        setToastMessage(getErrorMessage(error));
+        setIsToastOpen(true);
+      }
+    };
+
+    void fetchCulledHistory();
+  }, [isCulledDrawerOpen, activeGrowId, id, selectedDate]);
+
+  const handleOpenDoaDrawer = () => {
+    setDoaCount(0);
+    setDoaRemarks("");
+    setIsDoaDrawerOpen(true);
+  };
+
+  const handleCloseDoaDrawer = () => {
+    setIsDoaDrawerOpen(false);
+    setDoaCount(0);
+    setDoaRemarks("");
+    setEditingDoaTransactionId(null);
+    setEditingDoaCount(0);
+    setEditingDoaRemarks("");
+    setIsEditingDoa(false);
+  };
+
+  const startEditingDoaEntry = (entry: DoaTransactionRow) => {
+    setEditingDoaTransactionId(entry.id);
+    setEditingDoaCount(entry.totalAnimalsCount);
+    setEditingDoaRemarks(entry.remarks ?? "");
+  };
+
+  const resetDoaEditState = () => {
+    setEditingDoaTransactionId(null);
+    setEditingDoaCount(0);
+    setEditingDoaRemarks("");
+    setIsEditingDoa(false);
+  };
+
+  const handleSaveDoa = async () => {
+    if (isSavingDoa) return;
+    if (doaCount <= 0) {
+      setToastMessage("DOA Count is required.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setIsSavingDoa(true);
+
+    let growId: number | null = null;
+    let totalAnimals = 0;
+
+    try {
+      const growSummary = await resolveGrowAnimalLimit();
+      growId = growSummary.growId;
+      totalAnimals = growSummary.totalAnimals;
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsSavingDoa(false);
+      return;
+    }
+
+    if (growId == null) {
+      setToastMessage("No active grow found for this building.");
+      setIsToastOpen(true);
+      setIsSavingDoa(false);
+      return;
+    }
+
+    if (!ensureCountWithinGrowTotal(doaCount, totalAnimals, "DOA Count")) {
+      setIsSavingDoa(false);
+      return;
+    }
+
+    const now = dayjs();
+    const createdAt = dayjs(selectedDate)
+      .hour(now.hour())
+      .minute(now.minute())
+      .second(now.second())
+      .millisecond(0)
+      .toISOString();
+
+    const { error } = await supabase.from(DOA_TRANSACTIONS_TABLE).insert([
+      {
+        created_at: createdAt,
+        grow_id: growId,
+        total_animals_count: doaCount,
+        remarks: doaRemarks.trim() || null,
+      },
+    ]);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to save DOA record.");
+      setIsToastOpen(true);
+      setIsSavingDoa(false);
+      return;
+    }
+
+    try {
+      const nextTotalAnimals = totalAnimals - doaCount;
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(growId, nextTotalAnimals);
+      await updateGrowTotalAnimals(growId, nextTotalAnimals);
+      await createGrowLogSnapshotFromLatestDate(growId, nextDisplayedCurrentAnimals, createdAt);
+      await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
+      setTotalBirdsLoaded(nextTotalAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsSavingDoa(false);
+      return;
+    }
+
+    try {
+      await loadDoaHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsSavingDoa(false);
+      return;
+    }
+
+    setDoaCount(0);
+    setDoaRemarks("");
+    setToastMessage("DOA record saved.");
+    setIsToastOpen(true);
+    setIsSavingDoa(false);
+  };
+
+  const handleSaveEditedDoa = async (entry: DoaTransactionRow) => {
+    if (isEditingDoa) return;
+    if (editingDoaCount <= 0) {
+      setToastMessage("DOA Count is required.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setIsEditingDoa(true);
+
+    let growId: number | null = null;
+    let totalAnimals = 0;
+
+    try {
+      const growSummary = await resolveGrowAnimalLimit();
+      growId = growSummary.growId;
+      totalAnimals = growSummary.totalAnimals;
+
+      if (growId == null) {
+        setToastMessage("No active grow found for this building.");
+        setIsToastOpen(true);
+        setIsEditingDoa(false);
+        return;
+      }
+
+      const maxAllowed = totalAnimals + entry.totalAnimalsCount;
+      if (!ensureCountWithinGrowTotal(editingDoaCount, maxAllowed, "DOA Count")) {
+        setIsEditingDoa(false);
+        return;
+      }
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from(DOA_TRANSACTIONS_TABLE)
+      .update({
+        total_animals_count: editingDoaCount,
+        remarks: editingDoaRemarks.trim() || null,
+      })
+      .eq("id", entry.id);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to update DOA record.");
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    try {
+      const nextTotalAnimals = totalAnimals + entry.totalAnimalsCount - editingDoaCount;
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(growId, nextTotalAnimals);
+      await updateGrowTotalAnimals(growId, nextTotalAnimals);
+      await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
+      setTotalBirdsLoaded(nextTotalAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    try {
+      await loadDoaHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    resetDoaEditState();
+    setToastMessage("DOA record updated.");
+    setIsToastOpen(true);
+  };
+
+  const handleDeleteDoaEntry = async (entry: DoaTransactionRow) => {
+    if (isEditingDoa) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Remove DOA Entry",
+        content: "Are you sure you want to remove this DOA record?",
+        okText: "Remove",
+        cancelText: "Cancel",
+        okButtonProps: {
+          danger: true,
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+
+    if (!confirmed) return;
+
+    setIsEditingDoa(true);
+
+    let growId: number | null = null;
+    let totalAnimals = 0;
+
+    try {
+      const growSummary = await resolveGrowAnimalLimit();
+      growId = growSummary.growId;
+      totalAnimals = growSummary.totalAnimals;
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    if (growId == null) {
+      setToastMessage("No active grow found for this building.");
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from(DOA_TRANSACTIONS_TABLE)
+      .delete()
+      .eq("id", entry.id);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to remove DOA record.");
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    try {
+      const nextTotalAnimals = totalAnimals + entry.totalAnimalsCount;
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(growId, nextTotalAnimals);
+      await updateGrowTotalAnimals(growId, nextTotalAnimals);
+      await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
+      setTotalBirdsLoaded(nextTotalAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    try {
+      await loadDoaHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsEditingDoa(false);
+      return;
+    }
+
+    resetDoaEditState();
+    setToastMessage("DOA record removed.");
+    setIsToastOpen(true);
+  };
+
+  const handleOpenCulledDrawer = () => {
+    setCulledCount(0);
+    setCulledRemarks("");
+    setIsCulledDrawerOpen(true);
+  };
+
+  const handleCloseCulledDrawer = () => {
+    setIsCulledDrawerOpen(false);
+    setCulledCount(0);
+    setCulledRemarks("");
+    setEditingCulledTransactionId(null);
+    setEditingCulledCount(0);
+    setEditingCulledRemarks("");
+    setIsEditingCulled(false);
+  };
+
+  const startEditingCulledEntry = (entry: DoaTransactionRow) => {
+    setEditingCulledTransactionId(entry.id);
+    setEditingCulledCount(entry.totalAnimalsCount);
+    setEditingCulledRemarks(entry.remarks ?? "");
+  };
+
+  const resetCulledEditState = () => {
+    setEditingCulledTransactionId(null);
+    setEditingCulledCount(0);
+    setEditingCulledRemarks("");
+    setIsEditingCulled(false);
+  };
+
+  const handleSaveCulled = async () => {
+    if (isSavingCulled) return;
+    if (culledCount <= 0) {
+      setToastMessage("Culled Count is required.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setIsSavingCulled(true);
+
+    let growId: number | null = null;
+    let totalAnimals = 0;
+
+    try {
+      const growSummary = await resolveGrowAnimalLimit();
+      growId = growSummary.growId;
+      totalAnimals = growSummary.totalAnimals;
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsSavingCulled(false);
+      return;
+    }
+
+    if (growId == null) {
+      setToastMessage("No active grow found for this building.");
+      setIsToastOpen(true);
+      setIsSavingCulled(false);
+      return;
+    }
+
+    if (!ensureCountWithinGrowTotal(culledCount, totalAnimals, "Culled Count")) {
+      setIsSavingCulled(false);
+      return;
+    }
+
+    const now = dayjs();
+    const createdAt = dayjs(selectedDate)
+      .hour(now.hour())
+      .minute(now.minute())
+      .second(now.second())
+      .millisecond(0)
+      .toISOString();
+
+    const { error } = await supabase.from(CULLED_TRANSACTIONS_TABLE).insert([
+      {
+        created_at: createdAt,
+        grow_id: growId,
+        total_animals_count: culledCount,
+        remarks: culledRemarks.trim() || null,
+      },
+    ]);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to save culled record.");
+      setIsToastOpen(true);
+      setIsSavingCulled(false);
+      return;
+    }
+
+    try {
+      await loadCulledHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsSavingCulled(false);
+      return;
+    }
+
+    setCulledCount(0);
+    setCulledRemarks("");
+    setToastMessage("Culled record saved.");
+    setIsToastOpen(true);
+    setIsSavingCulled(false);
+  };
+
+  const handleSaveEditedCulled = async (entry: DoaTransactionRow) => {
+    if (isEditingCulled) return;
+    if (editingCulledCount <= 0) {
+      setToastMessage("Culled Count is required.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setIsEditingCulled(true);
+
+    try {
+      const { totalAnimals } = await resolveGrowAnimalLimit();
+      if (!ensureCountWithinGrowTotal(editingCulledCount, totalAnimals, "Culled Count")) {
+        setIsEditingCulled(false);
+        return;
+      }
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from(CULLED_TRANSACTIONS_TABLE)
+      .update({
+        total_animals_count: editingCulledCount,
+        remarks: editingCulledRemarks.trim() || null,
+      })
+      .eq("id", entry.id);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to update culled record.");
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    try {
+      await loadCulledHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    resetCulledEditState();
+    setToastMessage("Culled record updated.");
+    setIsToastOpen(true);
+  };
+
+  const handleDeleteCulledEntry = async (entry: DoaTransactionRow) => {
+    if (isEditingCulled) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Remove Culled Entry",
+        content: "Are you sure you want to remove this culled record?",
+        okText: "Remove",
+        cancelText: "Cancel",
+        okButtonProps: {
+          danger: true,
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+
+    if (!confirmed) return;
+
+    setIsEditingCulled(true);
+
+    const { error } = await supabase
+      .from(CULLED_TRANSACTIONS_TABLE)
+      .delete()
+      .eq("id", entry.id);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to remove culled record.");
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    try {
+      await loadCulledHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    resetCulledEditState();
+    setToastMessage("Culled record removed.");
+    setIsToastOpen(true);
+  };
+
   const handleHistoryRowClick = (date: string) => {
     if (!id) return;
     navigate(`/building-cage/${id}?date=${date}`);
   };
 
   const totalValue = useMemo(() => historyRows.reduce((sum, row) => sum + row.value, 0), [historyRows]);
+  const totalLabel = useMemo(() => {
+    if (metricKey === "mortality") return "Total Mortality";
+    if (metricKey === "thinning") return "Total Thinning";
+    if (metricKey === "takeOut") return "Total Take Out";
+    return "Total Reduction";
+  }, [metricKey]);
   const totalAvgWeight = useMemo(() => {
     const rowsWithAvgWeight = historyRows.filter((row) => row.avgWeight != null);
     if (rowsWithAvgWeight.length === 0) return null;
     return rowsWithAvgWeight.reduce((sum, row) => sum + (row.avgWeight ?? 0), 0) / rowsWithAvgWeight.length;
   }, [historyRows]);
+  const doaTotalEncoded = useMemo(
+    () => doaHistoryRows.reduce((sum, row) => sum + row.totalAnimalsCount, 0),
+    [doaHistoryRows]
+  );
+  const culledTotalEncoded = useMemo(
+    () => culledHistoryRows.reduce((sum, row) => sum + row.totalAnimalsCount, 0),
+    [culledHistoryRows]
+  );
+  const visibleMetricTabs = useMemo(
+    () => METRIC_TABS.filter((tab) => canAccessSpecialDrawers || (tab.label !== "DOA" && tab.label !== "Culled")),
+    [canAccessSpecialDrawers]
+  );
+
+  const renderSpecialDrawerHeader = (title: "DOA" | "Culled", onClose: () => void) => (
+    <div
+      className={[
+        "sticky top-0 z-10 flex items-center justify-between",
+        isMobile ? "px-3 min-h-14" : "px-6 h-[74px]",
+      ].join(" ")}
+      style={{
+        backgroundColor: PRIMARY,
+        ...(isMobile
+          ? {
+            paddingTop: mobileSafeAreaTop,
+            height: `calc(56px + ${mobileSafeAreaTop})`,
+          }
+          : {}),
+      }}
+    >
+      <div className={["flex items-center", isMobile ? "gap-2" : "gap-4"].join(" ")}>
+        <Button
+          type="text"
+          icon={<IoMdArrowRoundBack size={20} />}
+          className="!text-white hover:!text-white/90"
+          onClick={onClose}
+          aria-label="Back"
+        />
+        <Divider
+          type="vertical"
+          className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")}
+        />
+        <Button
+          type="text"
+          icon={<IoHome size={18} />}
+          className="!text-white hover:!text-white/90"
+          onClick={() => navigate("/landing-page")}
+          aria-label="Home"
+        />
+        {isMobile ? (
+          <>
+            <Divider
+              type="vertical"
+              className="!m-0 !h-5 !border-white/60"
+            />
+            <Title level={4} className="!m-0 !text-base !text-white">
+              {title}
+            </Title>
+          </>
+        ) : (
+          <div className="leading-tight">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Building Metric</div>
+            <Title level={4} className="!m-0 !text-white !text-lg">
+              {title}
+            </Title>
+          </div>
+        )}
+      </div>
+      <Button
+        type="text"
+        icon={<FaSignOutAlt size={18} />}
+        className="!text-white hover:!text-white/90"
+        onClick={handleSignOut}
+        aria-label="Sign out"
+      />
+      <div className="absolute bottom-0 left-0 h-1 w-full bg-[#ffc700]" />
+    </div>
+  );
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -586,37 +1552,79 @@ export default function BuildingMetricHistoryPage() {
       </Header>
 
       <div className="border-b border-slate-200 bg-white shadow-sm">
-        <div className="grid grid-cols-3">
-          {METRIC_TABS.map((tab) => {
-            const isActive = tab.key === metricKey;
-            const Icon = tab.icon === "plus" ? PlusCircleFilled : MinusCircleFilled;
-
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => handleMetricTabChange(tab.key)}
+        <div className={["px-3 py-3", isMobile ? "" : "px-6"].join(" ")}>
+          {[visibleMetricTabs.filter((tab) => PRIMARY_METRIC_TAB_LABELS.has(tab.label)), visibleMetricTabs.filter((tab) => !PRIMARY_METRIC_TAB_LABELS.has(tab.label))].map(
+            (tabRow, rowIndex) => (
+              <div
+                key={`metric-row-${rowIndex}`}
                 className={[
-                  "flex items-center justify-center gap-2 px-3 font-semibold transition",
-                  isMobile ? "h-14 text-sm" : "h-16 text-base",
-                  isActive ? "shadow-inner" : "hover:bg-slate-50",
+                  "flex flex-wrap items-center gap-2",
+                  rowIndex === 0 ? "" : "mt-2",
+                  isMobile ? "justify-start" : "justify-center",
                 ].join(" ")}
-                style={{
-                  backgroundColor: isActive ? tab.activeBg : "#ffffff",
-                  color: isActive ? tab.activeText : "#0f172a",
-                }}
-                aria-pressed={isActive}
               >
-                <Icon
-                  style={{
-                    fontSize: isMobile ? 22 : 24,
-                    color: isActive ? "#ffffff" : PRIMARY,
-                  }}
-                />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+                {tabRow.map((tab) => {
+                  const isActive = tab.key === metricKey;
+                  const iconLabel = tab.icon === "plus" ? "+" : "-";
+
+                  return (
+                    <button
+                      key={`${tab.label}-${tab.key}`}
+                      type="button"
+                      onClick={() => {
+                        if (tab.label === "DOA") {
+                          if (!canAccessSpecialDrawers) return;
+                          handleOpenDoaDrawer();
+                          return;
+                        }
+                        if (tab.label === "Culled") {
+                          if (!canAccessSpecialDrawers) return;
+                          handleOpenCulledDrawer();
+                          return;
+                        }
+                        if (tab.disabled) return;
+                        handleMetricTabChange(tab.key);
+                      }}
+                      disabled={
+                        (tab.label === "DOA" || tab.label === "Culled")
+                          ? !canAccessSpecialDrawers
+                          : tab.disabled
+                      }
+                      className={[
+                        "inline-flex shrink-0 items-center justify-center gap-2 rounded-md border font-semibold transition-colors",
+                        isMobile ? "min-h-10 px-3 text-sm" : "min-h-11 px-4 text-sm",
+                        ((tab.label === "DOA" || tab.label === "Culled")
+                          ? !canAccessSpecialDrawers
+                          : tab.disabled)
+                          ? "cursor-default opacity-70"
+                          : isActive
+                          ? "shadow-sm"
+                          : "hover:border-emerald-300 hover:bg-emerald-50/40",
+                      ].join(" ")}
+                      style={{
+                        backgroundColor: isActive && !tab.disabled ? tab.activeBg : "#ffffff",
+                        color: isActive && !tab.disabled ? tab.activeText : "#0f172a",
+                        borderColor: tab.borderColor,
+                      }}
+                      aria-pressed={isActive && !tab.disabled}
+                    >
+                      <span
+                        className="flex h-4 w-4 items-center justify-center rounded-full text-[11px] font-bold leading-none"
+                        style={{
+                          backgroundColor: isActive && !tab.disabled ? "#ffffff" : PRIMARY,
+                          color: isActive && !tab.disabled ? tab.activeBg : "#ffffff",
+                        }}
+                        aria-hidden="true"
+                      >
+                        {iconLabel}
+                      </span>
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          )}
         </div>
       </div>
 
@@ -633,7 +1641,7 @@ export default function BuildingMetricHistoryPage() {
           <>
             <div className="rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-4 py-4 shadow-sm">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                {buildingName || `Building ${id}`}
+                {buildingName || `Bldg ${id}`}
               </div>
               <div className="mt-1 text-xl font-bold text-slate-900">{METRIC_META[metricKey].title} Daily History</div>
               <div className="mt-2 text-sm text-slate-600">
@@ -645,9 +1653,15 @@ export default function BuildingMetricHistoryPage() {
                   <span className="text-sm font-bold text-slate-900">{historyRows.length}</span>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{totalLabel}</span>
                   <span className="text-sm font-bold text-slate-900">{totalValue.toLocaleString()}</span>
                 </div>
+                {metricKey !== "reduction" ? (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">DOA</span>
+                    <span className="text-sm font-bold text-slate-900">{doaTotalEncoded.toLocaleString()}</span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -718,6 +1732,355 @@ export default function BuildingMetricHistoryPage() {
           </>
         )}
       </Content>
+
+      <Drawer
+        open={isDoaDrawerOpen}
+        onClose={handleCloseDoaDrawer}
+        placement="right"
+        width={isMobile ? "100%" : 420}
+        className="doa-drawer"
+        closable={false}
+        headerStyle={{ display: "none" }}
+        bodyStyle={{ padding: 0, backgroundColor: "#f8fafc" }}
+      >
+        {renderSpecialDrawerHeader("DOA", handleCloseDoaDrawer)}
+
+        <div className="p-5">
+          <div className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-[#2563eb]">{buildingName || `Building #${id}`}</div>
+              <div className="text-xs font-medium text-slate-500">{dayjs(selectedDate).format("MMMM D, YYYY")}</div>
+            </div>
+            <div className="mt-4">
+              <div className="text-sm font-semibold text-slate-900">History</div>
+              {doaHistoryRows.length === 0 ? (
+                <div className="mt-2 text-sm text-slate-500">No history yet.</div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {doaHistoryRows.map((row) => {
+                    const isEditing = editingDoaTransactionId === row.id;
+
+                    return (
+                    <div key={row.id} className="rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-slate-900">
+                            {dayjs(row.createdAt).format("MMMM D, YYYY h:mm A")}
+                          </div>
+                          {isEditing ? (
+                            <div className="mt-2 flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <InputNumber
+                                  min={0}
+                                  value={editingDoaCount}
+                                  onChange={(value) => setEditingDoaCount(Number(value) || 0)}
+                                  parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
+                                  inputMode="numeric"
+                                  className="!w-[110px]"
+                                  size="small"
+                                  styles={{ input: { fontSize: 16 } }}
+                                />
+                                <div className="text-[11px] font-semibold text-slate-500">birds</div>
+                              </div>
+                              <Input.TextArea
+                                rows={1}
+                                value={editingDoaRemarks}
+                                onChange={(event) => setEditingDoaRemarks(event.target.value)}
+                                placeholder="Add remarks (optional)"
+                                autoSize={{ minRows: 1, maxRows: 2 }}
+                                className="!text-base"
+                                style={{ fontSize: 16 }}
+                              />
+                            </div>
+                          ) : row.remarks ? (
+                            <div className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 break-words">{row.remarks}</div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {!isEditing ? (
+                            <div className="inline-flex min-w-[76px] items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-bold text-slate-900">
+                              {row.totalAnimalsCount.toLocaleString()}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex justify-end">
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={resetDoaEditState}
+                              disabled={isEditingDoa}
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-500 disabled:opacity-60"
+                            >
+                              <FiX size={12} />
+                              <span>Cancel</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveEditedDoa(row)}
+                              disabled={editingDoaCount <= 0 || isEditingDoa}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
+                            >
+                              <FiCheck size={12} />
+                              <span>{isEditingDoa ? "Saving..." : "Save"}</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => startEditingDoaEntry(row)}
+                              disabled={isEditingDoa}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
+                            >
+                              <FiEdit2 size={11} />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteDoaEntry(row)}
+                              disabled={isEditingDoa}
+                              className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 disabled:opacity-60"
+                            >
+                              <FiTrash2 size={11} />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )})}
+                </div>
+              )}
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
+              <span className="text-slate-500">Total Encoded (All)</span>
+              <span className="font-semibold text-slate-900">{doaTotalEncoded.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-full">
+                <div className="mb-2 text-xs font-medium text-slate-500">DOA Count</div>
+              <InputNumber
+                min={0}
+                value={doaCount}
+                onChange={(value) => setDoaCount(Number(value) || 0)}
+                parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
+                inputMode="numeric"
+                placeholder="Enter total count"
+                className="!w-full"
+                styles={{ input: { fontSize: 16, height: 44 } }}
+              />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="mb-2 text-xs font-medium text-slate-500">Remarks</div>
+              <Input.TextArea
+                rows={3}
+                value={doaRemarks}
+                onChange={(event) => setDoaRemarks(event.target.value)}
+                placeholder="Add remarks (optional)"
+                className="!text-base"
+              />
+            </div>
+
+            {doaCount <= 0 && (
+              <div className="text-xs text-red-500 mt-2">
+                DOA Count is required.
+              </div>
+            )}
+
+            <Button
+              type="primary"
+              className="mt-4 !h-11 !w-full !rounded-lg !border-0 text-base font-semibold"
+              style={{ backgroundColor: "#66bb7a" }}
+              onClick={handleSaveDoa}
+              disabled={doaCount <= 0 || isSavingDoa}
+              loading={isSavingDoa}
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      </Drawer>
+
+      <Drawer
+        open={isCulledDrawerOpen}
+        onClose={handleCloseCulledDrawer}
+        placement="right"
+        width={isMobile ? "100%" : 420}
+        className="culled-drawer"
+        closable={false}
+        headerStyle={{ display: "none" }}
+        bodyStyle={{ padding: 0, backgroundColor: "#f8fafc" }}
+      >
+        {renderSpecialDrawerHeader("Culled", handleCloseCulledDrawer)}
+
+        <div className="p-5">
+          <div className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-[#2563eb]">{buildingName || `Building #${id}`}</div>
+              <div className="text-xs font-medium text-slate-500">{dayjs(selectedDate).format("MMMM D, YYYY")}</div>
+            </div>
+            <div className="mt-4">
+              <div className="text-sm font-semibold text-slate-900">History</div>
+              {culledHistoryRows.length === 0 ? (
+                <div className="mt-2 text-sm text-slate-500">No history yet.</div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {culledHistoryRows.map((row) => {
+                    const isEditing = editingCulledTransactionId === row.id;
+
+                    return (
+                    <div key={row.id} className="rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-slate-900">
+                            {dayjs(row.createdAt).format("MMMM D, YYYY h:mm A")}
+                          </div>
+                          {isEditing ? (
+                            <div className="mt-2 flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <InputNumber
+                                  min={0}
+                                  value={editingCulledCount}
+                                  onChange={(value) => setEditingCulledCount(Number(value) || 0)}
+                                  parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
+                                  inputMode="numeric"
+                                  className="!w-[110px]"
+                                  size="small"
+                                  styles={{ input: { fontSize: 16 } }}
+                                />
+                                <div className="text-[11px] font-semibold text-slate-500">birds</div>
+                              </div>
+                              <Input.TextArea
+                                rows={1}
+                                value={editingCulledRemarks}
+                                onChange={(event) => setEditingCulledRemarks(event.target.value)}
+                                placeholder="Add remarks (optional)"
+                                autoSize={{ minRows: 1, maxRows: 2 }}
+                                className="!text-base"
+                                style={{ fontSize: 16 }}
+                              />
+                            </div>
+                          ) : row.remarks ? (
+                            <div className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 break-words">{row.remarks}</div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {!isEditing ? (
+                            <div className="inline-flex min-w-[76px] items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-bold text-slate-900">
+                              {row.totalAnimalsCount.toLocaleString()}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex justify-end">
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={resetCulledEditState}
+                              disabled={isEditingCulled}
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-500 disabled:opacity-60"
+                            >
+                              <FiX size={12} />
+                              <span>Cancel</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveEditedCulled(row)}
+                              disabled={editingCulledCount <= 0 || isEditingCulled}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
+                            >
+                              <FiCheck size={12} />
+                              <span>{isEditingCulled ? "Saving..." : "Save"}</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => startEditingCulledEntry(row)}
+                              disabled={isEditingCulled}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
+                            >
+                              <FiEdit2 size={11} />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteCulledEntry(row)}
+                              disabled={isEditingCulled}
+                              className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 disabled:opacity-60"
+                            >
+                              <FiTrash2 size={11} />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )})}
+                </div>
+              )}
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
+              <span className="text-slate-500">Total Encoded (All)</span>
+              <span className="font-semibold text-slate-900">{culledTotalEncoded.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-full">
+                <div className="mb-2 text-xs font-medium text-slate-500">Culled Count</div>
+              <InputNumber
+                min={0}
+                value={culledCount}
+                onChange={(value) => setCulledCount(Number(value) || 0)}
+                parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
+                inputMode="numeric"
+                placeholder="Enter total count"
+                className="!w-full"
+                styles={{ input: { fontSize: 16, height: 44 } }}
+              />
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <div className="mb-2 text-xs font-medium text-slate-500">Remarks</div>
+              <Input.TextArea
+                rows={3}
+                value={culledRemarks}
+                onChange={(event) => setCulledRemarks(event.target.value)}
+                placeholder="Add remarks (optional)"
+                className="!text-base"
+              />
+            </div>
+
+            {culledCount <= 0 && (
+              <div className="text-xs text-red-500 mt-2">
+                Culled Count is required.
+              </div>
+            )}
+
+            <Button
+              type="primary"
+              className="mt-4 !h-11 !w-full !rounded-lg !border-0 text-base font-semibold"
+              style={{ backgroundColor: "#66bb7a" }}
+              onClick={handleSaveCulled}
+              disabled={culledCount <= 0 || isSavingCulled}
+              loading={isSavingCulled}
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      </Drawer>
 
       <NotificationToast
         open={isToastOpen}
