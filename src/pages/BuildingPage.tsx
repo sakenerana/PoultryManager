@@ -49,8 +49,6 @@ type BuildingStats = {
   takeOut: number;
 };
 
-type MetricKey = "mortality" | "thinning" | "takeOut";
-
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
@@ -121,7 +119,7 @@ function StatPill({
   return (
     <div
       className={[
-        "rounded-lg bg-slate-50 px-2 py-1.5",
+        "rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5",
         onClick ? "cursor-pointer hover:bg-slate-100 transition" : "",
       ].join(" ")}
       onClick={(e) => {
@@ -238,7 +236,7 @@ function BuildingRow({
 }: {
   b: Building;
   onOpen: () => void;
-  onMetricOpen: (metric: MetricKey) => void;
+  onMetricOpen: () => void;
   onAvgWeightOpen: () => void;
   isMobile: boolean;
   stats: BuildingStats;
@@ -254,9 +252,8 @@ function BuildingRow({
       hoverable={canOpen}
       onClick={canOpen ? onOpen : undefined}
       className={[
-        "!border-0 shadow-sm transition h-full",
+        "!border !border-emerald-200 bg-white/95 shadow-sm transition h-full",
         canOpen ? "hover:shadow-md cursor-pointer" : "cursor-default",
-        !isMobile ? "border border-slate-200/80 bg-white/95" : "",
         isMobile ? "!rounded-sm" : "!rounded-sm",
       ].join(" ")}
       bodyStyle={{ padding: isMobile ? 10 : 14 }}
@@ -348,7 +345,7 @@ function BuildingRow({
               )}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
-              onClick={() => onMetricOpen("mortality")}
+              onClick={onMetricOpen}
             />
           </div>
         </div>
@@ -1143,7 +1140,7 @@ export default function BuildingOverviewPage() {
                     stats={stats}
                     isMobile={isMobile}
                     onOpen={() => navigate(`/building-cage/${b.id}`)}
-                    onMetricOpen={(metric) => navigate(`/building-metric-history/${b.id}/${metric}?date=${selectedDate}`)}
+                    onMetricOpen={() => navigate(`/building-metric-history/${b.id}?date=${selectedDate}`)}
                     onAvgWeightOpen={() => navigate(`/building-avg-weight-history/${b.id}?date=${selectedDate}`)}
                     canOpen={canOpenBuilding}
                     selectedDate={selectedDate}

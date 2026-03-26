@@ -535,7 +535,7 @@ export default function BuildingAvgWeightHistoryPage() {
                       handleHistoryRowClick(row.date);
                     }
                   }}
-                  className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md cursor-pointer"
+                  className="rounded-sm border border-emerald-200 bg-white px-4 py-3 shadow-sm transition hover:border-emerald-300 hover:shadow-md cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">

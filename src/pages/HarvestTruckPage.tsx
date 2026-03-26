@@ -65,7 +65,7 @@ const computeAvgWeight = (truck: Truck) => {
 
 function StatPill({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+    <div className="rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5">
       <div className="text-[10px] text-slate-500 leading-none">{label}</div>
       <div className="mt-0.5 flex items-center gap-2 text-[13px] font-semibold text-slate-900 leading-none">
         {value}
@@ -140,8 +140,8 @@ function TruckRow({
     <Card
       hoverable
       className={[
-        "!border-0 shadow-sm hover:shadow-md transition h-full",
-        isMobile ? "!rounded-sm" : "!rounded-sm border border-slate-200/80 bg-white/95",
+        "!border !border-emerald-200 bg-white/95 shadow-sm hover:shadow-md transition h-full",
+        "!rounded-sm",
       ].join(" ")}
       bodyStyle={{ padding: isMobile ? 10 : 14 }}
     >
@@ -730,7 +730,7 @@ export default function HarvestTruckPage() {
                     </div>
                   </div>
                 </div>
-                <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                <div className="col-span-4 rounded-sm border border-emerald-200 bg-white px-5 py-5 shadow-sm">
                   <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
                   <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
                   <DatePicker
@@ -769,7 +769,7 @@ export default function HarvestTruckPage() {
 
               <Divider className={isMobile ? "!my-2" : "!my-3"} />
 
-              <div className="bg-white rounded-sm shadow-sm p-3 mb-3 flex items-center justify-between text-sm">
+              <div className="bg-white rounded-sm border border-emerald-200 shadow-sm p-3 mb-3 flex items-center justify-between text-sm">
                 <div className="text-slate-600">
                   Total Birds Load: <span className="font-semibold text-slate-900">{totals.totalBirdsLoad.toLocaleString()}</span>
                 </div>

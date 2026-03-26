@@ -34,7 +34,7 @@ const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTI
 
 type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
-type MetricKey = "mortality" | "thinning" | "takeOut" | "reduction";
+type MetricKey = "mortality" | "thinning" | "takeOut" | "reduction" | "doa" | "culled";
 
 type HistoryRow = {
   date: string;
@@ -57,25 +57,56 @@ const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   thinning: { title: "Thinning", accent: "bg-slate-400" },
   takeOut: { title: "Take Out", accent: "bg-amber-500" },
   reduction: { title: "Reduction", accent: "bg-rose-500" },
+  doa: { title: "DOA", accent: "bg-sky-500" },
+  culled: { title: "Culled", accent: "bg-emerald-500" },
 };
 
-const METRIC_TABS: Array<{
+const METRIC_CARDS: Array<{
   key: MetricKey;
   label: string;
-  activeBg: string;
-  activeText: string;
   borderColor: string;
-  icon: "plus" | "minus";
-  disabled?: boolean;
+  accent: string;
+  icon: React.ReactNode;
+  enabledRoles?: Array<Exclude<UserRole, null>>;
 }> = [
-  { key: "mortality", label: "Mortality", activeBg: "#ffa600", activeText: "#ffffff", borderColor: "#ffa600", icon: "minus" },
-  { key: "thinning", label: "Thinning", activeBg: PRIMARY, activeText: "#ffffff", borderColor: PRIMARY, icon: "minus" },
-  { key: "takeOut", label: "Take Out", activeBg: "#f59e0b", activeText: "#ffffff", borderColor: "#f59e0b", icon: "plus" },
-  { key: "mortality", label: "DOA", activeBg: "#ffffff", activeText: "#0f172a", borderColor: PRIMARY, icon: "minus", disabled: true },
-  { key: "mortality", label: "Culled", activeBg: "#ffffff", activeText: "#0f172a", borderColor: PRIMARY, icon: "minus", disabled: true },
+  {
+    key: "mortality",
+    label: "Mortality",
+    borderColor: "#f59e0b",
+    accent: "text-[#f59e0b]",
+    icon: <img src="/img/chicken-head.svg" alt="Mortality" className="h-10 w-10" />,
+  },
+  {
+    key: "thinning",
+    label: "Thinning",
+    borderColor: "#22c55e",
+    accent: "text-[#008822]",
+    icon: <img src="/img/chicken-head.svg" alt="Thinning" className="h-10 w-10" />,
+  },
+  {
+    key: "takeOut",
+    label: "Take Out",
+    borderColor: "#f59e0b",
+    accent: "text-[#d97706]",
+    icon: <img src="/img/chicken-head.svg" alt="Take Out" className="h-10 w-10" />,
+  },
+  {
+    key: "doa",
+    label: "DOA",
+    borderColor: "#0ea5e9",
+    accent: "text-[#0284c7]",
+    icon: <img src="/img/chicken-doa.svg" alt="DOA" className="h-10 w-10" />,
+    enabledRoles: ["Admin", "Supervisor"],
+  },
+  {
+    key: "culled",
+    label: "Culled",
+    borderColor: "#8b5cf6",
+    accent: "text-[#7c3aed]",
+    icon: <img src="/img/chicken-doa.svg" alt="Culled" className="h-10 w-10" />,
+    enabledRoles: ["Admin", "Supervisor"],
+  },
 ];
-
-const PRIMARY_METRIC_TAB_LABELS = new Set(["Mortality", "Thinning", "Take Out"]);
 
 const EXPECTED_DAILY_DEATHS: Record<number, number> = {
   0: 0,
@@ -156,7 +187,14 @@ function ChickenState({
 }
 
 const toMetricKey = (value: string | undefined): MetricKey => {
-  if (value === "mortality" || value === "thinning" || value === "takeOut" || value === "reduction") {
+  if (
+    value === "mortality" ||
+    value === "thinning" ||
+    value === "takeOut" ||
+    value === "reduction" ||
+    value === "doa" ||
+    value === "culled"
+  ) {
     return value;
   }
   return "mortality";
@@ -168,10 +206,16 @@ const toNonNegativeInt = (value: unknown): number => {
   return Math.max(0, Math.floor(n));
 };
 
-const toReductionType = (metricKey: Exclude<MetricKey, "reduction">): "mortality" | "thinning" | "take_out" => {
+const formatSpecialTransactionTimestamp = (value: string): string =>
+  dayjs.utc(value).format("MMMM D, YYYY h:mm A");
+
+const toReductionType = (metricKey: "mortality" | "thinning" | "takeOut"): "mortality" | "thinning" | "take_out" => {
   if (metricKey === "takeOut") return "take_out";
   return metricKey;
 };
+
+const isSpecialMetric = (metricKey: MetricKey): metricKey is "doa" | "culled" =>
+  metricKey === "doa" || metricKey === "culled";
 
 export default function BuildingMetricHistoryPage() {
   const navigate = useNavigate();
@@ -181,17 +225,21 @@ export default function BuildingMetricHistoryPage() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
-  const metricKey = toMetricKey(metric);
+  const selectedMetric = metric ? toMetricKey(metric) : null;
+  const metricKey = selectedMetric ?? "mortality";
+  const isSelectorPage = selectedMetric == null;
   const selectedDate = searchParams.get("date") ?? dayjs().format("YYYY-MM-DD");
   const [isLoading, setIsLoading] = useState(false);
   const [buildingName, setBuildingName] = useState("");
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [totalBirdsLoaded, setTotalBirdsLoaded] = useState(0);
   const [activeGrowId, setActiveGrowId] = useState<number | null>(null);
   const [activeGrowStatus, setActiveGrowStatus] = useState("");
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [isDoaDrawerOpen, setIsDoaDrawerOpen] = useState(false);
+  const [doaDrawerDate, setDoaDrawerDate] = useState(selectedDate);
   const [doaCount, setDoaCount] = useState(0);
   const [doaRemarks, setDoaRemarks] = useState("");
   const [doaHistoryRows, setDoaHistoryRows] = useState<DoaTransactionRow[]>([]);
@@ -201,6 +249,7 @@ export default function BuildingMetricHistoryPage() {
   const [editingDoaRemarks, setEditingDoaRemarks] = useState("");
   const [isEditingDoa, setIsEditingDoa] = useState(false);
   const [isCulledDrawerOpen, setIsCulledDrawerOpen] = useState(false);
+  const [culledDrawerDate, setCulledDrawerDate] = useState(selectedDate);
   const [culledCount, setCulledCount] = useState(0);
   const [culledRemarks, setCulledRemarks] = useState("");
   const [culledHistoryRows, setCulledHistoryRows] = useState<DoaTransactionRow[]>([]);
@@ -237,8 +286,6 @@ export default function BuildingMetricHistoryPage() {
     void resolveUserRole();
   }, [user?.id]);
 
-  const canAccessSpecialDrawers = userRole === "Admin" || userRole === "Supervisor";
-
   useEffect(() => {
     const fetchHistory = async () => {
       const buildingId = Number(id);
@@ -254,7 +301,6 @@ export default function BuildingMetricHistoryPage() {
       try {
         setIsLoading(true);
         const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
-
         const [{ data: buildingData, error: buildingError }, { data: growRows, error: growsError }] = await Promise.all([
           supabase.from(BUILDINGS_TABLE).select("name").eq("id", buildingId).maybeSingle(),
           supabase
@@ -270,6 +316,14 @@ export default function BuildingMetricHistoryPage() {
         if (growsError) throw growsError;
 
         setBuildingName(typeof buildingData?.name === "string" ? buildingData.name : "");
+
+        if (isSelectorPage) {
+          setHistoryRows([]);
+          setTotalBirdsLoaded(0);
+          setActiveGrowId(null);
+          setActiveGrowStatus("");
+          return;
+        }
 
         const growRow = ((growRows ?? []) as Array<{
           id: number | null;
@@ -288,11 +342,25 @@ export default function BuildingMetricHistoryPage() {
         setActiveGrowStatus(typeof growRow.status === "string" ? growRow.status : "");
         setTotalBirdsLoaded(toNonNegativeInt(growRow.total_animals));
 
-        const [growLogs, reductionTransactions, bodyWeightLogs] = await Promise.all([
+        const [growLogs, reductionTransactions, bodyWeightLogs, doaTransactionsResult, culledTransactionsResult] = await Promise.all([
           loadGrowLogsByGrowId(growRow.id),
           loadGrowReductionTransactionsByGrowId(growRow.id),
           loadBodyWeightLogsByBuildingId(buildingId),
+          supabase
+            .from(DOA_TRANSACTIONS_TABLE)
+            .select("created_at, total_animals_count")
+            .eq("grow_id", growRow.id)
+            .lt("created_at", selectedDayEnd)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from(CULLED_TRANSACTIONS_TABLE)
+            .select("created_at, total_animals_count")
+            .eq("grow_id", growRow.id)
+            .lt("created_at", selectedDayEnd)
+            .order("created_at", { ascending: false }),
         ]);
+        if (doaTransactionsResult.error) throw doaTransactionsResult.error;
+        if (culledTransactionsResult.error) throw culledTransactionsResult.error;
         const logsUntilSelectedDate = growLogs.filter((row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf());
         const logsByDate = logsUntilSelectedDate.reduce<Record<string, typeof growLogs>>((acc, row) => {
           const dateKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
@@ -322,6 +390,24 @@ export default function BuildingMetricHistoryPage() {
           acc[dateKey].push(row);
           return acc;
         }, {});
+        const doaTotalsByDate = ((doaTransactionsResult.data ?? []) as Array<{
+          created_at: string;
+          total_animals_count: number | null;
+        }>).reduce<Record<string, { total: number; sourceTime: string | null }>>((acc, row) => {
+          const dateKey = dayjs.utc(row.created_at).format("YYYY-MM-DD");
+          if (!acc[dateKey]) acc[dateKey] = { total: 0, sourceTime: row.created_at };
+          acc[dateKey].total += toNonNegativeInt(row.total_animals_count);
+          return acc;
+        }, {});
+        const culledTotalsByDate = ((culledTransactionsResult.data ?? []) as Array<{
+          created_at: string;
+          total_animals_count: number | null;
+        }>).reduce<Record<string, { total: number; sourceTime: string | null }>>((acc, row) => {
+          const dateKey = dayjs.utc(row.created_at).format("YYYY-MM-DD");
+          if (!acc[dateKey]) acc[dateKey] = { total: 0, sourceTime: row.created_at };
+          acc[dateKey].total += toNonNegativeInt(row.total_animals_count);
+          return acc;
+        }, {});
 
         const startDate = dayjs.utc(growRow.created_at).startOf("day");
         const endDate = dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day");
@@ -337,13 +423,15 @@ export default function BuildingMetricHistoryPage() {
             (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
           );
           const latestRow = dayRows[0] ?? null;
-          const dayReductionRows = [...(reductionTransactionsByDate[dateKey] ?? [])]
-            .filter((row) => (
-              metricKey === "reduction"
-                ? row.reductionType === "mortality" || row.reductionType === "thinning" || row.reductionType === "take_out"
-                : row.reductionType === toReductionType(metricKey)
-            ))
-            .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf());
+          const dayReductionRows = isSpecialMetric(metricKey)
+            ? []
+            : [...(reductionTransactionsByDate[dateKey] ?? [])]
+              .filter((row) => (
+                metricKey === "reduction"
+                  ? row.reductionType === "mortality" || row.reductionType === "thinning" || row.reductionType === "take_out"
+                  : row.reductionType === toReductionType(metricKey)
+              ))
+              .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf());
 
           const latestByCage: Record<string, { mortality: number; thinning: number; takeOut: number }> = {};
           dayRows.forEach((row) => {
@@ -371,20 +459,33 @@ export default function BuildingMetricHistoryPage() {
             return acc;
           }, {});
 
-          const value =
-            Object.keys(latestReductionByCage).length > 0
-              ? Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0)
-              : Object.keys(latestByCage).length > 0
-              ? Object.values(latestByCage).reduce((sum, row) => (
-                  metricKey === "reduction"
-                    ? sum + row.mortality + row.thinning + row.takeOut
-                    : sum + row[metricKey]
-                ), 0)
-              : metricKey === "reduction"
-              ? toNonNegativeInt(latestRow?.mortality ?? 0) +
-                toNonNegativeInt(latestRow?.thinning ?? 0) +
-                toNonNegativeInt(latestRow?.takeOut ?? 0)
-              : toNonNegativeInt(latestRow?.[metricKey] ?? 0);
+          const specialMetricEntry =
+            metricKey === "doa" ? doaTotalsByDate[dateKey] : metricKey === "culled" ? culledTotalsByDate[dateKey] : null;
+          let value = 0;
+
+          if (specialMetricEntry) {
+            value = specialMetricEntry.total;
+          } else if (Object.keys(latestReductionByCage).length > 0) {
+            value = Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0);
+          } else if (Object.keys(latestByCage).length > 0) {
+            value = Object.values(latestByCage).reduce((sum, row) => {
+              if (metricKey === "reduction") return sum + row.mortality + row.thinning + row.takeOut;
+              if (metricKey === "mortality") return sum + row.mortality;
+              if (metricKey === "thinning") return sum + row.thinning;
+              return sum + row.takeOut;
+            }, 0);
+          } else if (metricKey === "reduction") {
+            value =
+              toNonNegativeInt(latestRow?.mortality ?? 0) +
+              toNonNegativeInt(latestRow?.thinning ?? 0) +
+              toNonNegativeInt(latestRow?.takeOut ?? 0);
+          } else if (metricKey === "mortality") {
+            value = toNonNegativeInt(latestRow?.mortality ?? 0);
+          } else if (metricKey === "thinning") {
+            value = toNonNegativeInt(latestRow?.thinning ?? 0);
+          } else if (metricKey === "takeOut") {
+            value = toNonNegativeInt(latestRow?.takeOut ?? 0);
+          }
           const dayWeightRows = [...(bodyWeightLogsByDate[dateKey] ?? [])].sort(
             (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
           );
@@ -411,7 +512,7 @@ export default function BuildingMetricHistoryPage() {
             value,
             avgWeight,
             expectedDailyDeaths: metricKey === "mortality" ? EXPECTED_DAILY_DEATHS[cursor.diff(startDate, "day")] ?? null : null,
-            sourceTime: dayReductionRows[0]?.createdAt ?? latestRow?.createdAt ?? null,
+            sourceTime: specialMetricEntry?.sourceTime ?? dayReductionRows[0]?.createdAt ?? latestRow?.createdAt ?? null,
           });
         }
 
@@ -428,7 +529,11 @@ export default function BuildingMetricHistoryPage() {
     };
 
     void fetchHistory();
-  }, [id, metricKey, selectedDate]);
+  }, [id, metricKey, selectedDate, isSelectorPage, historyRefreshKey]);
+
+  const refreshMetricHistory = () => {
+    setHistoryRefreshKey((current) => current + 1);
+  };
 
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
@@ -596,7 +701,8 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleMetricTabChange = (nextMetric: MetricKey) => {
-    if (!id || nextMetric === metricKey) return;
+    if (!id) return;
+    if (selectedMetric === nextMetric) return;
     navigate(`/building-metric-history/${id}/${nextMetric}?date=${selectedDate}`);
   };
 
@@ -668,13 +774,26 @@ export default function BuildingMetricHistoryPage() {
 
   const resolveDisplayedCurrentAnimals = async (growId: number, totalAnimals: number) => {
     const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
-    const transactions = (await loadGrowReductionTransactionsByGrowId(growId)).filter(
+    const [transactions, culledTransactionsResult] = await Promise.all([
+      loadGrowReductionTransactionsByGrowId(growId),
+      supabase
+        .from(CULLED_TRANSACTIONS_TABLE)
+        .select("total_animals_count, created_at")
+        .eq("grow_id", growId)
+        .lt("created_at", selectedDayEnd),
+    ]);
+
+    if (culledTransactionsResult.error) {
+      throw new Error(culledTransactionsResult.error.message || "Failed to load culled totals.");
+    }
+
+    const filteredTransactions = transactions.filter(
       (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
     );
 
     const latestByDayCageAndType: Record<string, { animalCount: number; reductionType: string | null }> = {};
 
-    transactions
+    filteredTransactions
       .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
       .forEach((row) => {
         if (row.subbuildingId == null || !row.reductionType) return;
@@ -692,7 +811,12 @@ export default function BuildingMetricHistoryPage() {
       0
     );
 
-    return Math.max(0, Math.floor(totalAnimals) - reductionTotals);
+    const culledTotal = ((culledTransactionsResult.data ?? []) as Array<{ total_animals_count: number | null }>).reduce(
+      (sum, row) => sum + toNonNegativeInt(row.total_animals_count),
+      0
+    );
+
+    return Math.max(0, Math.floor(totalAnimals) - reductionTotals - culledTotal);
   };
 
   const syncLatestGrowLogActualTotal = async (growId: number, totalAnimals: number) => {
@@ -725,26 +849,6 @@ export default function BuildingMetricHistoryPage() {
     if (latestGrowLogUpdateError) {
       throw new Error(latestGrowLogUpdateError.message || "Failed to sync latest grow log total animals.");
     }
-  };
-
-  const resolveLatestGrowLogActualTotal = async (growId: number, fallbackTotalAnimals: number) => {
-    const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
-      .from(GROW_LOGS_TABLE)
-      .select("actual_total_animals")
-      .eq("grow_id", growId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (latestGrowLogRowError) {
-      throw new Error(latestGrowLogRowError.message || "Failed to load latest grow log total animals.");
-    }
-
-    if (latestGrowLogRow?.actual_total_animals == null) {
-      return Math.max(0, Math.floor(fallbackTotalAnimals));
-    }
-
-    return toNonNegativeInt(latestGrowLogRow.actual_total_animals);
   };
 
   const createGrowLogSnapshotFromLatestDate = async (
@@ -823,10 +927,15 @@ export default function BuildingMetricHistoryPage() {
       return;
     }
 
+    const drawerDayStart = `${dayjs(doaDrawerDate).format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const drawerDayEnd = `${dayjs(doaDrawerDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
     const { data, error } = await supabase
       .from(DOA_TRANSACTIONS_TABLE)
       .select("id, created_at, total_animals_count, remarks")
       .eq("grow_id", growId)
+      .gte("created_at", drawerDayStart)
+      .lt("created_at", drawerDayEnd)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -855,10 +964,15 @@ export default function BuildingMetricHistoryPage() {
       return;
     }
 
+    const drawerDayStart = `${dayjs(culledDrawerDate).format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const drawerDayEnd = `${dayjs(culledDrawerDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
     const { data, error } = await supabase
       .from(CULLED_TRANSACTIONS_TABLE)
       .select("id, created_at, total_animals_count, remarks")
       .eq("grow_id", growId)
+      .gte("created_at", drawerDayStart)
+      .lt("created_at", drawerDayEnd)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -897,7 +1011,7 @@ export default function BuildingMetricHistoryPage() {
     };
 
     void fetchDoaHistory();
-  }, [metricKey, activeGrowId, activeGrowStatus, id, selectedDate]);
+  }, [metricKey, activeGrowId, activeGrowStatus, id, doaDrawerDate]);
 
   useEffect(() => {
     if (!isDoaDrawerOpen) return;
@@ -913,7 +1027,7 @@ export default function BuildingMetricHistoryPage() {
     };
 
     void fetchDoaHistory();
-  }, [isDoaDrawerOpen, activeGrowId, id, selectedDate]);
+  }, [isDoaDrawerOpen, activeGrowId, id, doaDrawerDate]);
 
   useEffect(() => {
     if (metricKey === "reduction") {
@@ -932,7 +1046,7 @@ export default function BuildingMetricHistoryPage() {
     };
 
     void fetchCulledHistory();
-  }, [metricKey, activeGrowId, activeGrowStatus, id, selectedDate]);
+  }, [metricKey, activeGrowId, activeGrowStatus, id, culledDrawerDate]);
 
   useEffect(() => {
     if (!isCulledDrawerOpen) return;
@@ -948,16 +1062,22 @@ export default function BuildingMetricHistoryPage() {
     };
 
     void fetchCulledHistory();
-  }, [isCulledDrawerOpen, activeGrowId, id, selectedDate]);
+  }, [isCulledDrawerOpen, activeGrowId, id, culledDrawerDate]);
 
-  const handleOpenDoaDrawer = () => {
+  const handleOpenDoaDrawer = (date = selectedDate) => {
+    setDoaDrawerDate(date);
     setDoaCount(0);
     setDoaRemarks("");
+    setEditingDoaTransactionId(null);
+    setEditingDoaCount(0);
+    setEditingDoaRemarks("");
+    setIsEditingDoa(false);
     setIsDoaDrawerOpen(true);
   };
 
   const handleCloseDoaDrawer = () => {
     setIsDoaDrawerOpen(false);
+    setDoaDrawerDate(selectedDate);
     setDoaCount(0);
     setDoaRemarks("");
     setEditingDoaTransactionId(null);
@@ -1016,7 +1136,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     const now = dayjs();
-    const createdAt = dayjs(selectedDate)
+    const createdAt = dayjs(doaDrawerDate)
       .hour(now.hour())
       .minute(now.minute())
       .second(now.second())
@@ -1064,6 +1184,7 @@ export default function BuildingMetricHistoryPage() {
 
     setDoaCount(0);
     setDoaRemarks("");
+    refreshMetricHistory();
     setToastMessage("DOA record saved.");
     setIsToastOpen(true);
     setIsSavingDoa(false);
@@ -1144,6 +1265,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     resetDoaEditState();
+    refreshMetricHistory();
     setToastMessage("DOA record updated.");
     setIsToastOpen(true);
   };
@@ -1225,18 +1347,25 @@ export default function BuildingMetricHistoryPage() {
     }
 
     resetDoaEditState();
+    refreshMetricHistory();
     setToastMessage("DOA record removed.");
     setIsToastOpen(true);
   };
 
-  const handleOpenCulledDrawer = () => {
+  const handleOpenCulledDrawer = (date = selectedDate) => {
+    setCulledDrawerDate(date);
     setCulledCount(0);
     setCulledRemarks("");
+    setEditingCulledTransactionId(null);
+    setEditingCulledCount(0);
+    setEditingCulledRemarks("");
+    setIsEditingCulled(false);
     setIsCulledDrawerOpen(true);
   };
 
   const handleCloseCulledDrawer = () => {
     setIsCulledDrawerOpen(false);
+    setCulledDrawerDate(selectedDate);
     setCulledCount(0);
     setCulledRemarks("");
     setEditingCulledTransactionId(null);
@@ -1295,7 +1424,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     const now = dayjs();
-    const createdAt = dayjs(selectedDate)
+    const createdAt = dayjs(culledDrawerDate)
       .hour(now.hour())
       .minute(now.minute())
       .second(now.second())
@@ -1319,8 +1448,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     try {
-      const latestActualTotalAnimals = await resolveLatestGrowLogActualTotal(growId, totalAnimals);
-      const nextDisplayedCurrentAnimals = Math.max(0, latestActualTotalAnimals - culledCount);
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(growId, totalAnimals);
       await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
     } catch (growUpdateError) {
       setToastMessage(getErrorMessage(growUpdateError));
@@ -1340,6 +1468,7 @@ export default function BuildingMetricHistoryPage() {
 
     setCulledCount(0);
     setCulledRemarks("");
+    refreshMetricHistory();
     setToastMessage("Culled record saved.");
     setIsToastOpen(true);
     setIsSavingCulled(false);
@@ -1398,11 +1527,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     try {
-      const latestActualTotalAnimals = await resolveLatestGrowLogActualTotal(growId, totalAnimals);
-      const nextDisplayedCurrentAnimals = Math.max(
-        0,
-        latestActualTotalAnimals + entry.totalAnimalsCount - editingCulledCount
-      );
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(growId, totalAnimals);
       await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
     } catch (growUpdateError) {
       setToastMessage(getErrorMessage(growUpdateError));
@@ -1421,6 +1546,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     resetCulledEditState();
+    refreshMetricHistory();
     setToastMessage("Culled record updated.");
     setIsToastOpen(true);
   };
@@ -1480,8 +1606,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     try {
-      const latestActualTotalAnimals = await resolveLatestGrowLogActualTotal(growId, totalAnimals);
-      const nextDisplayedCurrentAnimals = Math.max(0, latestActualTotalAnimals + entry.totalAnimalsCount);
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(growId, totalAnimals);
       await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
     } catch (growUpdateError) {
       setToastMessage(getErrorMessage(growUpdateError));
@@ -1500,6 +1625,7 @@ export default function BuildingMetricHistoryPage() {
     }
 
     resetCulledEditState();
+    refreshMetricHistory();
     setToastMessage("Culled record removed.");
     setIsToastOpen(true);
   };
@@ -1511,9 +1637,11 @@ export default function BuildingMetricHistoryPage() {
 
   const totalValue = useMemo(() => historyRows.reduce((sum, row) => sum + row.value, 0), [historyRows]);
   const totalLabel = useMemo(() => {
-    if (metricKey === "mortality") return "Total Mortality";
-    if (metricKey === "thinning") return "Total Thinning";
-    if (metricKey === "takeOut") return "Total Take Out";
+    if (metricKey === "mortality") return "Total";
+    if (metricKey === "thinning") return "Total";
+    if (metricKey === "takeOut") return "Total";
+    if (metricKey === "doa") return "Total DOA";
+    if (metricKey === "culled") return "Total Culled";
     return "Total Reduction";
   }, [metricKey]);
   const totalAvgWeight = useMemo(() => {
@@ -1529,9 +1657,13 @@ export default function BuildingMetricHistoryPage() {
     () => culledHistoryRows.reduce((sum, row) => sum + row.totalAnimalsCount, 0),
     [culledHistoryRows]
   );
-  const visibleMetricTabs = useMemo(
-    () => METRIC_TABS.filter((tab) => canAccessSpecialDrawers || (tab.label !== "DOA" && tab.label !== "Culled")),
-    [canAccessSpecialDrawers]
+  const visibleMetricCards = useMemo(
+    () =>
+      METRIC_CARDS.filter((card) => {
+        if (!card.enabledRoles || card.enabledRoles.length === 0) return true;
+        return userRole != null && card.enabledRoles.includes(userRole);
+      }),
+    [userRole]
   );
 
   const renderSpecialDrawerHeader = (title: "DOA" | "Culled", onClose: () => void) => (
@@ -1622,7 +1754,13 @@ export default function BuildingMetricHistoryPage() {
             type="text"
             icon={<IoMdArrowRoundBack size={20} />}
             className="!text-white hover:!text-white/90"
-            onClick={() => navigate(-1)}
+            onClick={() => {
+              if (selectedMetric && id) {
+                navigate(`/building-metric-history/${id}?date=${selectedDate}`);
+                return;
+              }
+              navigate(-1);
+            }}
             aria-label="Back"
           />
           <Divider
@@ -1639,18 +1777,20 @@ export default function BuildingMetricHistoryPage() {
           <div className="leading-tight">
             <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Building Metric</div>
             <Title level={4} className="!m-0 !text-white !text-base md:!text-lg">
-              {METRIC_META[metricKey].title} History
+              {selectedMetric ? `${METRIC_META[metricKey].title} History` : "Metric History"}
             </Title>
           </div>
         </div>
         <div className={["flex items-center", isMobile ? "gap-1" : "gap-2"].join(" ")}>
-          <Button
-            type="text"
-            icon={<MdOutlinePictureAsPdf size={20} />}
-            className="!text-white hover:!text-white/90"
-            onClick={handlePdfClick}
-            aria-label="PDF"
-          />
+          {selectedMetric && (
+            <Button
+              type="text"
+              icon={<MdOutlinePictureAsPdf size={20} />}
+              className="!text-white hover:!text-white/90"
+              onClick={handlePdfClick}
+              aria-label="PDF"
+            />
+          )}
           <Button
             type="text"
             icon={<FaSignOutAlt size={18} />}
@@ -1661,85 +1801,48 @@ export default function BuildingMetricHistoryPage() {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
       </Header>
 
-      <div className="border-b border-slate-200 bg-white shadow-sm">
-        <div className={["px-3 py-3", isMobile ? "" : "px-6"].join(" ")}>
-          {[visibleMetricTabs.filter((tab) => PRIMARY_METRIC_TAB_LABELS.has(tab.label)), visibleMetricTabs.filter((tab) => !PRIMARY_METRIC_TAB_LABELS.has(tab.label))].map(
-            (tabRow, rowIndex) => (
-              <div
-                key={`metric-row-${rowIndex}`}
-                className={[
-                  "flex flex-wrap items-center gap-2",
-                  rowIndex === 0 ? "" : "mt-2",
-                  isMobile ? "justify-start" : "justify-center",
-                ].join(" ")}
-              >
-                {tabRow.map((tab) => {
-                  const isActive = tab.key === metricKey;
-                  const iconLabel = tab.icon === "plus" ? "+" : "-";
-
-                  return (
-                    <button
-                      key={`${tab.label}-${tab.key}`}
-                      type="button"
-                      onClick={() => {
-                        if (tab.label === "DOA") {
-                          if (!canAccessSpecialDrawers) return;
-                          handleOpenDoaDrawer();
-                          return;
-                        }
-                        if (tab.label === "Culled") {
-                          if (!canAccessSpecialDrawers) return;
-                          handleOpenCulledDrawer();
-                          return;
-                        }
-                        if (tab.disabled) return;
-                        handleMetricTabChange(tab.key);
-                      }}
-                      disabled={
-                        (tab.label === "DOA" || tab.label === "Culled")
-                          ? !canAccessSpecialDrawers
-                          : tab.disabled
-                      }
-                      className={[
-                        "inline-flex shrink-0 items-center justify-center gap-2 rounded-md border font-semibold transition-colors",
-                        isMobile ? "min-h-10 px-3 text-sm" : "min-h-11 px-4 text-sm",
-                        ((tab.label === "DOA" || tab.label === "Culled")
-                          ? !canAccessSpecialDrawers
-                          : tab.disabled)
-                          ? "cursor-default opacity-70"
-                          : isActive
-                          ? "shadow-sm"
-                          : "hover:border-emerald-300 hover:bg-emerald-50/40",
-                      ].join(" ")}
-                      style={{
-                        backgroundColor: isActive && !tab.disabled ? tab.activeBg : "#ffffff",
-                        color: isActive && !tab.disabled ? tab.activeText : "#0f172a",
-                        borderColor: tab.borderColor,
-                      }}
-                      aria-pressed={isActive && !tab.disabled}
-                    >
-                      <span
-                        className="flex h-4 w-4 items-center justify-center rounded-full text-[11px] font-bold leading-none"
-                        style={{
-                          backgroundColor: isActive && !tab.disabled ? "#ffffff" : PRIMARY,
-                          color: isActive && !tab.disabled ? tab.activeBg : "#ffffff",
-                        }}
-                        aria-hidden="true"
-                      >
-                        {iconLabel}
-                      </span>
-                      <span>{tab.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )
-          )}
-        </div>
-      </div>
-
       <Content className={isMobile ? "px-3 py-3 pb-8" : "px-8 py-6"}>
-        {isLoading ? (
+        {isSelectorPage ? (
+          <div className="mx-auto w-full max-w-4xl">
+            <div className={isMobile ? "" : "flex justify-center"}>
+              <div className="grid w-full grid-cols-2 gap-3 sm:gap-4">
+                {visibleMetricCards.map((card) => (
+                  <button
+                    key={card.key}
+                    type="button"
+                    onClick={() => handleMetricTabChange(card.key)}
+                    style={{ borderColor: card.borderColor }}
+                    className={[
+                      "text-left bg-white rounded-sm shadow-sm border-2",
+                      "p-3 sm:p-5",
+                      "h-full min-h-[118px] sm:min-h-[170px]",
+                      "transition-all duration-200 cursor-pointer",
+                      "hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008822]/40",
+                    ].join(" ")}
+                  >
+                    <div className="flex justify-center">
+                      <div className="bg-[#ffa600]/30 p-3 sm:p-4 rounded-2xl shadow-inner">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
+                          {card.icon}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 text-center">
+                      <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                        {buildingName || `Bldg ${id}`}
+                      </div>
+                      <div className={["mt-1 text-lg sm:text-2xl font-bold tracking-tight", card.accent].join(" ")}>
+                        {card.label}
+                      </div>
+                    </div>
+                    <div className="mt-3 h-1.5 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : isLoading ? (
           <ChickenState title="Loading..." subtitle="" fullScreen />
         ) : historyRows.length === 0 ? (
           <ChickenState
@@ -1766,18 +1869,6 @@ export default function BuildingMetricHistoryPage() {
                   <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{totalLabel}</span>
                   <span className="text-sm font-bold text-slate-900">{totalValue.toLocaleString()}</span>
                 </div>
-                {metricKey !== "reduction" ? (
-                  <>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">DOA</span>
-                      <span className="text-sm font-bold text-slate-900">{doaTotalEncoded.toLocaleString()}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Culled</span>
-                      <span className="text-sm font-bold text-slate-900">{culledTotalEncoded.toLocaleString()}</span>
-                    </div>
-                  </>
-                ) : null}
               </div>
             </div>
 
@@ -1787,14 +1878,35 @@ export default function BuildingMetricHistoryPage() {
                   key={row.date}
                   role="button"
                   tabIndex={0}
-                  onClick={() => handleHistoryRowClick(row.date)}
+                  onClick={() => {
+                    if (metricKey === "doa") {
+                      handleOpenDoaDrawer(row.date);
+                      return;
+                    }
+                    if (metricKey === "culled") {
+                      handleOpenCulledDrawer(row.date);
+                      return;
+                    }
+                    handleHistoryRowClick(row.date);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
+                      if (metricKey === "doa") {
+                        handleOpenDoaDrawer(row.date);
+                        return;
+                      }
+                      if (metricKey === "culled") {
+                        handleOpenCulledDrawer(row.date);
+                        return;
+                      }
                       handleHistoryRowClick(row.date);
                     }
                   }}
-                  className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md cursor-pointer"
+                  className={[
+                    "rounded-sm border border-emerald-200 bg-white px-4 py-3 shadow-sm transition",
+                    "hover:border-emerald-300 hover:shadow-md cursor-pointer",
+                  ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -1827,19 +1939,21 @@ export default function BuildingMetricHistoryPage() {
                     <div className="min-w-[108px] text-right">
                       <div className="text-[10px] uppercase tracking-wide text-slate-500">{METRIC_META[metricKey].title}</div>
                       <div className="mt-0.5 text-2xl font-bold leading-none text-slate-900">{row.value.toLocaleString()}</div>
-                      <div className="mt-2 grid gap-1 text-[10px] text-slate-500">
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="uppercase tracking-wide">Avg. Weight</span>
-                          <span className="text-xs font-semibold text-slate-700">
-                            {row.avgWeight !== null
-                              ? `${row.avgWeight.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })} g`
-                              : "-"}
-                          </span>
+                      {!isSpecialMetric(metricKey) ? (
+                        <div className="mt-2 grid gap-1 text-[10px] text-slate-500">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="uppercase tracking-wide">Avg. Weight</span>
+                            <span className="text-xs font-semibold text-slate-700">
+                              {row.avgWeight !== null
+                                ? `${row.avgWeight.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })} g`
+                                : "-"}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -1862,10 +1976,10 @@ export default function BuildingMetricHistoryPage() {
         {renderSpecialDrawerHeader("DOA", handleCloseDoaDrawer)}
 
         <div className="p-5">
-          <div className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-[#2563eb]">{buildingName || `Building #${id}`}</div>
-              <div className="text-xs font-medium text-slate-500">{dayjs(selectedDate).format("MMMM D, YYYY")}</div>
+              <div className="text-xs font-medium text-slate-500">{dayjs(doaDrawerDate).format("MMMM D, YYYY")}</div>
             </div>
             <div className="mt-4">
               <div className="text-sm font-semibold text-slate-900">History</div>
@@ -1881,7 +1995,7 @@ export default function BuildingMetricHistoryPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-semibold text-slate-900">
-                            {dayjs(row.createdAt).format("MMMM D, YYYY h:mm A")}
+                            {formatSpecialTransactionTimestamp(row.createdAt)}
                           </div>
                           {isEditing ? (
                             <div className="mt-2 flex flex-col gap-2">
@@ -1971,12 +2085,12 @@ export default function BuildingMetricHistoryPage() {
               )}
             </div>
             <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
-              <span className="text-slate-500">Total Encoded (All)</span>
+              <span className="text-slate-500">Total Encoded</span>
               <span className="font-semibold text-slate-900">{doaTotalEncoded.toLocaleString()}</span>
             </div>
           </div>
 
-          <div className="mt-4 rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-full">
                 <div className="mb-2 text-xs font-medium text-slate-500">DOA Count</div>
@@ -2036,10 +2150,10 @@ export default function BuildingMetricHistoryPage() {
         {renderSpecialDrawerHeader("Culled", handleCloseCulledDrawer)}
 
         <div className="p-5">
-          <div className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-[#2563eb]">{buildingName || `Building #${id}`}</div>
-              <div className="text-xs font-medium text-slate-500">{dayjs(selectedDate).format("MMMM D, YYYY")}</div>
+              <div className="text-xs font-medium text-slate-500">{dayjs(culledDrawerDate).format("MMMM D, YYYY")}</div>
             </div>
             <div className="mt-4">
               <div className="text-sm font-semibold text-slate-900">History</div>
@@ -2055,7 +2169,7 @@ export default function BuildingMetricHistoryPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-semibold text-slate-900">
-                            {dayjs(row.createdAt).format("MMMM D, YYYY h:mm A")}
+                            {formatSpecialTransactionTimestamp(row.createdAt)}
                           </div>
                           {isEditing ? (
                             <div className="mt-2 flex flex-col gap-2">
@@ -2145,12 +2259,12 @@ export default function BuildingMetricHistoryPage() {
               )}
             </div>
             <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
-              <span className="text-slate-500">Total Encoded (All)</span>
+              <span className="text-slate-500">Total Encoded</span>
               <span className="font-semibold text-slate-900">{culledTotalEncoded.toLocaleString()}</span>
             </div>
           </div>
 
-          <div className="mt-4 rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-full">
                 <div className="mb-2 text-xs font-medium text-slate-500">Culled Count</div>

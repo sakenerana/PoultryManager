@@ -82,7 +82,7 @@ function StatPill({
   return (
     <div
       className={[
-        "rounded-lg bg-slate-50 px-2 py-1.5",
+        "rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5",
         onClick ? "cursor-pointer hover:bg-slate-100 transition" : "",
       ].join(" ")}
       onClick={(e) => {
@@ -198,9 +198,9 @@ function BuildingRow({
       hoverable={!isHarvested}
       onClick={isHarvested ? undefined : onOpen}
       className={[
-        "!border-0 shadow-sm transition h-full",
+        "!border !border-emerald-200 bg-white/95 shadow-sm transition h-full",
         isHarvested ? "opacity-80 cursor-not-allowed" : "hover:shadow-md cursor-pointer",
-        isMobile ? "!rounded-sm" : "!rounded-sm border border-slate-200/80 bg-white/95",
+        "!rounded-sm",
       ].join(" ")}
       bodyStyle={{ padding: isMobile ? 10 : 14 }}
     >

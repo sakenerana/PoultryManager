@@ -302,7 +302,7 @@ export default function AccountsPage() {
         {isMobile ? (
           <div className="max-w-[430px] mx-auto">
             <div className="space-y-3">
-              <Card className="!rounded-sm !border-0 shadow-sm" bodyStyle={{ padding: 12 }}>
+              <Card className="!rounded-sm !border !border-emerald-200 shadow-sm" bodyStyle={{ padding: 12 }}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Overview</div>
@@ -335,7 +335,7 @@ export default function AccountsPage() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">User List</div>
                 <div className="space-y-2">
                   {isLoadingUsers && (
-                    <Card className="!rounded-sm !border-0 shadow-sm">
+                    <Card className="!rounded-sm !border !border-emerald-200 shadow-sm">
                       <ChickenState
                         title="Loading..."
                         subtitle="Please wait while we fetch the latest records."
@@ -346,7 +346,7 @@ export default function AccountsPage() {
                   )}
 
                   {!isLoadingUsers && users.length === 0 && (
-                    <Card className="!rounded-sm !border-0 shadow-sm">
+                    <Card className="!rounded-sm !border !border-emerald-200 shadow-sm">
                       <ChickenState
                         title="No data yet"
                         subtitle="No users yet."
@@ -367,7 +367,7 @@ export default function AccountsPage() {
                     <Card
                       key={user.id}
                       className={[
-                        "!rounded-sm !border-0 shadow-sm transition-all !mt-2 cursor-pointer",
+                        "!rounded-sm !border !border-emerald-200 shadow-sm transition-all !mt-2 cursor-pointer",
                         highlightedUserId === user.id ? "!ring-2 !ring-[#008822]/40" : "",
                       ].join(" ")}
                       bodyStyle={{ padding: 12 }}
@@ -443,7 +443,7 @@ export default function AccountsPage() {
                   </div>
                 </div>
               </div>
-              <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
+              <div className="col-span-4 rounded-sm border border-emerald-200 bg-white px-5 py-5 shadow-sm">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Actions</div>
                 <div className="mt-1 text-base font-semibold text-slate-800">Manage Accounts</div>
                 <div className="mt-3 text-xs text-slate-500">
@@ -461,14 +461,14 @@ export default function AccountsPage() {
               </div>
             </div>
 
-            <div ref={userListRef} className="rounded-sm border border-slate-200 bg-white p-5 shadow-sm">
+            <div ref={userListRef} className="rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">User List</div>
                 <div className="text-xs text-slate-500">Total: {users.length}</div>
               </div>
 
               {isLoadingUsers && (
-                <Card className="!rounded-sm !border-0 shadow-sm mt-3">
+                <Card className="!rounded-sm !border !border-emerald-200 shadow-sm mt-3">
                   <ChickenState
                     title="Loading..."
                     subtitle="Please wait while we fetch the latest records."
@@ -479,7 +479,7 @@ export default function AccountsPage() {
               )}
 
               {!isLoadingUsers && users.length === 0 && (
-                <Card className="!rounded-sm !border-0 shadow-sm mt-3">
+                <Card className="!rounded-sm !border !border-emerald-200 shadow-sm mt-3">
                   <ChickenState
                     title="No data yet"
                     subtitle="No users yet."
@@ -502,7 +502,7 @@ export default function AccountsPage() {
                     <Card
                       key={user.id}
                       className={[
-                        "!rounded-sm !border-0 shadow-sm transition-all cursor-pointer h-full",
+                        "!rounded-sm !border !border-emerald-200 shadow-sm transition-all cursor-pointer h-full",
                         highlightedUserId === user.id ? "!ring-2 !ring-[#008822]/40" : "",
                       ].join(" ")}
                       bodyStyle={{ padding: 14 }}
