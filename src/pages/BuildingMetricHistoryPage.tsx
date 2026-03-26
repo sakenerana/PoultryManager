@@ -52,6 +52,8 @@ type DoaTransactionRow = {
   remarks: string | null;
 };
 
+type MetricTotals = Record<MetricKey, number>;
+
 const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   mortality: { title: "Actual Death", accent: "bg-red-500" },
   thinning: { title: "Thinning", accent: "bg-slate-400" },
@@ -259,6 +261,14 @@ export default function BuildingMetricHistoryPage() {
   const [editingCulledRemarks, setEditingCulledRemarks] = useState("");
   const [isEditingCulled, setIsEditingCulled] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>(null);
+  const [metricTotals, setMetricTotals] = useState<MetricTotals>({
+    mortality: 0,
+    thinning: 0,
+    takeOut: 0,
+    reduction: 0,
+    doa: 0,
+    culled: 0,
+  });
 
   useEffect(() => {
     const resolveUserRole = async () => {
@@ -295,6 +305,14 @@ export default function BuildingMetricHistoryPage() {
         setTotalBirdsLoaded(0);
         setActiveGrowId(null);
         setActiveGrowStatus("");
+        setMetricTotals({
+          mortality: 0,
+          thinning: 0,
+          takeOut: 0,
+          reduction: 0,
+          doa: 0,
+          culled: 0,
+        });
         return;
       }
 
@@ -317,14 +335,6 @@ export default function BuildingMetricHistoryPage() {
 
         setBuildingName(typeof buildingData?.name === "string" ? buildingData.name : "");
 
-        if (isSelectorPage) {
-          setHistoryRows([]);
-          setTotalBirdsLoaded(0);
-          setActiveGrowId(null);
-          setActiveGrowStatus("");
-          return;
-        }
-
         const growRow = ((growRows ?? []) as Array<{
           id: number | null;
           created_at: string;
@@ -336,6 +346,14 @@ export default function BuildingMetricHistoryPage() {
           setTotalBirdsLoaded(0);
           setActiveGrowId(null);
           setActiveGrowStatus("");
+          setMetricTotals({
+            mortality: 0,
+            thinning: 0,
+            takeOut: 0,
+            reduction: 0,
+            doa: 0,
+            culled: 0,
+          });
           return;
         }
         setActiveGrowId(growRow.id);
@@ -412,6 +430,14 @@ export default function BuildingMetricHistoryPage() {
         const startDate = dayjs.utc(growRow.created_at).startOf("day");
         const endDate = dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day");
         const nextRows: HistoryRow[] = [];
+        const nextMetricTotals: MetricTotals = {
+          mortality: 0,
+          thinning: 0,
+          takeOut: 0,
+          reduction: 0,
+          doa: 0,
+          culled: 0,
+        };
 
         for (
           let cursor = startDate;
@@ -427,7 +453,7 @@ export default function BuildingMetricHistoryPage() {
             ? []
             : [...(reductionTransactionsByDate[dateKey] ?? [])]
               .filter((row) => (
-                metricKey === "reduction"
+                isSelectorPage || metricKey === "reduction"
                   ? row.reductionType === "mortality" || row.reductionType === "thinning" || row.reductionType === "take_out"
                   : row.reductionType === toReductionType(metricKey)
               ))
@@ -459,33 +485,68 @@ export default function BuildingMetricHistoryPage() {
             return acc;
           }, {});
 
+          const summarizeReductionRows = (rows: typeof dayReductionRows) =>
+            rows.reduce<Record<string, number>>((acc, row) => {
+              if (row.subbuildingId == null) return acc;
+              const key = String(row.subbuildingId);
+              if (acc[key] != null) return acc;
+              acc[key] = toNonNegativeInt(row.animalCount);
+              return acc;
+            }, {});
+
+          const mortalityReductionByCage = summarizeReductionRows(
+            dayReductionRows.filter((row) => row.reductionType === "mortality")
+          );
+          const thinningReductionByCage = summarizeReductionRows(
+            dayReductionRows.filter((row) => row.reductionType === "thinning")
+          );
+          const takeOutReductionByCage = summarizeReductionRows(
+            dayReductionRows.filter((row) => row.reductionType === "take_out")
+          );
+
           const specialMetricEntry =
             metricKey === "doa" ? doaTotalsByDate[dateKey] : metricKey === "culled" ? culledTotalsByDate[dateKey] : null;
           let value = 0;
 
-          if (specialMetricEntry) {
-            value = specialMetricEntry.total;
-          } else if (Object.keys(latestReductionByCage).length > 0) {
-            value = Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0);
-          } else if (Object.keys(latestByCage).length > 0) {
-            value = Object.values(latestByCage).reduce((sum, row) => {
-              if (metricKey === "reduction") return sum + row.mortality + row.thinning + row.takeOut;
-              if (metricKey === "mortality") return sum + row.mortality;
-              if (metricKey === "thinning") return sum + row.thinning;
-              return sum + row.takeOut;
-            }, 0);
-          } else if (metricKey === "reduction") {
-            value =
-              toNonNegativeInt(latestRow?.mortality ?? 0) +
-              toNonNegativeInt(latestRow?.thinning ?? 0) +
-              toNonNegativeInt(latestRow?.takeOut ?? 0);
-          } else if (metricKey === "mortality") {
-            value = toNonNegativeInt(latestRow?.mortality ?? 0);
-          } else if (metricKey === "thinning") {
-            value = toNonNegativeInt(latestRow?.thinning ?? 0);
-          } else if (metricKey === "takeOut") {
-            value = toNonNegativeInt(latestRow?.takeOut ?? 0);
-          }
+          const dayMetricValues: MetricTotals = {
+            mortality:
+              Object.keys(mortalityReductionByCage).length > 0
+                ? Object.values(mortalityReductionByCage).reduce((sum, current) => sum + current, 0)
+                : Object.keys(latestByCage).length > 0
+                  ? Object.values(latestByCage).reduce((sum, row) => sum + row.mortality, 0)
+                  : toNonNegativeInt(latestRow?.mortality ?? 0),
+            thinning:
+              Object.keys(thinningReductionByCage).length > 0
+                ? Object.values(thinningReductionByCage).reduce((sum, current) => sum + current, 0)
+                : Object.keys(latestByCage).length > 0
+                  ? Object.values(latestByCage).reduce((sum, row) => sum + row.thinning, 0)
+                  : toNonNegativeInt(latestRow?.thinning ?? 0),
+            takeOut:
+              Object.keys(takeOutReductionByCage).length > 0
+                ? Object.values(takeOutReductionByCage).reduce((sum, current) => sum + current, 0)
+                : Object.keys(latestByCage).length > 0
+                  ? Object.values(latestByCage).reduce((sum, row) => sum + row.takeOut, 0)
+                  : toNonNegativeInt(latestRow?.takeOut ?? 0),
+            reduction:
+              Object.keys(latestReductionByCage).length > 0
+                ? Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0)
+                : Object.keys(latestByCage).length > 0
+                  ? Object.values(latestByCage).reduce((sum, row) => sum + row.mortality + row.thinning + row.takeOut, 0)
+                  : toNonNegativeInt(latestRow?.mortality ?? 0) +
+                    toNonNegativeInt(latestRow?.thinning ?? 0) +
+                    toNonNegativeInt(latestRow?.takeOut ?? 0),
+            doa: doaTotalsByDate[dateKey]?.total ?? 0,
+            culled: culledTotalsByDate[dateKey]?.total ?? 0,
+          };
+
+          nextMetricTotals.mortality += dayMetricValues.mortality;
+          nextMetricTotals.thinning += dayMetricValues.thinning;
+          nextMetricTotals.takeOut += dayMetricValues.takeOut;
+          nextMetricTotals.reduction += dayMetricValues.reduction;
+          nextMetricTotals.doa += dayMetricValues.doa;
+          nextMetricTotals.culled += dayMetricValues.culled;
+
+          value = specialMetricEntry ? specialMetricEntry.total : dayMetricValues[metricKey];
           const dayWeightRows = [...(bodyWeightLogsByDate[dateKey] ?? [])].sort(
             (a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf()
           );
@@ -516,11 +577,20 @@ export default function BuildingMetricHistoryPage() {
           });
         }
 
-        setHistoryRows(nextRows);
+        setMetricTotals(nextMetricTotals);
+        setHistoryRows(isSelectorPage ? [] : nextRows);
       } catch (error) {
         setHistoryRows([]);
         setActiveGrowId(null);
         setActiveGrowStatus("");
+        setMetricTotals({
+          mortality: 0,
+          thinning: 0,
+          takeOut: 0,
+          reduction: 0,
+          doa: 0,
+          culled: 0,
+        });
         setToastMessage(`Failed to load ${METRIC_META[metricKey].title.toLowerCase()} history: ${getErrorMessage(error)}`);
         setIsToastOpen(true);
       } finally {
@@ -1815,28 +1885,37 @@ export default function BuildingMetricHistoryPage() {
                     className={[
                       "text-left bg-white rounded-sm shadow-sm border-2",
                       "p-3 sm:p-5",
-                      "h-full min-h-[118px] sm:min-h-[170px]",
+                      "h-full min-h-[146px] sm:min-h-[196px]",
                       "transition-all duration-200 cursor-pointer",
                       "hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]",
                       "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#008822]/40",
                     ].join(" ")}
                   >
-                    <div className="flex justify-center">
-                      <div className="bg-[#ffa600]/30 p-3 sm:p-4 rounded-2xl shadow-inner">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                          {buildingName || `Bldg ${id}`}
+                        </div>
+                        <div className={["mt-1 text-lg sm:text-2xl font-bold tracking-tight", card.accent].join(" ")}>
+                          {card.label}
+                        </div>
+                      </div>
+                      <div className="shrink-0 rounded-2xl bg-[#ffa600]/25 p-3 sm:p-4 shadow-inner">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
                           {card.icon}
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 text-center">
-                      <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                        {buildingName || `Bldg ${id}`}
-                      </div>
-                      <div className={["mt-1 text-lg sm:text-2xl font-bold tracking-tight", card.accent].join(" ")}>
-                        {card.label}
+                    <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 px-3 py-2.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</div>
+                      <div className="mt-1 flex items-end justify-between gap-2">
+                        <div className="text-xl font-bold text-slate-900 sm:text-2xl">
+                          {metricTotals[card.key].toLocaleString()}
+                        </div>
+                        <div className="text-[11px] font-medium text-slate-500">birds</div>
                       </div>
                     </div>
-                    <div className="mt-3 h-1.5 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
+                    <div className="mt-4 h-1.5 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
                   </button>
                 ))}
               </div>

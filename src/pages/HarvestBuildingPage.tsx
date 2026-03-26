@@ -47,8 +47,61 @@ type BuildingStats = {
 };
 type EditableMetric = "mortality" | "thinning" | "takeOut" | "defect";
 
+type BuildingCardTheme = {
+  cardBorder: string;
+  cardBackground: string;
+  pillBorder: string;
+  pillBackground: string;
+  iconBackground: string;
+  tagBorder: string;
+  tagBackground: string;
+  tagText: string;
+};
+
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
+const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
+  {
+    cardBorder: "#d4e7a7",
+    cardBackground: "linear-gradient(135deg, #fff7cc 0%, #f8f6dd 52%, #ecf4cf 100%)",
+    pillBorder: "#d9e7a2",
+    pillBackground: "linear-gradient(135deg, #fff8cf 0%, #f6f6d8 55%, #eef5cf 100%)",
+    iconBackground: "linear-gradient(135deg, #f8df86 0%, #dce9aa 100%)",
+    tagBorder: "#e8d15d",
+    tagBackground: "#fff5c4",
+    tagText: "#b28700",
+  },
+  {
+    cardBorder: "#bfdcb2",
+    cardBackground: "linear-gradient(135deg, #eef8d8 0%, #f8f8e7 55%, #fff3c9 100%)",
+    pillBorder: "#c8e0b6",
+    pillBackground: "linear-gradient(135deg, #f2f9df 0%, #f9f7e4 60%, #fff5d2 100%)",
+    iconBackground: "linear-gradient(135deg, #cfe5a8 0%, #f7da7a 100%)",
+    tagBorder: "#d7d56b",
+    tagBackground: "#f8f6c9",
+    tagText: "#7c8a13",
+  },
+  {
+    cardBorder: "#d8d77e",
+    cardBackground: "linear-gradient(135deg, #fff0b8 0%, #f5f1d7 50%, #dff0c2 100%)",
+    pillBorder: "#d7d88e",
+    pillBackground: "linear-gradient(135deg, #fff3c7 0%, #f8f2d9 55%, #e7f4cf 100%)",
+    iconBackground: "linear-gradient(135deg, #e8cf5c 0%, #cde3a1 100%)",
+    tagBorder: "#d9c94d",
+    tagBackground: "#fff0af",
+    tagText: "#9f8400",
+  },
+  {
+    cardBorder: "#c6e3b8",
+    cardBackground: "linear-gradient(135deg, #f7f9dc 0%, #edf6d8 48%, #fff1bf 100%)",
+    pillBorder: "#cfe3bc",
+    pillBackground: "linear-gradient(135deg, #fbfbe4 0%, #eff6db 58%, #fff4ca 100%)",
+    iconBackground: "linear-gradient(135deg, #d7e8b0 0%, #f4d66f 100%)",
+    tagBorder: "#d6d46e",
+    tagBackground: "#fbf7cb",
+    tagText: "#7d8914",
+  },
+];
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
@@ -66,25 +119,39 @@ function getErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
+const getBuildingCardTheme = (seed: string): BuildingCardTheme => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return BUILDING_CARD_THEMES[hash % BUILDING_CARD_THEMES.length];
+};
+
 function StatPill({
   label,
   value,
   leftIcon,
   rightIcon,
   onClick,
+  theme,
 }: {
   label: string;
   value: React.ReactNode;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   onClick?: () => void;
+  theme: BuildingCardTheme;
 }) {
   return (
     <div
       className={[
-        "rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5",
-        onClick ? "cursor-pointer hover:bg-slate-100 transition" : "",
+        "rounded-lg px-2 py-1.5",
+        onClick ? "cursor-pointer transition" : "",
       ].join(" ")}
+      style={{
+        border: `1px solid ${theme.pillBorder}`,
+        background: theme.pillBackground,
+      }}
       onClick={(e) => {
         if (!onClick) return;
         e.stopPropagation();
@@ -183,12 +250,14 @@ function BuildingRow({
   isMobile,
   stats,
   onMetricClick,
+  theme,
 }: {
   b: Building;
   onOpen: () => void;
   isMobile: boolean;
   stats: BuildingStats;
   onMetricClick: (metric: EditableMetric, buildingId: string, current: number) => void;
+  theme: BuildingCardTheme;
 }) {
   const remainingBirds = stats.remaining;
   const remainingPercentage = stats.total > 0 ? (remainingBirds / stats.total) * 100 : 0;
@@ -198,11 +267,15 @@ function BuildingRow({
       hoverable={!isHarvested}
       onClick={isHarvested ? undefined : onOpen}
       className={[
-        "!border !border-emerald-200 bg-white/95 shadow-sm transition h-full",
+        "!border !overflow-hidden shadow-sm transition h-full",
         isHarvested ? "opacity-80 cursor-not-allowed" : "hover:shadow-md cursor-pointer",
         "!rounded-sm",
       ].join(" ")}
-      bodyStyle={{ padding: isMobile ? 10 : 14 }}
+      style={{
+        background: theme.cardBackground,
+        borderColor: theme.cardBorder,
+      }}
+      bodyStyle={{ padding: isMobile ? 10 : 14, background: "transparent" }}
     >
       <div className="flex items-start gap-2.5">
         {/* Icon */}
@@ -210,12 +283,13 @@ function BuildingRow({
           className={["flex items-center justify-center shrink-0", isMobile ? "h-9 w-9 rounded-sm" : "h-10 w-10 rounded-sm"].join(
             " "
           )}
-          style={{ backgroundColor: `${PRIMARY}22` }}
+          style={{ background: theme.iconBackground }}
         >
           <img
             src="/img/building4.svg"
             alt="Building"
-            className={isMobile ? "h-4 w-4" : "h-5 w-5"}
+            className={isMobile ? "h-4 w-4 opacity-80" : "h-5 w-5 opacity-80"}
+            style={{ filter: "grayscale(1) contrast(1.05) sepia(0.35) hue-rotate(28deg) saturate(1.2)" }}
           />
         </div>
 
@@ -230,8 +304,9 @@ function BuildingRow({
                 <Tag
                   className="!m-0"
                   style={{
-                    borderColor: `${SECONDARY}80`,
-                    color: SECONDARY,
+                    borderColor: theme.tagBorder,
+                    backgroundColor: theme.tagBackground,
+                    color: theme.tagText,
                     fontSize: isMobile ? 10 : 11,
                     paddingInline: isMobile ? 6 : 7,
                     lineHeight: isMobile ? "16px" : "18px",
@@ -251,6 +326,7 @@ function BuildingRow({
             <StatPill
               label="Total Birds"
               value={stats.total.toLocaleString()}
+              theme={theme}
             />
             <StatPill
               label="Current"
@@ -265,6 +341,7 @@ function BuildingRow({
                   </span>
                 </span>
               )}
+              theme={theme}
             />
             <StatPill
               label="Avg Weight"
@@ -272,16 +349,19 @@ function BuildingRow({
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })} g`}
+              theme={theme}
             />
             <StatPill
               label="Total Birds Harvested"
               value={stats.totalHarvested.toLocaleString()}
+              theme={theme}
             />
             <StatPill
               label="Mortality"
               value={stats.mortality.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              theme={theme}
               onClick={isHarvested ? undefined : () => onMetricClick("mortality", b.id, stats.mortality)}
             />
             <StatPill
@@ -289,6 +369,7 @@ function BuildingRow({
               value={stats.defect.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              theme={theme}
               onClick={isHarvested ? undefined : () => onMetricClick("defect", b.id, stats.defect)}
             />
             <StatPill
@@ -296,6 +377,7 @@ function BuildingRow({
               value={stats.takeOut.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              theme={theme}
               onClick={isHarvested ? undefined : () => onMetricClick("takeOut", b.id, stats.takeOut)}
             />
             <StatPill
@@ -303,6 +385,7 @@ function BuildingRow({
               value={stats.thinning.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
+              theme={theme}
               onClick={isHarvested ? undefined : () => onMetricClick("thinning", b.id, stats.thinning)}
             />
           </div>
@@ -1048,11 +1131,11 @@ export default function HarvestBuildingPage() {
             {isMobile ? (
               <div
                 className={[
-                  "bg-white shadow-sm",
+                  "border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 shadow-sm",
                   "rounded-sm px-3 py-3 mb-3",
                 ].join(" ")}
               >
-                <div className="text-slate-600 font-medium text-xs mb-2">
+                <div className="text-emerald-700 font-medium text-xs mb-2">
                   Date
                 </div>
                 <DatePicker
@@ -1093,8 +1176,8 @@ export default function HarvestBuildingPage() {
                     </div>
                   </div>
                 </div>
-                <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
+                <div className="col-span-4 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-5 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Filter</div>
                   <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
                   <DatePicker
                     className="!mt-3 !w-full"
@@ -1128,6 +1211,7 @@ export default function HarvestBuildingPage() {
                     key={b.id}
                     b={b}
                     stats={getStatsForBuilding(b)}
+                    theme={getBuildingCardTheme(String(b.id))}
                     isMobile={isMobile}
                     onMetricClick={openMetricModal}
                     onOpen={() => navigate(`/truck/${b.id}`)}

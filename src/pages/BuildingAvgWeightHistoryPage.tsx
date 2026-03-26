@@ -508,17 +508,6 @@ export default function BuildingAvgWeightHistoryPage() {
                   <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Recorded</span>
                   <span className="text-sm font-bold text-slate-900">{recordedDays}</span>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Average</span>
-                  <span className="text-sm font-bold text-slate-900">
-                    {averageAcrossDays != null
-                      ? `${averageAcrossDays.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })} g`
-                      : "-"}
-                  </span>
-                </div>
               </div>
             </div>
 

@@ -682,11 +682,11 @@ export default function HarvestTruckPage() {
             {isMobile ? (
               <div
                 className={[
-                  "bg-white shadow-sm",
+                  "border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 shadow-sm",
                   "rounded-sm px-3 py-3 mb-3",
                 ].join(" ")}
               >
-                <div className="text-slate-600 font-medium text-xs mb-2">
+                <div className="text-emerald-700 font-medium text-xs mb-2">
                   Date
                 </div>
                 <DatePicker
@@ -730,8 +730,8 @@ export default function HarvestTruckPage() {
                     </div>
                   </div>
                 </div>
-                <div className="col-span-4 rounded-sm border border-emerald-200 bg-white px-5 py-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
+                <div className="col-span-4 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-5 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Filter</div>
                   <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
                   <DatePicker
                     className="!mt-3 !w-full"

@@ -180,8 +180,8 @@ export default function ReportPage() {
               <div className="text-xs font-semibold text-slate-500">{displayDate}</div>
             </div>
 
-            <div className="rounded-sm bg-white shadow-sm border border-slate-100 p-3 mb-4">
-              <div className="text-[11px] text-slate-500 mb-2">Date Filter</div>
+            <div className="rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 p-3 mb-4 shadow-sm">
+              <div className="text-[11px] text-emerald-700 mb-2">Date Filter</div>
               <div className="flex items-center gap-2">
                 {period === "week" && (
                   <DatePicker
@@ -321,8 +321,8 @@ export default function ReportPage() {
                   </div>
                 </div>
               </div>
-              <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filters</div>
+              <div className="col-span-4 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-5 py-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Filters</div>
                 <div className="mt-1 text-base font-semibold text-slate-800">Period & Date</div>
                 <div className="mt-2 text-xs text-slate-500">{displayDate}</div>
                 <div className="mt-3 grid grid-cols-3 gap-2">

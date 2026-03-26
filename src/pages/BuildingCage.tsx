@@ -166,7 +166,7 @@ function StatPill({
   return (
     <div
       className={[
-        "rounded-lg bg-slate-50 px-2 py-1.5",
+        "rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5",
         onClick ? "cursor-pointer hover:bg-slate-100 transition" : "",
       ].join(" ")}
       onClick={(e) => {
@@ -257,8 +257,9 @@ function CageRow({
     <Card
       hoverable
       className={[
-        "!border-0 shadow-sm hover:shadow-md transition cursor-pointer h-full",
-        isMobile ? "!rounded-sm" : "!rounded-sm border border-slate-200/80 bg-white/95",
+        "!border !border-emerald-200 bg-white/95 shadow-sm transition cursor-pointer h-full",
+        "hover:shadow-md",
+        isMobile ? "!rounded-sm" : "!rounded-sm",
       ].join(" ")}
       bodyStyle={{ padding: isMobile ? 10 : 14 }}
     >
@@ -1402,11 +1403,11 @@ export default function BuildingCage() {
             {isMobile ? (
               <div
                 className={[
-                  "bg-white shadow-sm",
+                  "border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 shadow-sm",
                   "rounded-lg px-3 py-3 mb-3",
                 ].join(" ")}
               >
-                <div className="text-slate-600 font-medium text-xs mb-2">
+                <div className="text-emerald-700 font-medium text-xs mb-2">
                   Date
                 </div>
                 <DatePicker
@@ -1461,8 +1462,8 @@ export default function BuildingCage() {
                     </div>
                   </div>
                 </div>
-                <div className="col-span-4 rounded-sm border border-slate-200 bg-white px-5 py-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Filter</div>
+                <div className="col-span-4 rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-5 py-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Filter</div>
                   <div className="mt-1 text-base font-semibold text-slate-800">Date</div>
                   <DatePicker
                     className="!mt-3 !w-full"
