@@ -57,6 +57,39 @@ const NORMAL_DAILY_GAIN_BY_DAY: Record<number, number> = {
   29: 103,
   30: 103,
 };
+const TARGET_WEIGHT_BY_DAY: Record<number, number> = {
+  0: 0,
+  1: 0,
+  2: 0,
+  3: 0,
+  4: 0,
+  5: 0,
+  6: 0,
+  7: 175,
+  8: 200,
+  9: 230,
+  10: 270,
+  11: 315,
+  12: 360,
+  13: 410,
+  14: 460,
+  15: 520,
+  16: 580,
+  17: 640,
+  18: 710,
+  19: 780,
+  20: 860,
+  21: 940,
+  22: 1020,
+  23: 1100,
+  24: 1180,
+  25: 1260,
+  26: 1340,
+  27: 1420,
+  28: 1500,
+  29: 1590,
+  30: 1680,
+};
 
 type HistoryRow = {
   date: string;
@@ -300,17 +333,19 @@ export default function BuildingAvgWeightHistoryPage() {
           lineWidth: 0.1,
         },
         columnStyles: {
-          0: { cellWidth: 18 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 52 },
-          4: { cellWidth: 45 },
+          0: { cellWidth: 15 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 26 },
+          3: { cellWidth: 24 },
+          4: { cellWidth: 42 },
+          5: { cellWidth: 43 },
         },
         head: [[
           "Day",
           "Date",
           "Avg Wt",
           "Normal Daily Gain (g/day)",
+          "Target",
           "Status",
         ]],
         body: historyRows.map((row) => [
@@ -322,7 +357,8 @@ export default function BuildingAvgWeightHistoryPage() {
                 maximumFractionDigits: 2,
               })} g`
             : "-",
-          String(NORMAL_DAILY_GAIN_BY_DAY[row.dayNumber] ?? 0),
+          `${NORMAL_DAILY_GAIN_BY_DAY[row.dayNumber] ?? 0} g`,
+          `${TARGET_WEIGHT_BY_DAY[row.dayNumber] ?? 0} g`,
           row.avgWeight != null ? "Recorded" : "No weight log",
         ]),
         foot: [[
@@ -515,9 +551,15 @@ export default function BuildingAvgWeightHistoryPage() {
                       </div>
                       <div className="mt-1 text-sm text-slate-600">{dayjs(row.date).format("MMMM D, YYYY")}</div>
                       <div className="mt-1 text-[10px] text-slate-500">
+                        Target -{" "}
+                        <span className="font-bold text-slate-700">
+                          {`${TARGET_WEIGHT_BY_DAY[row.dayNumber] ?? 0} g`}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-500">
                         Normal Daily Gain (g/day) -{" "}
                         <span className="font-bold text-slate-700">
-                          {NORMAL_DAILY_GAIN_BY_DAY[row.dayNumber] ?? 0}
+                          {`${NORMAL_DAILY_GAIN_BY_DAY[row.dayNumber] ?? 0} g`}
                         </span>
                       </div>
                     </div>

@@ -71,6 +71,7 @@ export default function BuildingLoadPage() {
   const LOAD_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TABLE ?? "Load";
   const LOAD_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TRANSACTIONS_TABLE ?? "LoadTransactions";
   const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
+  const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
   const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 
   const entriesForSelectedDate = useMemo(
@@ -250,6 +251,15 @@ export default function BuildingLoadPage() {
     const transactions = (await loadGrowReductionTransactionsByGrowId(growId)).filter(
       (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
     );
+    const { data: culledTransactions, error: culledTransactionsError } = await supabase
+      .from(CULLED_TRANSACTIONS_TABLE)
+      .select("total_animals_count")
+      .eq("grow_id", growId)
+      .lt("created_at", selectedDayEnd);
+
+    if (culledTransactionsError) {
+      throw new Error(culledTransactionsError.message || "Failed to load culled transactions.");
+    }
 
     const latestByDayCageAndType: Record<string, number> = {};
 
@@ -264,7 +274,11 @@ export default function BuildingLoadPage() {
       });
 
     const reductionTotal = Object.values(latestByDayCageAndType).reduce((sum, value) => sum + value, 0);
-    return Math.max(0, Math.floor(totalAnimals) - reductionTotal);
+    const culledTotal = (culledTransactions ?? []).reduce(
+      (sum: number, row: { total_animals_count?: number | null }) => sum + Math.max(0, Math.floor(Number(row.total_animals_count ?? 0))),
+      0
+    );
+    return Math.max(0, Math.floor(totalAnimals) - reductionTotal - culledTotal);
   };
 
   const syncLatestGrowLogActualTotal = async (growId: number, totalAnimals: number) => {

@@ -42,6 +42,8 @@ type BuildingStats = {
   avgWeight: number;
   status: "Loading" | "Growing" | "Harvested" | "Ready";
   reduction: number;
+  doa: number;
+  culled: number;
   mortality: number;
   thinning: number;
   takeOut: number;
@@ -55,6 +57,8 @@ const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const BODY_WEIGHT_LOGS_TABLE = import.meta.env.VITE_SUPABASE_BODY_WEIGHT_LOGS_TABLE ?? "BodyWeightLogs";
+const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
+const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
 
 type UserAccess = {
   role: "Admin" | "Supervisor" | "Staff" | null;
@@ -334,7 +338,14 @@ function BuildingRow({
             />
             <StatPill
               label="Reduction"
-              value={stats.reduction.toLocaleString()}
+              value={(
+                <span className="flex flex-col items-start leading-tight">
+                  <span>{stats.reduction.toLocaleString()}</span>
+                  <span className="text-[10px] font-medium text-slate-500">
+                    DOA {stats.doa.toLocaleString()} | Culled {stats.culled.toLocaleString()}
+                  </span>
+                </span>
+              )}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               rightIcon={<span className="text-slate-400 text-base leading-none">{">"}</span>}
               onClick={() => onMetricOpen("mortality")}
@@ -551,7 +562,46 @@ export default function BuildingOverviewPage() {
       }
 
       const overallMetricsByGrowId: Record<number, { mortality: number; thinning: number; takeOut: number }> = {};
+      const doaTotalsByGrowId: Record<number, number> = {};
+      const culledTotalsByGrowId: Record<number, number> = {};
       if (latestGrowIds.length > 0) {
+        const [
+          { data: doaRows, error: doaRowsError },
+          { data: culledRows, error: culledRowsError },
+        ] = await Promise.all([
+          supabase
+            .from(DOA_TRANSACTIONS_TABLE)
+            .select("grow_id, total_animals_count")
+            .in("grow_id", latestGrowIds)
+            .lt("created_at", selectedDayEnd),
+          supabase
+            .from(CULLED_TRANSACTIONS_TABLE)
+            .select("grow_id, total_animals_count")
+            .in("grow_id", latestGrowIds)
+            .lt("created_at", selectedDayEnd),
+        ]);
+
+        if (doaRowsError) throw doaRowsError;
+        if (culledRowsError) throw culledRowsError;
+
+        ((doaRows ?? []) as Array<{
+          grow_id: number | null;
+          total_animals_count: number | null;
+        }>).forEach((row) => {
+          if (row.grow_id == null) return;
+          doaTotalsByGrowId[row.grow_id] =
+            (doaTotalsByGrowId[row.grow_id] ?? 0) + toNonNegativeInt(row.total_animals_count);
+        });
+
+        ((culledRows ?? []) as Array<{
+          grow_id: number | null;
+          total_animals_count: number | null;
+        }>).forEach((row) => {
+          if (row.grow_id == null) return;
+          culledTotalsByGrowId[row.grow_id] =
+            (culledTotalsByGrowId[row.grow_id] ?? 0) + toNonNegativeInt(row.total_animals_count);
+        });
+
         const reductionTransactionsByGrowIdEntries = await Promise.all(
           latestGrowIds.map(async (growId) => {
             const transactions = await loadGrowReductionTransactionsByGrowId(growId);
@@ -715,10 +765,10 @@ export default function BuildingOverviewPage() {
         const grow = Number.isFinite(buildingId) ? latestGrowByBuilding[buildingId] : undefined;
         const growLog = grow ? latestGrowLogByGrowId[grow.growId] : undefined;
         const overallMetrics = grow ? overallMetricsByGrowId[grow.growId] : undefined;
+        const doa = grow ? doaTotalsByGrowId[grow.growId] ?? 0 : 0;
+        const culled = grow ? culledTotalsByGrowId[grow.growId] ?? 0 : 0;
         const total = grow?.totalAnimals ?? 0;
-        const remaining = overallMetrics
-          ? Math.max(0, total - overallMetrics.mortality - overallMetrics.thinning - overallMetrics.takeOut)
-          : growLog?.actualTotalAnimals ?? total;
+        const remaining = growLog?.actualTotalAnimals ?? total;
         const days = grow
           ? Math.max(
             0,
@@ -732,6 +782,8 @@ export default function BuildingOverviewPage() {
           remaining,
           avgWeight: Number.isFinite(buildingId) ? avgWeightByBuildingId[buildingId] ?? 0 : 0,
           status: grow?.status ?? "Ready",
+          doa,
+          culled,
           mortality: overallMetrics?.mortality ?? growLog?.mortality ?? 0,
           thinning: overallMetrics?.thinning ?? growLog?.thinning ?? 0,
           takeOut: overallMetrics?.takeOut ?? growLog?.takeOut ?? 0,
@@ -773,7 +825,7 @@ export default function BuildingOverviewPage() {
       return;
     }
     const nextIndex = buildings.length + 1;
-    addForm.setFieldsValue({ name: `Building ${nextIndex}` });
+    addForm.setFieldsValue({ name: `Bldg ${nextIndex}` });
     setIsAddModalOpen(true);
   };
   const handleCloseAdd = () => {
@@ -832,6 +884,8 @@ export default function BuildingOverviewPage() {
         avgWeight: building.avgWeight,
         status: "Ready",
         reduction: building.mortality + building.thinning + building.takeOut,
+        doa: 0,
+        culled: 0,
         mortality: building.mortality,
         thinning: building.thinning,
         takeOut: building.takeOut,

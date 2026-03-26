@@ -727,6 +727,26 @@ export default function BuildingMetricHistoryPage() {
     }
   };
 
+  const resolveLatestGrowLogActualTotal = async (growId: number, fallbackTotalAnimals: number) => {
+    const { data: latestGrowLogRow, error: latestGrowLogRowError } = await supabase
+      .from(GROW_LOGS_TABLE)
+      .select("actual_total_animals")
+      .eq("grow_id", growId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestGrowLogRowError) {
+      throw new Error(latestGrowLogRowError.message || "Failed to load latest grow log total animals.");
+    }
+
+    if (latestGrowLogRow?.actual_total_animals == null) {
+      return Math.max(0, Math.floor(fallbackTotalAnimals));
+    }
+
+    return toNonNegativeInt(latestGrowLogRow.actual_total_animals);
+  };
+
   const createGrowLogSnapshotFromLatestDate = async (
     growId: number,
     totalAnimals: number,
@@ -894,6 +914,25 @@ export default function BuildingMetricHistoryPage() {
 
     void fetchDoaHistory();
   }, [isDoaDrawerOpen, activeGrowId, id, selectedDate]);
+
+  useEffect(() => {
+    if (metricKey === "reduction") {
+      setCulledHistoryRows([]);
+      return;
+    }
+
+    const fetchCulledHistory = async () => {
+      try {
+        await loadCulledHistory();
+      } catch (error) {
+        setCulledHistoryRows([]);
+        setToastMessage(getErrorMessage(error));
+        setIsToastOpen(true);
+      }
+    };
+
+    void fetchCulledHistory();
+  }, [metricKey, activeGrowId, activeGrowStatus, id, selectedDate]);
 
   useEffect(() => {
     if (!isCulledDrawerOpen) return;
@@ -1280,6 +1319,17 @@ export default function BuildingMetricHistoryPage() {
     }
 
     try {
+      const latestActualTotalAnimals = await resolveLatestGrowLogActualTotal(growId, totalAnimals);
+      const nextDisplayedCurrentAnimals = Math.max(0, latestActualTotalAnimals - culledCount);
+      await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsSavingCulled(false);
+      return;
+    }
+
+    try {
       await loadCulledHistory();
     } catch (historyError) {
       setToastMessage(getErrorMessage(historyError));
@@ -1305,9 +1355,23 @@ export default function BuildingMetricHistoryPage() {
 
     setIsEditingCulled(true);
 
+    let growId: number | null = null;
+    let totalAnimals = 0;
+
     try {
-      const { totalAnimals } = await resolveGrowAnimalLimit();
-      if (!ensureCountWithinGrowTotal(editingCulledCount, totalAnimals, "Culled Count")) {
+      const growSummary = await resolveGrowAnimalLimit();
+      growId = growSummary.growId;
+      totalAnimals = growSummary.totalAnimals;
+
+      if (growId == null) {
+        setToastMessage("No active grow found for this building.");
+        setIsToastOpen(true);
+        setIsEditingCulled(false);
+        return;
+      }
+
+      const maxAllowed = totalAnimals + entry.totalAnimalsCount;
+      if (!ensureCountWithinGrowTotal(editingCulledCount, maxAllowed, "Culled Count")) {
         setIsEditingCulled(false);
         return;
       }
@@ -1328,6 +1392,20 @@ export default function BuildingMetricHistoryPage() {
 
     if (error) {
       setToastMessage(error.message || "Failed to update culled record.");
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    try {
+      const latestActualTotalAnimals = await resolveLatestGrowLogActualTotal(growId, totalAnimals);
+      const nextDisplayedCurrentAnimals = Math.max(
+        0,
+        latestActualTotalAnimals + entry.totalAnimalsCount - editingCulledCount
+      );
+      await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
       setIsToastOpen(true);
       setIsEditingCulled(false);
       return;
@@ -1368,6 +1446,27 @@ export default function BuildingMetricHistoryPage() {
 
     setIsEditingCulled(true);
 
+    let growId: number | null = null;
+    let totalAnimals = 0;
+
+    try {
+      const growSummary = await resolveGrowAnimalLimit();
+      growId = growSummary.growId;
+      totalAnimals = growSummary.totalAnimals;
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    if (growId == null) {
+      setToastMessage("No active grow found for this building.");
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
     const { error } = await supabase
       .from(CULLED_TRANSACTIONS_TABLE)
       .delete()
@@ -1375,6 +1474,17 @@ export default function BuildingMetricHistoryPage() {
 
     if (error) {
       setToastMessage(error.message || "Failed to remove culled record.");
+      setIsToastOpen(true);
+      setIsEditingCulled(false);
+      return;
+    }
+
+    try {
+      const latestActualTotalAnimals = await resolveLatestGrowLogActualTotal(growId, totalAnimals);
+      const nextDisplayedCurrentAnimals = Math.max(0, latestActualTotalAnimals + entry.totalAnimalsCount);
+      await syncLatestGrowLogActualTotal(growId, nextDisplayedCurrentAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
       setIsToastOpen(true);
       setIsEditingCulled(false);
       return;
@@ -1657,10 +1767,16 @@ export default function BuildingMetricHistoryPage() {
                   <span className="text-sm font-bold text-slate-900">{totalValue.toLocaleString()}</span>
                 </div>
                 {metricKey !== "reduction" ? (
-                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">DOA</span>
-                    <span className="text-sm font-bold text-slate-900">{doaTotalEncoded.toLocaleString()}</span>
-                  </div>
+                  <>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">DOA</span>
+                      <span className="text-sm font-bold text-slate-900">{doaTotalEncoded.toLocaleString()}</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Culled</span>
+                      <span className="text-sm font-bold text-slate-900">{culledTotalEncoded.toLocaleString()}</span>
+                    </div>
+                  </>
                 ) : null}
               </div>
             </div>

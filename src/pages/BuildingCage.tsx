@@ -66,6 +66,7 @@ const SECONDARY = "#ffa600";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 type UserAccess = {
@@ -130,6 +131,23 @@ const calculateActualTotalAnimals = (
 
   const totalReductionUpToDate = Object.values(latestByDayCageAndType).reduce((sum, value) => sum + value, 0);
   return Math.max(0, totalAnimals - totalReductionUpToDate);
+};
+
+const loadCulledTotalUpToDate = async (growId: number, endExclusive: dayjs.Dayjs): Promise<number> => {
+  const { data, error } = await supabase
+    .from(CULLED_TRANSACTIONS_TABLE)
+    .select("total_animals_count, created_at")
+    .eq("grow_id", growId)
+    .lt("created_at", endExclusive.toISOString());
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as Array<{ total_animals_count: number | null }>).reduce(
+    (sum, row) => sum + Math.max(0, Math.floor(Number(row.total_animals_count ?? 0))),
+    0
+  );
 };
 
 function StatPill({
@@ -1034,7 +1052,11 @@ export default function BuildingCage() {
       }
 
       const selectedDayEnd = dayjs.utc(selectedDate, "YYYY-MM-DD").add(1, "day").startOf("day");
-      const actualTotalAnimals = calculateActualTotalAnimals(latestGrow.totalAnimals, nextReductionRows, selectedDayEnd);
+      const culledTotalForSelectedDay = await loadCulledTotalUpToDate(growId, selectedDayEnd);
+      const actualTotalAnimals = Math.max(
+        0,
+        calculateActualTotalAnimals(latestGrow.totalAnimals, nextReductionRows, selectedDayEnd) - culledTotalForSelectedDay
+      );
 
       const savedGrowLog = await addGrowLog({
         growId,
@@ -1080,10 +1102,10 @@ export default function BuildingCage() {
         const latestLogDate = dayjs.utc(latestGrowLogRow.created_at).format("YYYY-MM-DD");
         const latestLogStart = dayjs.utc(latestLogDate, "YYYY-MM-DD").startOf("day");
         const latestLogEnd = latestLogStart.add(1, "day");
-        const latestActualTotalAnimals = calculateActualTotalAnimals(
-          latestGrow.totalAnimals,
-          nextReductionRows,
-          latestLogEnd
+        const latestCulledTotal = await loadCulledTotalUpToDate(growId, latestLogEnd);
+        const latestActualTotalAnimals = Math.max(
+          0,
+          calculateActualTotalAnimals(latestGrow.totalAnimals, nextReductionRows, latestLogEnd) - latestCulledTotal
         );
 
         const { error: latestGrowLogUpdateError } = await supabase
