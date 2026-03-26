@@ -11,6 +11,7 @@ import type { BuildingRecord } from "../type/building.type";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import { checkForAppUpdate } from "../serviceWorkerRegistration";
+import { APP_VERSION } from "../generated/appVersion";
 
 type TileKey =
     | "inventory"
@@ -371,6 +372,9 @@ export default function LandingPage() {
             </main>
 
             <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm">
+                <div className="px-3 py-1.5 text-center text-[11px] font-medium text-slate-500 bg-transparent">
+                    Version {APP_VERSION}
+                </div>
                 <div className={`grid ${canManageBuildings ? "grid-cols-2" : "grid-cols-1"}`}>
                         {canManageBuildings && (
                             <button
