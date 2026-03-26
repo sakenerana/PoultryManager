@@ -1759,7 +1759,7 @@ export default function BuildingMetricHistoryPage() {
                 navigate(`/building-metric-history/${id}?date=${selectedDate}`);
                 return;
               }
-              navigate(-1);
+              navigate("/buildings");
             }}
             aria-label="Back"
           />
