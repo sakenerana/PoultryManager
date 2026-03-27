@@ -60,43 +60,44 @@ type BuildingCardTheme = {
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
+const STAT_PILL_BORDER_COLORS = ["#e8d15d", "#b8cf6a", "#8fcf8b", "#9ac7e8", "#d6b4f7", "#f2b36f"];
 const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   {
-    cardBorder: "#d4e7a7",
-    cardBackground: "linear-gradient(135deg, #fff7cc 0%, #f8f6dd 52%, #ecf4cf 100%)",
+    cardBorder: "#3a500b",
+    cardBackground: "white",
     pillBorder: "#d9e7a2",
-    pillBackground: "linear-gradient(135deg, #fff8cf 0%, #f6f6d8 55%, #eef5cf 100%)",
-    iconBackground: "linear-gradient(135deg, #f8df86 0%, #dce9aa 100%)",
+    pillBackground: "#f1f5f9",
+    iconBackground: "#f1f5f9",
     tagBorder: "#e8d15d",
     tagBackground: "#fff5c4",
     tagText: "#b28700",
   },
   {
-    cardBorder: "#bfdcb2",
-    cardBackground: "linear-gradient(135deg, #eef8d8 0%, #f8f8e7 55%, #fff3c9 100%)",
+    cardBorder: "#3a500b",
+    cardBackground: "white",
     pillBorder: "#c8e0b6",
-    pillBackground: "linear-gradient(135deg, #f2f9df 0%, #f9f7e4 60%, #fff5d2 100%)",
-    iconBackground: "linear-gradient(135deg, #cfe5a8 0%, #f7da7a 100%)",
+    pillBackground: "#f1f5f9",
+    iconBackground: "#f1f5f9",
     tagBorder: "#d7d56b",
     tagBackground: "#f8f6c9",
     tagText: "#7c8a13",
   },
   {
-    cardBorder: "#d8d77e",
-    cardBackground: "linear-gradient(135deg, #fff0b8 0%, #f5f1d7 50%, #dff0c2 100%)",
+    cardBorder: "#3a500b",
+    cardBackground: "white",
     pillBorder: "#d7d88e",
-    pillBackground: "linear-gradient(135deg, #fff3c7 0%, #f8f2d9 55%, #e7f4cf 100%)",
-    iconBackground: "linear-gradient(135deg, #e8cf5c 0%, #cde3a1 100%)",
+    pillBackground: "#f1f5f9",
+    iconBackground: "#f1f5f9",
     tagBorder: "#d9c94d",
     tagBackground: "#fff0af",
     tagText: "#9f8400",
   },
   {
-    cardBorder: "#c6e3b8",
-    cardBackground: "linear-gradient(135deg, #f7f9dc 0%, #edf6d8 48%, #fff1bf 100%)",
+    cardBorder: "#3a500b",
+    cardBackground: "white",
     pillBorder: "#cfe3bc",
-    pillBackground: "linear-gradient(135deg, #fbfbe4 0%, #eff6db 58%, #fff4ca 100%)",
-    iconBackground: "linear-gradient(135deg, #d7e8b0 0%, #f4d66f 100%)",
+    pillBackground: "#f1f5f9",
+    iconBackground: "#f1f5f9",
     tagBorder: "#d6d46e",
     tagBackground: "#fbf7cb",
     tagText: "#7d8914",
@@ -127,6 +128,16 @@ const getBuildingCardTheme = (seed: string): BuildingCardTheme => {
   return BUILDING_CARD_THEMES[hash % BUILDING_CARD_THEMES.length];
 };
 
+const getStatPillBorderColor = (seed: string): string => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return STAT_PILL_BORDER_COLORS[hash % STAT_PILL_BORDER_COLORS.length];
+};
+
+const withAlpha = (hex: string, alpha: string): string => `${hex}${alpha}`;
+
 function StatPill({
   label,
   value,
@@ -134,6 +145,8 @@ function StatPill({
   rightIcon,
   onClick,
   theme,
+  borderColor,
+  backgroundColor,
 }: {
   label: string;
   value: React.ReactNode;
@@ -141,6 +154,8 @@ function StatPill({
   rightIcon?: React.ReactNode;
   onClick?: () => void;
   theme: BuildingCardTheme;
+  borderColor: string;
+  backgroundColor: string;
 }) {
   return (
     <div
@@ -149,8 +164,8 @@ function StatPill({
         onClick ? "cursor-pointer transition" : "",
       ].join(" ")}
       style={{
-        border: `1px solid ${theme.pillBorder}`,
-        background: theme.pillBackground,
+        border: `1px solid ${borderColor}`,
+        background: backgroundColor,
       }}
       onClick={(e) => {
         if (!onClick) return;
@@ -327,6 +342,8 @@ function BuildingRow({
               label="Total Birds"
               value={stats.total.toLocaleString()}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-total-birds`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-total-birds`), "12")}
             />
             <StatPill
               label="Current"
@@ -342,6 +359,8 @@ function BuildingRow({
                 </span>
               )}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-current`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-current`), "12")}
             />
             <StatPill
               label="Avg Weight"
@@ -350,11 +369,15 @@ function BuildingRow({
                 maximumFractionDigits: 2,
               })} g`}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-avg-weight`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-avg-weight`), "12")}
             />
             <StatPill
               label="Total Birds Harvested"
               value={stats.totalHarvested.toLocaleString()}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-total-harvested`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-total-harvested`), "12")}
             />
             <StatPill
               label="Mortality"
@@ -362,6 +385,8 @@ function BuildingRow({
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-mortality`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-mortality`), "12")}
               onClick={isHarvested ? undefined : () => onMetricClick("mortality", b.id, stats.mortality)}
             />
             <StatPill
@@ -370,6 +395,8 @@ function BuildingRow({
               leftIcon={<span className="h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-defect`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-defect`), "12")}
               onClick={isHarvested ? undefined : () => onMetricClick("defect", b.id, stats.defect)}
             />
             <StatPill
@@ -378,6 +405,8 @@ function BuildingRow({
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-take-out`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-take-out`), "12")}
               onClick={isHarvested ? undefined : () => onMetricClick("takeOut", b.id, stats.takeOut)}
             />
             <StatPill
@@ -386,6 +415,8 @@ function BuildingRow({
               leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
               rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-thinning`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-thinning`), "12")}
               onClick={isHarvested ? undefined : () => onMetricClick("thinning", b.id, stats.thinning)}
             />
           </div>
