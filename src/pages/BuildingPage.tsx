@@ -63,61 +63,55 @@ type BuildingCardTheme = {
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
+const STAT_PILL_BORDER_COLORS = ["#e8d15d", "#b8cf6a", "#8fcf8b", "#9ac7e8", "#d6b4f7", "#f2b36f"];
 const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   {
-    cardBorder: "#6c8522",
-    cardBackground: "linear-gradient(135deg, #667d1d 0%, #567015 52%, #445c0e 100%)",
-    pillBorder: "#7d9630",
-    pillBackground: "linear-gradient(135deg, #738927 0%, #647d1f 55%, #536a17 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #7d9530 0%, #5d7419 100%)",
-    iconBackground: "linear-gradient(135deg, #5c7616 0%, #47630c 100%)",
-    tagBorder: "#6c8522",
-    tagBackground: "#5e7418",
-    tagText: "#ffffff",
+    cardBorder: "#3a500b",
+    // cardBackground: "linear-gradient(135deg, #fff7cc 0%, #f8f6dd 52%, #ecf4cf 100%)",
+    cardBackground: "white",
+    pillBorder: "#d9e7a2",
+    pillBackground: "#f1f5f9",
+    pillHoverBackground: "linear-gradient(135deg, #fff4b8 0%, #edf2cd 100%)",
+    iconBackground: "#f1f5f9",
+    tagBorder: "#e8d15d",
+    tagBackground: "#fff5c4",
+    tagText: "#b28700",
   },
   {
-    cardBorder: "#869d1c",
-    cardBackground: "linear-gradient(135deg, #758d1a 0%, #658013 55%, #526b0d 100%)",
-    pillBorder: "#93ab2b",
-    pillBackground: "linear-gradient(135deg, #829b24 0%, #718d1d 60%, #5d7814 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #8ca631 0%, #678216 100%)",
-    iconBackground: "linear-gradient(135deg, #7f9819 0%, #67840e 100%)",
-    tagBorder: "#869d1c",
-    tagBackground: "#6d8615",
-    tagText: "#ffffff",
+    cardBorder: "#3a500b",
+    // cardBackground: "linear-gradient(135deg, #eef8d8 0%, #f8f8e7 55%, #fff3c9 100%)",
+    cardBackground: "white",
+    pillBorder: "#c8e0b6",
+    pillBackground: "#f1f5f9",
+    pillHoverBackground: "linear-gradient(135deg, #e6f3cb 0%, #fff0bd 100%)",
+    iconBackground: "#f1f5f9",
+    tagBorder: "#d7d56b",
+    tagBackground: "#f8f6c9",
+    tagText: "#7c8a13",
   },
   {
-    cardBorder: "#b1b22a",
-    cardBackground: "linear-gradient(135deg, #92931d 0%, #7f8119 50%, #696b11 100%)",
-    pillBorder: "#bcbd39",
-    pillBackground: "linear-gradient(135deg, #a2a428 0%, #8f9222 55%, #777913 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #acaf33 0%, #848618 100%)",
-    iconBackground: "linear-gradient(135deg, #bbbc34 0%, #9ea11a 100%)",
-    tagBorder: "#b1b22a",
-    tagBackground: "#848616",
-    tagText: "#ffffff",
+    cardBorder: "#3a500b",
+    // cardBackground: "linear-gradient(135deg, #fff0b8 0%, #f5f1d7 50%, #dff0c2 100%)",
+    cardBackground: "white",
+    pillBorder: "#d7d88e",
+    pillBackground: "#f1f5f9",
+    pillHoverBackground: "linear-gradient(135deg, #ffe9a4 0%, #ddefbe 100%)",
+    iconBackground: "#f1f5f9",
+    tagBorder: "#d9c94d",
+    tagBackground: "#fff0af",
+    tagText: "#9f8400",
   },
   {
-    cardBorder: "#f0d979",
-    cardBackground: "linear-gradient(135deg, #b79d2d 0%, #a88e23 48%, #8f7816 100%)",
-    pillBorder: "#efd26a",
-    pillBackground: "linear-gradient(135deg, #c2ab39 0%, #af972e 58%, #967e1f 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #caB646 0%, #a28622 100%)",
-    iconBackground: "linear-gradient(135deg, #f5df8b 0%, #e8cc61 100%)",
-    tagBorder: "#e7ca58",
-    tagBackground: "#967d1f",
-    tagText: "#ffffff",
-  },
-  {
-    cardBorder: "#e3c84d",
-    cardBackground: "linear-gradient(135deg, #aa8b1f 0%, #997b17 52%, #80650f 100%)",
-    pillBorder: "#dfbf3f",
-    pillBackground: "linear-gradient(135deg, #b69829 0%, #a48721 55%, #896d14 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #c3a535 0%, #947617 100%)",
-    iconBackground: "linear-gradient(135deg, #eccf5a 0%, #d9b52f 100%)",
-    tagBorder: "#d7b22d",
-    tagBackground: "#8b6f15",
-    tagText: "#ffffff",
+    cardBorder: "#3a500b",
+    // cardBackground: "linear-gradient(135deg, #f7f9dc 0%, #edf6d8 48%, #fff1bf 100%)",
+    cardBackground: "white",
+    pillBorder: "#cfe3bc",
+    pillBackground: "#f1f5f9",
+    pillHoverBackground: "linear-gradient(135deg, #f4f6d4 0%, #ffe8b1 100%)",
+    iconBackground: "#f1f5f9",
+    tagBorder: "#d6d46e",
+    tagBackground: "#fbf7cb",
+    tagText: "#7d8914",
   },
 ];
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
@@ -169,6 +163,16 @@ const getBuildingCardTheme = (seed: string): BuildingCardTheme => {
   return BUILDING_CARD_THEMES[hash % BUILDING_CARD_THEMES.length];
 };
 
+const getStatPillBorderColor = (seed: string): string => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return STAT_PILL_BORDER_COLORS[hash % STAT_PILL_BORDER_COLORS.length];
+};
+
+const withAlpha = (hex: string, alpha: string): string => `${hex}${alpha}`;
+
 const mapRecordToBuilding = (record: BuildingRecord): Building => ({
   id: record.id,
   name: record.name,
@@ -187,6 +191,8 @@ function StatPill({
   rightIcon,
   onClick,
   theme,
+  borderColor,
+  backgroundColor,
 }: {
   label: string;
   value: React.ReactNode;
@@ -194,6 +200,8 @@ function StatPill({
   rightIcon?: React.ReactNode;
   onClick?: () => void;
   theme: BuildingCardTheme;
+  borderColor: string;
+  backgroundColor: string;
 }) {
   return (
     <div
@@ -202,8 +210,8 @@ function StatPill({
         onClick ? "cursor-pointer transition" : "",
       ].join(" ")}
       style={{
-        border: `1px solid ${theme.pillBorder}`,
-        background: theme.pillBackground,
+        border: `1px solid ${borderColor}`,
+        background: backgroundColor,
       }}
       onClick={(e) => {
         if (!onClick) return;
@@ -220,9 +228,9 @@ function StatPill({
         }
       }}
     >
-      <div className="text-[10px] text-white/80 leading-none">{label}</div>
+      <div className="text-[10px] text-slate-500 leading-none">{label}</div>
       <div className="mt-0.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-[13px] font-semibold text-white leading-none">
+        <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-900 leading-none">
           {leftIcon}
           {value}
         </div>
@@ -371,7 +379,7 @@ function BuildingRow({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="font-semibold text-white truncate" style={{ fontSize: isMobile ? 13 : 15 }}>
+                <div className="font-semibold text-slate-900 truncate" style={{ fontSize: isMobile ? 13 : 15 }}>
                   {b.name}
                 </div>
                 <Tag
@@ -402,6 +410,8 @@ function BuildingRow({
               label="Total Birds Loaded"
               value={stats.total.toLocaleString()}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-total`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-total`), "12")}
               onClick={() => navigate(`/building-load/${b.id}?date=${selectedDate}`)}
             />
             <StatPill
@@ -409,7 +419,7 @@ function BuildingRow({
               value={(
                 <span>
                   {stats.remaining.toLocaleString()}{" "}
-                  <span className="text-[10px] font-medium text-white/75">
+                  <span className="text-[10px] font-medium text-slate-500">
                     ({remainingPercentage.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
@@ -418,11 +428,15 @@ function BuildingRow({
                 </span>
               )}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-current`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-current`), "12")}
             />
             <StatPill
               label="Avg Weight"
               value={<span aria-hidden="true">&nbsp;</span>}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-avg-weight`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-avg-weight`), "12")}
               onClick={onAvgWeightOpen}
             />
             <StatPill
@@ -430,6 +444,8 @@ function BuildingRow({
               value={stats.reduction.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
               theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-reduction`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-reduction`), "12")}
               onClick={onMetricOpen}
             />
           </div>
@@ -1292,5 +1308,3 @@ export default function BuildingOverviewPage() {
     </Layout>
   );
 }
-
-
