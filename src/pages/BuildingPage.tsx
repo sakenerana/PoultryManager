@@ -67,7 +67,6 @@ const STAT_PILL_BORDER_COLORS = ["#e8d15d", "#b8cf6a", "#8fcf8b", "#9ac7e8", "#d
 const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   {
     cardBorder: "#3a500b",
-    // cardBackground: "linear-gradient(135deg, #fff7cc 0%, #f8f6dd 52%, #ecf4cf 100%)",
     cardBackground: "white",
     pillBorder: "#d9e7a2",
     pillBackground: "#f1f5f9",
@@ -79,7 +78,6 @@ const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   },
   {
     cardBorder: "#3a500b",
-    // cardBackground: "linear-gradient(135deg, #eef8d8 0%, #f8f8e7 55%, #fff3c9 100%)",
     cardBackground: "white",
     pillBorder: "#c8e0b6",
     pillBackground: "#f1f5f9",
@@ -91,7 +89,6 @@ const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   },
   {
     cardBorder: "#3a500b",
-    // cardBackground: "linear-gradient(135deg, #fff0b8 0%, #f5f1d7 50%, #dff0c2 100%)",
     cardBackground: "white",
     pillBorder: "#d7d88e",
     pillBackground: "#f1f5f9",
@@ -103,7 +100,6 @@ const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   },
   {
     cardBorder: "#3a500b",
-    // cardBackground: "linear-gradient(135deg, #f7f9dc 0%, #edf6d8 48%, #fff1bf 100%)",
     cardBackground: "white",
     pillBorder: "#cfe3bc",
     pillBackground: "#f1f5f9",
