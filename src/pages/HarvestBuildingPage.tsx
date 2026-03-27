@@ -144,7 +144,6 @@ function StatPill({
   leftIcon,
   rightIcon,
   onClick,
-  theme,
   borderColor,
   backgroundColor,
 }: {
