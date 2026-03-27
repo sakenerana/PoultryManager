@@ -65,48 +65,59 @@ const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
   {
-    cardBorder: "#d4e7a7",
-    cardBackground: "linear-gradient(135deg, #fff7cc 0%, #f8f6dd 52%, #ecf4cf 100%)",
-    pillBorder: "#d9e7a2",
-    pillBackground: "linear-gradient(135deg, #fff8cf 0%, #f6f6d8 55%, #eef5cf 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #fff4b8 0%, #edf2cd 100%)",
-    iconBackground: "linear-gradient(135deg, #f8df86 0%, #dce9aa 100%)",
-    tagBorder: "#e8d15d",
-    tagBackground: "#fff5c4",
-    tagText: "#b28700",
+    cardBorder: "#6c8522",
+    cardBackground: "linear-gradient(135deg, #667d1d 0%, #567015 52%, #445c0e 100%)",
+    pillBorder: "#7d9630",
+    pillBackground: "linear-gradient(135deg, #738927 0%, #647d1f 55%, #536a17 100%)",
+    pillHoverBackground: "linear-gradient(135deg, #7d9530 0%, #5d7419 100%)",
+    iconBackground: "linear-gradient(135deg, #5c7616 0%, #47630c 100%)",
+    tagBorder: "#6c8522",
+    tagBackground: "#5e7418",
+    tagText: "#ffffff",
   },
   {
-    cardBorder: "#bfdcb2",
-    cardBackground: "linear-gradient(135deg, #eef8d8 0%, #f8f8e7 55%, #fff3c9 100%)",
-    pillBorder: "#c8e0b6",
-    pillBackground: "linear-gradient(135deg, #f2f9df 0%, #f9f7e4 60%, #fff5d2 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #e6f3cb 0%, #fff0bd 100%)",
-    iconBackground: "linear-gradient(135deg, #cfe5a8 0%, #f7da7a 100%)",
-    tagBorder: "#d7d56b",
-    tagBackground: "#f8f6c9",
-    tagText: "#7c8a13",
+    cardBorder: "#869d1c",
+    cardBackground: "linear-gradient(135deg, #758d1a 0%, #658013 55%, #526b0d 100%)",
+    pillBorder: "#93ab2b",
+    pillBackground: "linear-gradient(135deg, #829b24 0%, #718d1d 60%, #5d7814 100%)",
+    pillHoverBackground: "linear-gradient(135deg, #8ca631 0%, #678216 100%)",
+    iconBackground: "linear-gradient(135deg, #7f9819 0%, #67840e 100%)",
+    tagBorder: "#869d1c",
+    tagBackground: "#6d8615",
+    tagText: "#ffffff",
   },
   {
-    cardBorder: "#d8d77e",
-    cardBackground: "linear-gradient(135deg, #fff0b8 0%, #f5f1d7 50%, #dff0c2 100%)",
-    pillBorder: "#d7d88e",
-    pillBackground: "linear-gradient(135deg, #fff3c7 0%, #f8f2d9 55%, #e7f4cf 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #ffe9a4 0%, #ddefbe 100%)",
-    iconBackground: "linear-gradient(135deg, #e8cf5c 0%, #cde3a1 100%)",
-    tagBorder: "#d9c94d",
-    tagBackground: "#fff0af",
-    tagText: "#9f8400",
+    cardBorder: "#b1b22a",
+    cardBackground: "linear-gradient(135deg, #92931d 0%, #7f8119 50%, #696b11 100%)",
+    pillBorder: "#bcbd39",
+    pillBackground: "linear-gradient(135deg, #a2a428 0%, #8f9222 55%, #777913 100%)",
+    pillHoverBackground: "linear-gradient(135deg, #acaf33 0%, #848618 100%)",
+    iconBackground: "linear-gradient(135deg, #bbbc34 0%, #9ea11a 100%)",
+    tagBorder: "#b1b22a",
+    tagBackground: "#848616",
+    tagText: "#ffffff",
   },
   {
-    cardBorder: "#c6e3b8",
-    cardBackground: "linear-gradient(135deg, #f7f9dc 0%, #edf6d8 48%, #fff1bf 100%)",
-    pillBorder: "#cfe3bc",
-    pillBackground: "linear-gradient(135deg, #fbfbe4 0%, #eff6db 58%, #fff4ca 100%)",
-    pillHoverBackground: "linear-gradient(135deg, #f4f6d4 0%, #ffe8b1 100%)",
-    iconBackground: "linear-gradient(135deg, #d7e8b0 0%, #f4d66f 100%)",
-    tagBorder: "#d6d46e",
-    tagBackground: "#fbf7cb",
-    tagText: "#7d8914",
+    cardBorder: "#f0d979",
+    cardBackground: "linear-gradient(135deg, #b79d2d 0%, #a88e23 48%, #8f7816 100%)",
+    pillBorder: "#efd26a",
+    pillBackground: "linear-gradient(135deg, #c2ab39 0%, #af972e 58%, #967e1f 100%)",
+    pillHoverBackground: "linear-gradient(135deg, #caB646 0%, #a28622 100%)",
+    iconBackground: "linear-gradient(135deg, #f5df8b 0%, #e8cc61 100%)",
+    tagBorder: "#e7ca58",
+    tagBackground: "#967d1f",
+    tagText: "#ffffff",
+  },
+  {
+    cardBorder: "#e3c84d",
+    cardBackground: "linear-gradient(135deg, #aa8b1f 0%, #997b17 52%, #80650f 100%)",
+    pillBorder: "#dfbf3f",
+    pillBackground: "linear-gradient(135deg, #b69829 0%, #a48721 55%, #896d14 100%)",
+    pillHoverBackground: "linear-gradient(135deg, #c3a535 0%, #947617 100%)",
+    iconBackground: "linear-gradient(135deg, #eccf5a 0%, #d9b52f 100%)",
+    tagBorder: "#d7b22d",
+    tagBackground: "#8b6f15",
+    tagText: "#ffffff",
   },
 ];
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
@@ -209,9 +220,9 @@ function StatPill({
         }
       }}
     >
-      <div className="text-[10px] text-slate-500 leading-none">{label}</div>
+      <div className="text-[10px] text-white/80 leading-none">{label}</div>
       <div className="mt-0.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-900 leading-none">
+        <div className="flex items-center gap-2 text-[13px] font-semibold text-white leading-none">
           {leftIcon}
           {value}
         </div>
@@ -360,7 +371,7 @@ function BuildingRow({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="font-semibold text-slate-900 truncate" style={{ fontSize: isMobile ? 13 : 15 }}>
+                <div className="font-semibold text-white truncate" style={{ fontSize: isMobile ? 13 : 15 }}>
                   {b.name}
                 </div>
                 <Tag
@@ -398,7 +409,7 @@ function BuildingRow({
               value={(
                 <span>
                   {stats.remaining.toLocaleString()}{" "}
-                  <span className="text-[10px] font-medium text-slate-500">
+                  <span className="text-[10px] font-medium text-white/75">
                     ({remainingPercentage.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
