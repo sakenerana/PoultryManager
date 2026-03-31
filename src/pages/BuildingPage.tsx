@@ -883,7 +883,9 @@ export default function BuildingOverviewPage() {
           reduction:
             (overallMetrics?.mortality ?? growLog?.mortality ?? 0) +
             (overallMetrics?.thinning ?? growLog?.thinning ?? 0) +
-            (overallMetrics?.takeOut ?? growLog?.takeOut ?? 0),
+            (overallMetrics?.takeOut ?? growLog?.takeOut ?? 0) +
+            doa +
+            culled,
         };
       });
 

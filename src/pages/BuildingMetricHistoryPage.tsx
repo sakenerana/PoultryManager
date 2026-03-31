@@ -60,7 +60,7 @@ const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   takeOut: { title: "Take Out", accent: "bg-amber-500" },
   reduction: { title: "Reduction", accent: "bg-rose-500" },
   doa: { title: "DOA", accent: "bg-sky-500" },
-  culled: { title: "Culled", accent: "bg-emerald-500" },
+  culled: { title: "Culling", accent: "bg-emerald-500" },
 };
 
 const METRIC_CARDS: Array<{
@@ -102,10 +102,10 @@ const METRIC_CARDS: Array<{
   },
   {
     key: "culled",
-    label: "Culled",
+    label: "Culling",
     borderColor: "#8b5cf6",
     accent: "text-[#7c3aed]",
-    icon: <img src="/img/chicken-doa.svg" alt="Culled" className="h-10 w-10" />,
+    icon: <img src="/img/chicken-doa.svg" alt="Culling" className="h-10 w-10" />,
     enabledRoles: ["Admin", "Supervisor"],
   },
 ];
@@ -1460,7 +1460,7 @@ export default function BuildingMetricHistoryPage() {
   const handleSaveCulled = async () => {
     if (isSavingCulled) return;
     if (culledCount <= 0) {
-      setToastMessage("Culled Count is required.");
+      setToastMessage("Culling Count is required.");
       setIsToastOpen(true);
       return;
     }
@@ -1488,7 +1488,7 @@ export default function BuildingMetricHistoryPage() {
       return;
     }
 
-    if (!ensureCountWithinGrowTotal(culledCount, totalAnimals, "Culled Count")) {
+    if (!ensureCountWithinGrowTotal(culledCount, totalAnimals, "Culling Count")) {
       setIsSavingCulled(false);
       return;
     }
@@ -1511,7 +1511,7 @@ export default function BuildingMetricHistoryPage() {
     ]);
 
     if (error) {
-      setToastMessage(error.message || "Failed to save culled record.");
+      setToastMessage(error.message || "Failed to save culling record.");
       setIsToastOpen(true);
       setIsSavingCulled(false);
       return;
@@ -1539,7 +1539,7 @@ export default function BuildingMetricHistoryPage() {
     setCulledCount(0);
     setCulledRemarks("");
     refreshMetricHistory();
-    setToastMessage("Culled record saved.");
+    setToastMessage("Culling record saved.");
     setIsToastOpen(true);
     setIsSavingCulled(false);
   };
@@ -1547,7 +1547,7 @@ export default function BuildingMetricHistoryPage() {
   const handleSaveEditedCulled = async (entry: DoaTransactionRow) => {
     if (isEditingCulled) return;
     if (editingCulledCount <= 0) {
-      setToastMessage("Culled Count is required.");
+      setToastMessage("Culling Count is required.");
       setIsToastOpen(true);
       return;
     }
@@ -1570,7 +1570,7 @@ export default function BuildingMetricHistoryPage() {
       }
 
       const maxAllowed = totalAnimals + entry.totalAnimalsCount;
-      if (!ensureCountWithinGrowTotal(editingCulledCount, maxAllowed, "Culled Count")) {
+      if (!ensureCountWithinGrowTotal(editingCulledCount, maxAllowed, "Culling Count")) {
         setIsEditingCulled(false);
         return;
       }
@@ -1590,7 +1590,7 @@ export default function BuildingMetricHistoryPage() {
       .eq("id", entry.id);
 
     if (error) {
-      setToastMessage(error.message || "Failed to update culled record.");
+      setToastMessage(error.message || "Failed to update culling record.");
       setIsToastOpen(true);
       setIsEditingCulled(false);
       return;
@@ -1617,7 +1617,7 @@ export default function BuildingMetricHistoryPage() {
 
     resetCulledEditState();
     refreshMetricHistory();
-    setToastMessage("Culled record updated.");
+    setToastMessage("Culling record updated.");
     setIsToastOpen(true);
   };
 
@@ -1626,8 +1626,8 @@ export default function BuildingMetricHistoryPage() {
 
     const confirmed = await new Promise<boolean>((resolve) => {
       Modal.confirm({
-        title: "Remove Culled Entry",
-        content: "Are you sure you want to remove this culled record?",
+        title: "Remove Culling Entry",
+        content: "Are you sure you want to remove this culling record?",
         okText: "Remove",
         cancelText: "Cancel",
         okButtonProps: {
@@ -1669,7 +1669,7 @@ export default function BuildingMetricHistoryPage() {
       .eq("id", entry.id);
 
     if (error) {
-      setToastMessage(error.message || "Failed to remove culled record.");
+      setToastMessage(error.message || "Failed to remove culling record.");
       setIsToastOpen(true);
       setIsEditingCulled(false);
       return;
@@ -1696,7 +1696,7 @@ export default function BuildingMetricHistoryPage() {
 
     resetCulledEditState();
     refreshMetricHistory();
-    setToastMessage("Culled record removed.");
+    setToastMessage("Culling record removed.");
     setIsToastOpen(true);
   };
 
@@ -1711,7 +1711,7 @@ export default function BuildingMetricHistoryPage() {
     if (metricKey === "thinning") return "Total";
     if (metricKey === "takeOut") return "Total";
     if (metricKey === "doa") return "Total DOA";
-    if (metricKey === "culled") return "Total Culled";
+    if (metricKey === "culled") return "Total Culling";
     return "Total Reduction";
   }, [metricKey]);
   const totalAvgWeight = useMemo(() => {
@@ -1736,7 +1736,7 @@ export default function BuildingMetricHistoryPage() {
     [userRole]
   );
 
-  const renderSpecialDrawerHeader = (title: "DOA" | "Culled", onClose: () => void) => (
+  const renderSpecialDrawerHeader = (title: "DOA" | "Culling", onClose: () => void) => (
     <div
       className={[
         "sticky top-0 z-10 flex items-center justify-between",
@@ -2226,7 +2226,7 @@ export default function BuildingMetricHistoryPage() {
         headerStyle={{ display: "none" }}
         bodyStyle={{ padding: 0, backgroundColor: "#f8fafc" }}
       >
-        {renderSpecialDrawerHeader("Culled", handleCloseCulledDrawer)}
+        {renderSpecialDrawerHeader("Culling", handleCloseCulledDrawer)}
 
         <div className="p-5">
           <div className="rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
@@ -2346,7 +2346,7 @@ export default function BuildingMetricHistoryPage() {
           <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-full">
-                <div className="mb-2 text-xs font-medium text-slate-500">Culled Count</div>
+                <div className="mb-2 text-xs font-medium text-slate-500">Culling Count</div>
               <InputNumber
                 min={0}
                 value={culledCount}
@@ -2373,7 +2373,7 @@ export default function BuildingMetricHistoryPage() {
 
             {culledCount <= 0 && (
               <div className="text-xs text-red-500 mt-2">
-                Culled Count is required.
+                Culling Count is required.
               </div>
             )}
 

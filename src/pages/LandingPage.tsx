@@ -34,32 +34,32 @@ type Tile = {
 const tiles: Tile[] = [
     {
         key: "inventory",
-        title: "Preharvest",
+        title: "My Growers",
         accent: "text-[#008822]",
         borderColor: "#22c55e",
         icon: (
             <img
                 src="/img/chicken-head.svg"
-                alt="Preharvest"
+                alt="My Growers"
                 className="h-10 w-10"
             />
         ),
-        largeText: "Preharvest",
+        largeText: "My Growers",
         link: "/buildings",
     },
     {
         key: "harvest",
-        title: "Harvest",
+        title: "My Harvest",
         accent: "text-[#008822]",
         borderColor: "#84cc16",
         icon: (
             <img
                 src="/img/chicken-harvest.svg"
-                alt="Harvest"
+                alt="My Harvest"
                 className="h-10 w-10"
             />
         ),
-        largeText: "Harvest",
+        largeText: "My Harvest",
         link: "/harvest",
     },
     {
