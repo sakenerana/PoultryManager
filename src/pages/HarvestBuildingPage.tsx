@@ -707,8 +707,12 @@ export default function HarvestBuildingPage() {
           ]);
 
           editMap[building.id] = { harvestId: harvestInfo.harvestId, hasTruck: trucks.length > 0 };
+          const selectedDayEnd = dayjs(selectedDate).add(1, "day").startOf("day");
+          const cumulativeTrucks = trucks.filter((truck) =>
+            dayjs(truck.createdAt).isBefore(selectedDayEnd)
+          );
           const selectedDayTrucks = trucks.filter((truck) => isSameSelectedDate(truck.createdAt));
-          harvestAnimalsOutMap[building.id] = selectedDayTrucks.reduce(
+          harvestAnimalsOutMap[building.id] = cumulativeTrucks.reduce(
             (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
             0
           );
