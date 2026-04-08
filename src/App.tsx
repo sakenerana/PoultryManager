@@ -11,6 +11,9 @@ import BuildingAvgWeightHistoryPage from "./pages/BuildingAvgWeightHistoryPage";
 import ReportPage from "./pages/ReportPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
+import HarvestMetricHistoryPage from "./pages/HarvestMetricHistoryPage";
+import HarvestAvgWeightHistoryPage from "./pages/HarvestAvgWeightHistoryPage";
+import HarvestTruckHistoryPage from "./pages/HarvestTruckHistoryPage";
 import SettingsPage from "./pages/SettingsPage";
 import AccountsPage from "./pages/AccountsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -39,6 +42,9 @@ function App() {
             <Route path="/building-avg-weight-history/:id" element={<BuildingAvgWeightHistoryPage />} />
             <Route path="/harvest" element={<HarvestBuildingPage />} />
             <Route path="/truck/:id" element={<HarvestTruckPage />} />
+            <Route path="/harvest-metric-history/:id/:metric?" element={<HarvestMetricHistoryPage />} />
+            <Route path="/harvest-avg-weight-history/:id" element={<HarvestAvgWeightHistoryPage />} />
+            <Route path="/harvest-truck-history/:id" element={<HarvestTruckHistoryPage />} />
             <Route path="/reports" element={<ReportPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/accounts" element={<AccountsPage />} />

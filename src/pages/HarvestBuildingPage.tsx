@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout, Typography, Card, Button, Tag, Divider, Grid, DatePicker, Drawer, InputNumber, Input } from "antd";
-import { RightOutlined } from "@ant-design/icons";
 import { FaSignOutAlt } from "react-icons/fa";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
@@ -10,7 +9,7 @@ import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
-import { getHarvestById, loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
+import { getHarvestById, loadHarvests, loadHarvestTrucks } from "../controller/harvestCrud";
 import {
   addHarvestLog,
   addHarvestReductionTransaction,
@@ -37,6 +36,7 @@ type BuildingStats = {
   total: number;
   status: "Growing" | "Harvested";
   avgWeight: number;
+  trucks: number;
   reduction: number;
   totalHarvested: number;
   mortality: number;
@@ -46,6 +46,13 @@ type BuildingStats = {
   defect: number;
 };
 type EditableMetric = "mortality" | "thinning" | "takeOut" | "defect";
+type ReductionHistoryRow = {
+  date: string;
+  dayNumber: number;
+  value: number;
+  avgWeight: number | null;
+  remarks: string;
+};
 
 type BuildingCardTheme = {
   cardBorder: string;
@@ -111,6 +118,18 @@ const REDUCTION_TYPE_BY_METRIC: Record<EditableMetric, HarvestReductionType> = {
   thinning: "thinning",
   takeOut: "takeout",
   defect: "defect",
+};
+const EMPTY_REDUCTION_TOTALS: Record<EditableMetric, number> = {
+  mortality: 0,
+  thinning: 0,
+  takeOut: 0,
+  defect: 0,
+};
+const EMPTY_REDUCTION_HISTORY: Record<EditableMetric, ReductionHistoryRow[]> = {
+  mortality: [],
+  thinning: [],
+  takeOut: [],
+  defect: [],
 };
 
 function getErrorMessage(error: unknown): string {
@@ -263,14 +282,18 @@ function BuildingRow({
   onOpen,
   isMobile,
   stats,
-  onMetricClick,
+  onReductionClick,
+  onAvgWeightClick,
+  onTrucksClick,
   theme,
 }: {
   b: Building;
   onOpen: () => void;
   isMobile: boolean;
   stats: BuildingStats;
-  onMetricClick: (metric: EditableMetric, buildingId: string, current: number) => void;
+  onReductionClick: (buildingId: string) => void;
+  onAvgWeightClick: (buildingId: string) => void;
+  onTrucksClick: (buildingId: string) => void;
   theme: BuildingCardTheme;
 }) {
   const remainingBirds = stats.remaining;
@@ -363,13 +386,11 @@ function BuildingRow({
             />
             <StatPill
               label="Avg Weight"
-              value={`${stats.avgWeight.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })} g`}
+              value=""
               theme={theme}
               borderColor={getStatPillBorderColor(`${b.id}-avg-weight`)}
               backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-avg-weight`), "12")}
+              onClick={isHarvested ? undefined : () => onAvgWeightClick(b.id)}
             />
             <StatPill
               label="Total Birds Harvested"
@@ -379,44 +400,21 @@ function BuildingRow({
               backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-total-harvested`), "12")}
             />
             <StatPill
-              label="Mortality"
-              value={stats.mortality.toLocaleString()}
+              label="Trucks"
+              value={stats.trucks.toLocaleString()}
+              theme={theme}
+              borderColor={getStatPillBorderColor(`${b.id}-trucks`)}
+              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-trucks`), "12")}
+              onClick={isHarvested ? undefined : () => onTrucksClick(b.id)}
+            />
+            <StatPill
+              label="Reduction"
+              value={stats.reduction.toLocaleString()}
               leftIcon={<span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />}
-              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
-              theme={theme}
-              borderColor={getStatPillBorderColor(`${b.id}-mortality`)}
-              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-mortality`), "12")}
-              onClick={isHarvested ? undefined : () => onMetricClick("mortality", b.id, stats.mortality)}
-            />
-            <StatPill
-              label="Defect"
-              value={stats.defect.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />}
-              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
-              theme={theme}
-              borderColor={getStatPillBorderColor(`${b.id}-defect`)}
-              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-defect`), "12")}
-              onClick={isHarvested ? undefined : () => onMetricClick("defect", b.id, stats.defect)}
-            />
-            <StatPill
-              label="Take Out"
-              value={stats.takeOut.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
               theme={theme}
               borderColor={getStatPillBorderColor(`${b.id}-take-out`)}
               backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-take-out`), "12")}
-              onClick={isHarvested ? undefined : () => onMetricClick("takeOut", b.id, stats.takeOut)}
-            />
-            <StatPill
-              label="Thinning"
-              value={stats.thinning.toLocaleString()}
-              leftIcon={<span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />}
-              rightIcon={isHarvested ? undefined : <RightOutlined className="!text-slate-400 !text-[10px]" />}
-              theme={theme}
-              borderColor={getStatPillBorderColor(`${b.id}-thinning`)}
-              backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-thinning`), "12")}
-              onClick={isHarvested ? undefined : () => onMetricClick("thinning", b.id, stats.thinning)}
+              onClick={isHarvested ? undefined : () => onReductionClick(b.id)}
             />
           </div>
         </div>
@@ -439,6 +437,7 @@ export default function HarvestBuildingPage() {
   const [harvestAnimalsOutByBuilding, setHarvestAnimalsOutByBuilding] = useState<Record<string, Record<string, number>>>({});
   const [currentTotalByBuildingId, setCurrentTotalByBuildingId] = useState<Record<string, number>>({});
   const [avgWeightByBuildingId, setAvgWeightByBuildingId] = useState<Record<string, Record<string, number>>>({});
+  const [truckCountByBuildingId, setTruckCountByBuildingId] = useState<Record<string, Record<string, number>>>({});
   const [metricOverrides, setMetricOverrides] = useState<Record<EditableMetric, Record<string, Record<string, number>>>>({
     mortality: {},
     thinning: {},
@@ -458,6 +457,14 @@ export default function HarvestBuildingPage() {
   const [activeMetricPreviousValue, setActiveMetricPreviousValue] = useState(0);
   const [metricDraft, setMetricDraft] = useState<number>(0);
   const [metricRemarksDraft, setMetricRemarksDraft] = useState<string>("");
+  const [isReductionDrawerOpen, setIsReductionDrawerOpen] = useState(false);
+  const [activeReductionBuildingId, setActiveReductionBuildingId] = useState<string | null>(null);
+  const [activeReductionHistoryMetric, setActiveReductionHistoryMetric] = useState<EditableMetric | null>(null);
+  const isReductionHistoryLoading = false;
+  const [reductionHistoryByMetric, setReductionHistoryByMetric] =
+    useState<Record<EditableMetric, ReductionHistoryRow[]>>(EMPTY_REDUCTION_HISTORY);
+  const [reductionTotalsByMetric, setReductionTotalsByMetric] =
+    useState<Record<EditableMetric, number>>(EMPTY_REDUCTION_TOTALS);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
@@ -652,39 +659,6 @@ export default function HarvestBuildingPage() {
     return null;
   };
 
-  const resolveGrowTotalAnimalsByHarvest = async (
-    harvestId: number,
-    fallbackBuildingId: number
-  ): Promise<{ growId: number | null; growTotalAnimals: number | null }> => {
-    const harvest = await getHarvestById(harvestId);
-    if (harvest.growId !== null) {
-      const { data, error } = await supabase
-        .from(GROWS_TABLE)
-        .select("id, total_animals")
-        .eq("id", harvest.growId)
-        .single();
-      if (error) throw error;
-      return {
-        growId: Number(data?.id ?? harvest.growId),
-        growTotalAnimals: Math.max(0, Math.floor(Number(data?.total_animals ?? 0))),
-      };
-    }
-
-    const { data, error } = await supabase
-      .from(GROWS_TABLE)
-      .select("id, total_animals, created_at")
-      .eq("building_id", fallbackBuildingId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (error) throw error;
-    if (!data || data.length === 0) return { growId: null, growTotalAnimals: null };
-
-    return {
-      growId: Number(data[0].id),
-      growTotalAnimals: Math.max(0, Math.floor(Number(data[0].total_animals ?? 0))),
-    };
-  };
-
   const fetchHarvestMetricsByDate = async () => {
     if (buildings.length === 0) {
       setHasTruckByBuildingId({});
@@ -718,6 +692,7 @@ export default function HarvestBuildingPage() {
       const editMap: Record<string, { harvestId: number | null; hasTruck: boolean }> = {};
       const harvestAnimalsOutMap: Record<string, number> = {};
       const avgWeightMap: Record<string, number> = {};
+      const truckCountMap: Record<string, number> = {};
 
       await Promise.all(
         buildings.map(async (building) => {
@@ -735,6 +710,7 @@ export default function HarvestBuildingPage() {
 
           editMap[building.id] = { harvestId: harvestInfo.harvestId, hasTruck: trucks.length > 0 };
           harvestAnimalsOutMap[building.id] = harvestInfo.totalAnimalsOut;
+          truckCountMap[building.id] = trucks.length;
           const totalBirdsLoaded = trucks.reduce(
             (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
             0
@@ -782,6 +758,10 @@ export default function HarvestBuildingPage() {
         ...prev,
         [selectedDate]: avgWeightMap,
       }));
+      setTruckCountByBuildingId((prev) => ({
+        ...prev,
+        [selectedDate]: truckCountMap,
+      }));
       setMetricOverrides((prev) => ({
         ...prev,
         mortality: { ...prev.mortality, [selectedDate]: mortalityByBuilding },
@@ -827,6 +807,172 @@ export default function HarvestBuildingPage() {
       helper: "Adjust the defect count for this building.",
       label: "Defect Count",
     },
+  };
+  const reductionCardMeta: Record<EditableMetric, { accent: string; borderColor: string; dotColor: string }> = {
+    mortality: { accent: "text-red-600", borderColor: "#fecaca", dotColor: "bg-red-500" },
+    thinning: { accent: "text-slate-600", borderColor: "#cbd5e1", dotColor: "bg-slate-400" },
+    takeOut: { accent: "text-amber-600", borderColor: "#fde68a", dotColor: "bg-amber-500" },
+    defect: { accent: "text-orange-600", borderColor: "#fdba74", dotColor: "bg-orange-500" },
+  };
+
+  const getReductionValueForType = (metric: EditableMetric, row: {
+    reductionType: HarvestReductionType | null;
+    animalCount: number;
+  }): number => {
+    if (metric === "takeOut") {
+      return row.reductionType === "takeout" || row.reductionType === "take_out" ? row.animalCount : 0;
+    }
+    return row.reductionType === REDUCTION_TYPE_BY_METRIC[metric] ? row.animalCount : 0;
+  };
+
+  const loadReductionHistory = async (buildingId: string) => {
+    const selectedBuilding = buildings.find((item) => item.id === buildingId);
+    if (!selectedBuilding) {
+      setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
+      setReductionTotalsByMetric(EMPTY_REDUCTION_TOTALS);
+      return;
+    }
+
+    const harvestInfo = await getHarvestForBuilding(selectedBuilding);
+    if (!harvestInfo) {
+      setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
+      setReductionTotalsByMetric(EMPTY_REDUCTION_TOTALS);
+      return;
+    }
+
+    const [trucks, reductions] = await Promise.all([
+      loadHarvestTrucks({ harvestId: harvestInfo.harvestId, ascending: true, limit: 500 }),
+      loadHarvestReductionTransactionsByHarvestId(harvestInfo.harvestId),
+    ]);
+
+    if (trucks.length === 0) {
+      setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
+      setReductionTotalsByMetric(EMPTY_REDUCTION_TOTALS);
+      return;
+    }
+
+    const firstTruckDate = dayjs(trucks[0].createdAt).startOf("day");
+    const selectedHistoryDate = dayjs(selectedDate, "YYYY-MM-DD").startOf("day");
+    if (firstTruckDate.isAfter(selectedHistoryDate)) {
+      setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
+      setReductionTotalsByMetric(EMPTY_REDUCTION_TOTALS);
+      return;
+    }
+
+    const nextHistory: Record<EditableMetric, ReductionHistoryRow[]> = {
+      mortality: [],
+      thinning: [],
+      takeOut: [],
+      defect: [],
+    };
+    const nextTotals: Record<EditableMetric, number> = {
+      mortality: 0,
+      thinning: 0,
+      takeOut: 0,
+      defect: 0,
+    };
+
+    const avgWeightByDate = trucks.reduce<Record<string, { birds: number; netWeight: number }>>((acc, truck) => {
+      const dateKey = dayjs(truck.createdAt).format("YYYY-MM-DD");
+      const birds = Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0)));
+      const netWeight = Math.max(0, Number(truck.weightWithLoad ?? 0) - Number(truck.weightNoLoad ?? 0));
+      acc[dateKey] = acc[dateKey] ?? { birds: 0, netWeight: 0 };
+      acc[dateKey].birds += birds;
+      acc[dateKey].netWeight += netWeight;
+      return acc;
+    }, {});
+
+    for (
+      let cursor = firstTruckDate;
+      cursor.isBefore(selectedHistoryDate) || cursor.isSame(selectedHistoryDate, "day");
+      cursor = cursor.add(1, "day")
+    ) {
+      const dateKey = cursor.format("YYYY-MM-DD");
+      const dayRows = reductions.filter((row) => dayjs(row.createdAt).format("YYYY-MM-DD") === dateKey);
+      const avgWeightData = avgWeightByDate[dateKey];
+      const avgWeight =
+        avgWeightData && avgWeightData.birds > 0 ? avgWeightData.netWeight / avgWeightData.birds : null;
+
+      (Object.keys(metricMeta) as EditableMetric[]).forEach((metric) => {
+        const value = dayRows.reduce((sum, row) => sum + getReductionValueForType(metric, row), 0);
+        const latestRemark =
+          dayRows.find((row) => getReductionValueForType(metric, row) > 0)?.remarks?.trim() ?? "";
+
+        nextHistory[metric].push({
+          date: dateKey,
+          dayNumber: cursor.diff(firstTruckDate, "day") + 1,
+          value,
+          avgWeight,
+          remarks: latestRemark,
+        });
+        nextTotals[metric] += value;
+      });
+    }
+
+    setReductionHistoryByMetric(nextHistory);
+    setReductionTotalsByMetric(nextTotals);
+  };
+
+  const openReductionDrawer = (buildingId: string) => {
+    const selectedBuilding = buildings.find((item) => item.id === buildingId);
+    if (selectedBuilding?.growStatus === "Harvested") {
+      setToastMessage("This building is already harvested and cannot be viewed here.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const editInfo = hasTruckByBuildingId[buildingId];
+    if (!editInfo?.hasTruck) {
+      setToastMessage("You can only view reductions after adding at least one truck.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    navigate(`/harvest-metric-history/${buildingId}?date=${selectedDate}`);
+  };
+
+  const closeReductionDrawer = () => {
+    setIsReductionDrawerOpen(false);
+    setActiveReductionBuildingId(null);
+    setActiveReductionHistoryMetric(null);
+    setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
+    setReductionTotalsByMetric(EMPTY_REDUCTION_TOTALS);
+  };
+
+  const handleOpenAvgWeightHistory = async (buildingId: string) => {
+    const selectedBuilding = buildings.find((item) => item.id === buildingId);
+    if (selectedBuilding?.growStatus === "Harvested") {
+      setToastMessage("This building is already harvested and cannot be viewed here.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const editInfo = hasTruckByBuildingId[buildingId];
+    if (!editInfo?.hasTruck) {
+      setToastMessage("You can only view avg weight after adding at least one truck.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    navigate(`/harvest-avg-weight-history/${buildingId}?date=${selectedDate}`);
+  };
+
+  const handleOpenTruckHistory = async (buildingId: string) => {
+    const selectedBuilding = buildings.find((item) => item.id === buildingId);
+    if (selectedBuilding?.growStatus === "Harvested") {
+      setToastMessage("This building is already harvested and cannot be viewed here.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const editInfo = hasTruckByBuildingId[buildingId];
+    if (!editInfo?.hasTruck) {
+      setToastMessage("You can only view trucks after adding at least one truck.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    navigate(`/harvest-truck-history/${buildingId}?date=${selectedDate}`);
   };
 
   const openMetricModal = (metric: EditableMetric, buildingId: string, current: number) => {
@@ -966,41 +1112,6 @@ export default function HarvestBuildingPage() {
         });
       }
 
-      // Keep Harvest.total_animals_out in sync with reduction updates.
-      const harvest = await getHarvestById(harvestId);
-      const nextTotalAnimalsOut = Math.max(
-        0,
-        Math.floor(Number(harvest.totalAnimals ?? 0)) - previousValueForThisTx + nextValue
-      );
-      await updateHarvest(harvestId, { totalAnimals: nextTotalAnimalsOut });
-      setHarvestAnimalsOutByBuilding((prev) => ({
-        ...prev,
-        [selectedDate]: {
-          ...(prev[selectedDate] ?? {}),
-          [activeBuildingId]: nextTotalAnimalsOut,
-        },
-      }));
-
-      // Mark grow as harvested when total animals out reaches total birds.
-      const { growId, growTotalAnimals } = await resolveGrowTotalAnimalsByHarvest(
-        harvestId,
-        Number(activeBuildingId)
-      );
-      const currentTotalForBuilding =
-        currentTotalByBuildingId[activeBuildingId] ??
-        buildings.find((building) => building.id === activeBuildingId)?.total ??
-        growTotalAnimals;
-      if (growId !== null && currentTotalForBuilding !== null && nextTotalAnimalsOut >= currentTotalForBuilding) {
-        const { error: growUpdateError } = await supabase
-          .from(GROWS_TABLE)
-          .update({
-            status: "Harvested",
-            is_harvested: true,
-          })
-          .eq("id", growId);
-        if (growUpdateError) throw growUpdateError;
-      }
-
       setMetricOverrides((prev) => {
         const next = { ...prev };
         const selectedMetric = { ...next[activeMetric] };
@@ -1019,6 +1130,10 @@ export default function HarvestBuildingPage() {
         next[activeMetric] = selectedMetric;
         return next;
       });
+
+      if (isReductionDrawerOpen && activeReductionBuildingId === activeBuildingId) {
+        void loadReductionHistory(activeBuildingId).catch(() => undefined);
+      }
 
       closeMetricModal();
       setToastMessage(`${metricMeta[activeMetric].title} updated successfully.`);
@@ -1040,13 +1155,15 @@ export default function HarvestBuildingPage() {
       const defect = metricOverrides.defect[selectedDate]?.[building.id] ?? 0;
       const totalAnimalsOut = harvestAnimalsOutByBuilding[selectedDate]?.[building.id] ?? 0;
       const avgWeight = avgWeightByBuildingId[selectedDate]?.[building.id] ?? 0;
+      const trucks = truckCountByBuildingId[selectedDate]?.[building.id] ?? 0;
       const reduction = mortality + thinning + takeOut + defect;
-      const remaining = Math.max(0, currentTotal - totalAnimalsOut);
+      const remaining = Math.max(0, currentTotal - totalAnimalsOut - reduction);
       return {
         days: building.days,
         total: currentTotal,
         status: building.growStatus,
         avgWeight,
+        trucks,
         reduction,
         totalHarvested: totalAnimalsOut,
         mortality,
@@ -1056,7 +1173,7 @@ export default function HarvestBuildingPage() {
         defect,
       };
     };
-  }, [avgWeightByBuildingId, currentTotalByBuildingId, harvestAnimalsOutByBuilding, metricOverrides, selectedDate]);
+  }, [avgWeightByBuildingId, currentTotalByBuildingId, harvestAnimalsOutByBuilding, metricOverrides, selectedDate, truckCountByBuildingId]);
 
   const isMetricValid = metricDraft > 0;
   const maxMetricAllowed = activeMetricRemaining === null ? null : activeMetricRemaining + activeMetricPreviousValue;
@@ -1072,6 +1189,7 @@ export default function HarvestBuildingPage() {
         acc.totalDefect += stats.defect;
         acc.totalThinning += stats.thinning;
         acc.totalTakeOut += stats.takeOut;
+        acc.totalTrucks += stats.trucks;
         return acc;
       },
       {
@@ -1082,6 +1200,7 @@ export default function HarvestBuildingPage() {
         totalDefect: 0,
         totalThinning: 0,
         totalTakeOut: 0,
+        totalTrucks: 0,
       }
     );
   }, [buildings, getStatsForBuilding]);
@@ -1243,7 +1362,9 @@ export default function HarvestBuildingPage() {
                     stats={getStatsForBuilding(b)}
                     theme={getBuildingCardTheme(String(b.id))}
                     isMobile={isMobile}
-                    onMetricClick={openMetricModal}
+                    onReductionClick={openReductionDrawer}
+                    onAvgWeightClick={handleOpenAvgWeightHistory}
+                    onTrucksClick={handleOpenTruckHistory}
                     onOpen={() => navigate(`/truck/${b.id}`)}
                   />
                 ))}
@@ -1331,6 +1452,198 @@ export default function HarvestBuildingPage() {
         </div>
       </Drawer>
 
+      <Drawer
+        open={isReductionDrawerOpen}
+        onClose={closeReductionDrawer}
+        placement={isMobile ? "bottom" : "right"}
+        height={isMobile ? "88%" : undefined}
+        width={isMobile ? undefined : 520}
+        className="reduction-history-drawer"
+        bodyStyle={{ padding: 16, backgroundColor: "#f8fafc" }}
+      >
+        <div className="mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <Title level={4} className="!m-0">
+                {activeReductionHistoryMetric === null
+                  ? "Reduction"
+                  : `${metricMeta[activeReductionHistoryMetric].title} Daily History`}
+              </Title>
+              <div className="text-slate-500 text-sm mt-1">
+                {activeReductionHistoryMetric === null
+                  ? "Choose a reduction type to view its harvest history."
+                  : `Showing day 1 onward from the first truck added up to ${dayjs(selectedDate).format("MMMM D, YYYY")}.`}
+              </div>
+            </div>
+            {activeReductionHistoryMetric !== null && (
+              <Button onClick={() => setActiveReductionHistoryMetric(null)}>
+                Back
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {isReductionHistoryLoading ? (
+          <ChickenState title="Loading..." subtitle="" />
+        ) : activeReductionHistoryMetric === null ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(Object.keys(metricMeta) as EditableMetric[]).map((metric) => {
+              const card = reductionCardMeta[metric];
+              return (
+                <button
+                  key={metric}
+                  type="button"
+                  onClick={() => setActiveReductionHistoryMetric(metric)}
+                  style={{ borderColor: card.borderColor }}
+                  className={[
+                    "text-left bg-white rounded-sm shadow-sm border-2",
+                    "p-4 min-h-[160px]",
+                    "transition-all duration-200 cursor-pointer",
+                    "hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                        {buildings.find((building) => building.id === activeReductionBuildingId)?.name ?? "Building"}
+                      </div>
+                      <div className={["mt-1 text-lg font-bold tracking-tight", card.accent].join(" ")}>
+                        {metricMeta[metric].title}
+                      </div>
+                    </div>
+                    <div className="shrink-0 rounded-2xl bg-[#ffa600]/25 p-3 shadow-inner">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
+                        <span className={["h-3 w-3 rounded-full", card.dotColor].join(" ")} aria-hidden="true" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 px-3 py-2.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</div>
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                      <div className="text-xl font-bold text-slate-900">
+                        {reductionTotalsByMetric[metric].toLocaleString()}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-500">birds</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 h-1.5 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
+                </button>
+              );
+            })}
+          </div>
+        ) : reductionHistoryByMetric[activeReductionHistoryMetric].length === 0 ? (
+          <ChickenState
+            title="No history yet"
+            subtitle={`No ${metricMeta[activeReductionHistoryMetric].title.toLowerCase()} data found after the first truck was added.`}
+          />
+        ) : (
+          <>
+            <div className="rounded-sm border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-4 py-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                {buildings.find((building) => building.id === activeReductionBuildingId)?.name ?? "Building"}
+              </div>
+              <div className="mt-1 text-xl font-bold text-slate-900">
+                {metricMeta[activeReductionHistoryMetric].title} Daily History
+              </div>
+              <div className="mt-2 text-sm text-slate-600">
+                Showing day 1 to {dayjs(selectedDate).format("MMMM D, YYYY")}
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Days Listed</span>
+                  <span className="text-sm font-bold text-slate-900">
+                    {reductionHistoryByMetric[activeReductionHistoryMetric].length}
+                  </span>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</span>
+                  <span className="text-sm font-bold text-slate-900">
+                    {reductionTotalsByMetric[activeReductionHistoryMetric].toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3">
+              {reductionHistoryByMetric[activeReductionHistoryMetric].map((row) => (
+                <div
+                  key={`${activeReductionHistoryMetric}-${row.date}`}
+                  className="rounded-sm border border-emerald-200 bg-white px-4 py-3 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={[
+                            "h-2.5 w-2.5 rounded-full",
+                            reductionCardMeta[activeReductionHistoryMetric].dotColor,
+                          ].join(" ")}
+                          aria-hidden="true"
+                        />
+                        <div className="text-sm font-semibold text-slate-900">Day {row.dayNumber}</div>
+                      </div>
+                      <div className="mt-1 text-sm text-slate-600">{dayjs(row.date).format("MMMM D, YYYY")}</div>
+                      {row.remarks ? (
+                        <div className="mt-2 text-xs text-slate-500">
+                          Remarks: <span className="font-medium text-slate-700">{row.remarks}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="min-w-[108px] text-right">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">
+                        {metricMeta[activeReductionHistoryMetric].title}
+                      </div>
+                      <div className="mt-0.5 text-2xl font-bold leading-none text-slate-900">
+                        {row.value.toLocaleString()}
+                      </div>
+                      <div className="mt-2 grid gap-1 text-[10px] text-slate-500">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="uppercase tracking-wide">Avg. Weight</span>
+                          <span className="text-xs font-semibold text-slate-700">
+                            {row.avgWeight !== null
+                              ? `${row.avgWeight.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })} g`
+                              : "-"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {activeReductionBuildingId !== null && (
+              <div className="mt-4">
+                <Button
+                  type="primary"
+                  className="!w-full"
+                  style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
+                  onClick={() => {
+                    const selectedBuilding = buildings.find((building) => building.id === activeReductionBuildingId);
+                    if (!selectedBuilding) return;
+                    const stats = getStatsForBuilding(selectedBuilding);
+                    const currentValue =
+                      activeReductionHistoryMetric === "mortality"
+                        ? stats.mortality
+                        : activeReductionHistoryMetric === "thinning"
+                          ? stats.thinning
+                          : activeReductionHistoryMetric === "takeOut"
+                            ? stats.takeOut
+                            : stats.defect;
+                    openMetricModal(activeReductionHistoryMetric, activeReductionBuildingId, currentValue);
+                  }}
+                >
+                  Update {metricMeta[activeReductionHistoryMetric].title} for Selected Date
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </Drawer>
+
       <NotificationToast
         open={isToastOpen}
         message={toastMessage}
@@ -1340,4 +1653,3 @@ export default function HarvestBuildingPage() {
     </Layout>
   );
 }
-

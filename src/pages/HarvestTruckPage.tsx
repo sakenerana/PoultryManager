@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { FaSignOutAlt } from "react-icons/fa";
@@ -10,6 +10,7 @@ import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { loadHarvestReductionTransactionsByHarvestId } from "../controller/harvestLogsCrud";
 import {
   addHarvest,
   addHarvestTruck,
@@ -150,6 +151,7 @@ function TruckRow({
   canLoad,
   canEditBirdsLoad,
   onLoadClick,
+  onEditClick,
 }: {
   truck: Truck;
   isMobile: boolean;
@@ -157,14 +159,15 @@ function TruckRow({
   canLoad: boolean;
   canEditBirdsLoad: boolean;
   onLoadClick: (truck: Truck) => void;
+  onEditClick: (truck: Truck) => void;
 }) {
   const avgWeight = computeAvgWeight(truck);
 
   return (
     <Card
-      hoverable
       className={[
-        "!border !border-emerald-200 bg-white/95 shadow-sm hover:shadow-md transition h-full",
+        "!border !border-emerald-200 bg-white/95 shadow-sm transition h-full",
+        "hover:shadow-md",
         "!rounded-sm",
       ].join(" ")}
       bodyStyle={{ padding: isMobile ? 10 : 14 }}
@@ -213,6 +216,7 @@ function TruckRow({
             <StatPill
               label="Weight(No Load)"
               value={truck.weightNoLoad > 0 ? `${truck.weightNoLoad.toLocaleString()} g` : "0 g"}
+              onClick={canEditBirdsLoad ? () => onEditClick(truck) : undefined}
             />
             <StatPill
               label="Weight(Load)"
@@ -230,8 +234,6 @@ function TruckRow({
             <StatPill label="Status" value={<StatusBadge status={truck.status} />} />
           </div>
         </div>
-
-        {!isMobile && <div className="text-slate-300 text-lg mt-2">{">"}</div>}
       </div>
     </Card>
   );
@@ -241,16 +243,18 @@ export default function HarvestTruckPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { id: buildingIdParam } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
-  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
+  const [selectedDate, setSelectedDate] = useState<string>(searchParams.get("date") ?? dayjs().format("YYYY-MM-DD"));
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSavingAdd, setIsSavingAdd] = useState(false);
   const [isLoadDrawerOpen, setIsLoadDrawerOpen] = useState(false);
   const [isSavingLoad, setIsSavingLoad] = useState(false);
+  const [activeEditTruckId, setActiveEditTruckId] = useState<string | null>(null);
   const [activeTruckId, setActiveTruckId] = useState<string | null>(null);
   const [activeHarvestRemaining, setActiveHarvestRemaining] = useState<number | null>(null);
   const [activeTruckPreviousBirdsLoad, setActiveTruckPreviousBirdsLoad] = useState(0);
@@ -277,6 +281,11 @@ export default function HarvestTruckPage() {
     setToastMessage(`Filtered date: ${dayjs(nextDate).format("MMM D, YYYY")}`);
     setIsToastOpen(true);
   };
+
+  useEffect(() => {
+    const nextDate = searchParams.get("date") ?? dayjs().format("YYYY-MM-DD");
+    setSelectedDate(nextDate);
+  }, [searchParams]);
 
   const filteredTrucks = useMemo(() => {
     const getTrailingNumber = (name: string): number | null => {
@@ -480,6 +489,7 @@ export default function HarvestTruckPage() {
   }, [user?.id]);
 
   const handleOpenAdd = () => {
+    setActiveEditTruckId(null);
     const nextIndex = filteredTrucks.length + 1;
     addForm.setFieldsValue({
       name: `Truck ${nextIndex}`,
@@ -492,7 +502,20 @@ export default function HarvestTruckPage() {
 
   const handleCloseAdd = () => {
     setIsAddModalOpen(false);
+    setActiveEditTruckId(null);
     addForm.resetFields();
+  };
+
+  const handleOpenEditTruck = (truck: Truck) => {
+    if (userRole !== "Admin") return;
+    setActiveEditTruckId(truck.id);
+    addForm.setFieldsValue({
+      name: truck.name,
+      dateTime: parseTruckDate(truck.dateTime),
+      plateNo: truck.plateNo,
+      weightNoLoad: truck.weightNoLoad,
+    });
+    setIsAddModalOpen(true);
   };
 
   const handleSubmitAdd = async () => {
@@ -503,6 +526,20 @@ export default function HarvestTruckPage() {
       const buildingId = Number(buildingIdParam);
       if (!Number.isFinite(buildingId) || buildingId <= 0) {
         throw new Error("Invalid building id.");
+      }
+
+      if (activeEditTruckId) {
+        await updateHarvestTruck(activeEditTruckId, {
+          name: values.name,
+          plateNo: values.plateNo,
+          weightNoLoad: Number(values.weightNoLoad) || 0,
+        });
+
+        await fetchTrucksFromSupabase();
+        handleCloseAdd();
+        setToastMessage(`Successfully updated ${values.name}`);
+        setIsToastOpen(true);
+        return;
       }
 
       // 1) Insert to HarvestTrucks first, default status = Loading.
@@ -585,7 +622,15 @@ export default function HarvestTruckPage() {
             return;
           }
 
-          const remaining = Math.max(0, growTotalAnimals - harvest.totalAnimals);
+          const reductions = await loadHarvestReductionTransactionsByHarvestId(Number(harvest.id));
+          const reductionTotal = reductions.reduce(
+            (sum, row) => sum + Math.max(0, Math.floor(Number(row.animalCount ?? 0))),
+            0
+          );
+          const remaining = Math.max(
+            0,
+            growTotalAnimals - Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0))) - reductionTotal
+          );
           setActiveHarvestRemaining(remaining);
         })
         .catch(() => {
@@ -633,9 +678,14 @@ export default function HarvestTruckPage() {
         const harvest = await getHarvestById(updatedTruck.harvestId);
         const nextTotalAnimalsOut = Math.max(0, harvest.totalAnimals + animalsLoadedDelta);
         const growTotalAnimals = await getGrowTotalAnimals(harvest.growId, buildingId);
+        const reductions = await loadHarvestReductionTransactionsByHarvestId(Number(harvest.id));
+        const reductionTotal = reductions.reduce(
+          (sum, row) => sum + Math.max(0, Math.floor(Number(row.animalCount ?? 0))),
+          0
+        );
         const remainingAfterLoad = growTotalAnimals === null
           ? null
-          : Math.max(0, growTotalAnimals - nextTotalAnimalsOut);
+          : Math.max(0, growTotalAnimals - nextTotalAnimalsOut - reductionTotal);
 
         const shouldMarkHarvestCompleted = remainingAfterLoad !== null && remainingAfterLoad <= 0;
         const shouldUpdateTotalAnimalsOut = animalsLoadedDelta !== 0;
@@ -846,6 +896,7 @@ export default function HarvestTruckPage() {
                     canLoad={canLoadTruck}
                     canEditBirdsLoad={userRole === "Admin"}
                     onLoadClick={handleOpenLoadDrawer}
+                    onEditClick={handleOpenEditTruck}
                   />
                 ))}
               </div>
@@ -884,10 +935,10 @@ export default function HarvestTruckPage() {
       >
         <div className="mb-4">
           <Title level={4} className="!m-0">
-            Add Truck
+            {activeEditTruckId ? "Edit Truck" : "Add Truck"}
           </Title>
           <div className="text-slate-500 text-sm mt-1">
-            Enter the details to add a truck record.
+            {activeEditTruckId ? "Update the details for this truck record." : "Enter the details to add a truck record."}
           </div>
         </div>
 
@@ -945,7 +996,7 @@ export default function HarvestTruckPage() {
               loading={isSavingAdd}
               disabled={isSavingAdd}
             >
-              Load Truck
+              {activeEditTruckId ? "Save Changes" : "Load Truck"}
             </Button>
           </div>
         </Form>
