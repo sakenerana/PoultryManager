@@ -7,6 +7,7 @@ import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import {
@@ -41,6 +42,9 @@ const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+
+type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -63,14 +67,32 @@ const computeAvgWeight = (truck: Truck) => {
   return (truck.weightLoad - truck.weightNoLoad) / truck.birdsLoad;
 };
 
-function StatPill({ label, value }: { label: string; value: React.ReactNode }) {
+function StatPill({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: React.ReactNode;
+  onClick?: () => void;
+}) {
+  const isClickable = typeof onClick === "function";
+
   return (
-    <div className="rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!isClickable}
+      className={[
+        "w-full rounded-lg border border-emerald-200 bg-slate-50 px-2 py-1.5 text-left",
+        isClickable ? "cursor-pointer transition hover:border-emerald-400 hover:bg-emerald-50" : "cursor-default",
+      ].join(" ")}
+    >
       <div className="text-[10px] text-slate-500 leading-none">{label}</div>
       <div className="mt-0.5 flex items-center gap-2 text-[13px] font-semibold text-slate-900 leading-none">
         {value}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -126,12 +148,14 @@ function TruckRow({
   isMobile,
   displayName,
   canLoad,
+  canEditBirdsLoad,
   onLoadClick,
 }: {
   truck: Truck;
   isMobile: boolean;
   displayName: string;
   canLoad: boolean;
+  canEditBirdsLoad: boolean;
   onLoadClick: (truck: Truck) => void;
 }) {
   const avgWeight = computeAvgWeight(truck);
@@ -194,7 +218,11 @@ function TruckRow({
               label="Weight(Load)"
               value={truck.weightLoad > 0 ? `${truck.weightLoad.toLocaleString()} g` : "0 g"}
             />
-            <StatPill label="Birds Load" value={truck.birdsLoad > 0 ? truck.birdsLoad.toLocaleString() : "0"} />
+            <StatPill
+              label="Birds Load"
+              value={truck.birdsLoad > 0 ? truck.birdsLoad.toLocaleString() : "0"}
+              onClick={canEditBirdsLoad ? () => onLoadClick(truck) : undefined}
+            />
             <StatPill
               label="Avg. Weight"
               value={avgWeight !== null ? `${avgWeight.toFixed(2)} g/bird` : "N/A"}
@@ -211,6 +239,7 @@ function TruckRow({
 
 export default function HarvestTruckPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { id: buildingIdParam } = useParams<{ id: string }>();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -227,11 +256,13 @@ export default function HarvestTruckPage() {
   const [activeTruckPreviousBirdsLoad, setActiveTruckPreviousBirdsLoad] = useState(0);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [userRole, setUserRole] = useState<UserRole>(null);
   const [addForm] = Form.useForm();
   const [loadForm] = Form.useForm();
   const loadFormValues = Form.useWatch([], loadForm);
 
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
+  const canLoadTruck = isTodaySelected || userRole === "Admin" || userRole === "Supervisor";
   const isLoadFormValid =
     Number(loadFormValues?.weightLoad) > 0 &&
     Number(loadFormValues?.birdsLoad) > 0;
@@ -421,6 +452,32 @@ export default function HarvestTruckPage() {
   useEffect(() => {
     void fetchTrucksFromSupabase();
   }, [buildingIdParam, selectedDate]);
+
+  useEffect(() => {
+    const resolveUserRole = async () => {
+      if (!user?.id) {
+        setUserRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select("role")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        setUserRole(null);
+        return;
+      }
+
+      setUserRole(data?.role === "Admin" || data?.role === "Supervisor" ? data.role : "Staff");
+    };
+
+    void resolveUserRole();
+  }, [user?.id]);
 
   const handleOpenAdd = () => {
     const nextIndex = filteredTrucks.length + 1;
@@ -786,7 +843,8 @@ export default function HarvestTruckPage() {
                     truck={truck}
                     isMobile={isMobile}
                     displayName={truck.name}
-                    canLoad={isTodaySelected}
+                    canLoad={canLoadTruck}
+                    canEditBirdsLoad={userRole === "Admin"}
                     onLoadClick={handleOpenLoadDrawer}
                   />
                 ))}
