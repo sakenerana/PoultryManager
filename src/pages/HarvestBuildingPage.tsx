@@ -648,14 +648,6 @@ export default function HarvestBuildingPage() {
       };
     }
 
-    const byBuilding = await loadHarvests({ buildingId: Number(building.id), limit: 1 });
-    if (byBuilding.length > 0) {
-      return {
-        harvestId: Number(byBuilding[0].id),
-        totalAnimalsOut: Math.max(0, Math.floor(Number(byBuilding[0].totalAnimals ?? 0))),
-      };
-    }
-
     return null;
   };
 
@@ -700,6 +692,12 @@ export default function HarvestBuildingPage() {
           if (harvestInfo == null) {
             editMap[building.id] = { harvestId: null, hasTruck: false };
             harvestAnimalsOutMap[building.id] = 0;
+            truckCountMap[building.id] = 0;
+            avgWeightMap[building.id] = 0;
+            mortalityByBuilding[building.id] = 0;
+            thinningByBuilding[building.id] = 0;
+            takeOutByBuilding[building.id] = 0;
+            defectByBuilding[building.id] = 0;
             return;
           }
 
@@ -709,13 +707,17 @@ export default function HarvestBuildingPage() {
           ]);
 
           editMap[building.id] = { harvestId: harvestInfo.harvestId, hasTruck: trucks.length > 0 };
-          harvestAnimalsOutMap[building.id] = harvestInfo.totalAnimalsOut;
-          truckCountMap[building.id] = trucks.length;
-          const totalBirdsLoaded = trucks.reduce(
+          const selectedDayTrucks = trucks.filter((truck) => isSameSelectedDate(truck.createdAt));
+          harvestAnimalsOutMap[building.id] = selectedDayTrucks.reduce(
             (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
             0
           );
-          const totalNetWeight = trucks.reduce(
+          truckCountMap[building.id] = selectedDayTrucks.length;
+          const totalBirdsLoaded = selectedDayTrucks.reduce(
+            (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
+            0
+          );
+          const totalNetWeight = selectedDayTrucks.reduce(
             (sum, truck) => sum + Math.max(0, Number(truck.weightWithLoad ?? 0) - Number(truck.weightNoLoad ?? 0)),
             0
           );

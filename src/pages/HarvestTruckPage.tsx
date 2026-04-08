@@ -397,6 +397,22 @@ export default function HarvestTruckPage() {
     return Math.max(0, Math.floor(Number(data[0]?.total_animals ?? 0)));
   };
 
+  const resolveCurrentGrowIdForBuilding = async (buildingId: number): Promise<number | null> => {
+    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const { data: growRows, error: growError } = await supabase
+      .from(GROWS_TABLE)
+      .select("id, created_at")
+      .eq("building_id", buildingId)
+      .lt("created_at", selectedDayEnd)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (growError) throw growError;
+
+    const grow = (growRows?.[0] ?? null) as { id: number } | null;
+    return grow ? Number(grow.id) : null;
+  };
+
   const fetchTrucksFromSupabase = async () => {
     const buildingId = Number(buildingIdParam);
     if (!Number.isFinite(buildingId) || buildingId <= 0) {
@@ -408,8 +424,13 @@ export default function HarvestTruckPage() {
     try {
       const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
       const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+      const growId = await resolveCurrentGrowIdForBuilding(buildingId);
+      if (growId === null) {
+        setTrucks([]);
+        return;
+      }
 
-      const harvests = await loadHarvests({ buildingId, limit: 500 });
+      const harvests = await loadHarvests({ growId, limit: 500 });
       if (harvests.length === 0) {
         setTrucks([]);
         return;
@@ -555,17 +576,7 @@ export default function HarvestTruckPage() {
       createdTruckId = createdTruck.id;
 
       // 2) Upsert Harvests with default status = Loading.
-      const { data: growRows, error: growError } = await supabase
-        .from(GROWS_TABLE)
-        .select("id, created_at")
-        .eq("building_id", buildingId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (growError) throw growError;
-      const grow = (growRows?.[0] ?? null) as { id: number } | null;
-
-      const growId = grow ? Number(grow.id) : null;
+      const growId = await resolveCurrentGrowIdForBuilding(buildingId);
 
       const existingHarvests = await loadHarvests({
         ...(growId !== null ? { growId } : { buildingId }),
