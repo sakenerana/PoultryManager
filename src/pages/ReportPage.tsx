@@ -521,14 +521,63 @@ export default function BuildingHarvestedReportPage() {
                     </div>
                     <div>
                       <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Created Date Range</div>
-                      <RangePicker
-                        className="!w-full"
-                        size="large"
-                        value={dateRange}
-                        onChange={(dates) => setDateRange(dates as [Dayjs, Dayjs] | null)}
-                        placeholder={["Start date", "End date"]}
-                        allowClear
-                      />
+                      {isMobile ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <DatePicker
+                            className="!w-full"
+                            size="middle"
+                            value={dateRange?.[0] ?? null}
+                            placeholder="Start"
+                            allowClear
+                            onChange={(startDate) => {
+                              if (!startDate) {
+                                setDateRange(null);
+                                return;
+                              }
+                              const currentEnd = dateRange?.[1] ?? startDate;
+                              setDateRange(
+                                currentEnd.isBefore(startDate, "day")
+                                  ? [startDate, startDate]
+                                  : [startDate, currentEnd]
+                              );
+                            }}
+                            disabledDate={(current) =>
+                              !!dateRange?.[1] && current.isAfter(dateRange[1], "day")
+                            }
+                          />
+                          <DatePicker
+                            className="!w-full"
+                            size="middle"
+                            value={dateRange?.[1] ?? null}
+                            placeholder="End"
+                            allowClear
+                            onChange={(endDate) => {
+                              if (!endDate) {
+                                setDateRange(null);
+                                return;
+                              }
+                              const currentStart = dateRange?.[0] ?? endDate;
+                              setDateRange(
+                                endDate.isBefore(currentStart, "day")
+                                  ? [currentStart, currentStart]
+                                  : [currentStart, endDate]
+                              );
+                            }}
+                            disabledDate={(current) =>
+                              !!dateRange?.[0] && current.isBefore(dateRange[0], "day")
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <RangePicker
+                          className="!w-full"
+                          size="large"
+                          value={dateRange}
+                          onChange={(dates) => setDateRange(dates as [Dayjs, Dayjs] | null)}
+                          placeholder={["Start date", "End date"]}
+                          allowClear
+                        />
+                      )}
                     </div>
                   </div>
                   <div className={isMobile ? "flex justify-end" : "col-span-3 flex justify-end"}>

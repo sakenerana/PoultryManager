@@ -716,7 +716,7 @@ export default function HarvestBuildingPage() {
             (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
             0
           );
-          truckCountMap[building.id] = selectedDayTrucks.length;
+          truckCountMap[building.id] = cumulativeTrucks.length;
           const totalBirdsLoaded = selectedDayTrucks.reduce(
             (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
             0
