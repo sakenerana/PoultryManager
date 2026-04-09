@@ -1,11 +1,9 @@
 const UPDATE_EVENT = "pwa-update-state";
-const AUTO_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 let hasRegisteredControllerChange = false;
 let isReloadingForUpdate = false;
 let activeRegistration = null;
 let clearMessageTimeout = null;
-let lastAutoUpdateCheckAt = 0;
 
 function clearPendingMessageReset() {
   if (clearMessageTimeout != null) {
@@ -53,21 +51,19 @@ function activateWaitingWorker(worker) {
   worker.postMessage({ type: "SKIP_WAITING" });
 }
 
-function trackInstallingWorker(worker) {
+function waitForInstallingWorker(worker) {
   if (!worker) return;
-  const hadActiveController = Boolean(navigator.serviceWorker.controller);
 
-  if (hadActiveController) {
-    dispatchUpdateState({
-      status: "updating",
-      message: "Downloading the latest version...",
-    });
-  }
+  return new Promise((resolve) => {
+    const handleStateChange = () => {
+      if (worker.state === "installed" || worker.state === "redundant") {
+        worker.removeEventListener("statechange", handleStateChange);
+        resolve(worker.state);
+      }
+    };
 
-  worker.addEventListener("statechange", () => {
-    if (worker.state === "installed" && hadActiveController) {
-      dispatchReadyState();
-    }
+    worker.addEventListener("statechange", handleStateChange);
+    handleStateChange();
   });
 }
 
@@ -96,30 +92,6 @@ export function registerServiceWorker() {
       const registration = await navigator.serviceWorker.register("/service-worker.js");
       activeRegistration = registration;
       attachControllerChangeReload();
-
-      if (registration.waiting) {
-        dispatchReadyState();
-      }
-
-      if (registration.installing) {
-        trackInstallingWorker(registration.installing);
-      }
-
-      registration.addEventListener("updatefound", () => {
-        trackInstallingWorker(registration.installing);
-      });
-
-      const requestSilentUpdateCheck = () => {
-        const now = Date.now();
-        if (now - lastAutoUpdateCheckAt < AUTO_UPDATE_CHECK_INTERVAL_MS) {
-          return;
-        }
-        lastAutoUpdateCheckAt = now;
-        void checkForAppUpdate({ silent: true });
-      };
-
-      window.setTimeout(requestSilentUpdateCheck, 30 * 1000);
-      window.setInterval(requestSilentUpdateCheck, AUTO_UPDATE_CHECK_INTERVAL_MS);
     } catch (error) {
       console.error("Service worker registration failed:", error);
       dispatchUpdateState({
@@ -173,6 +145,17 @@ export async function checkForAppUpdate(options = {}) {
     }
 
     await registration.update();
+
+    if (registration.installing) {
+      if (!isSilent) {
+        dispatchUpdateState({
+          status: "updating",
+          message: "Downloading the latest version...",
+        });
+      }
+
+      await waitForInstallingWorker(registration.installing);
+    }
 
     if (registration.waiting) {
       dispatchReadyState();
