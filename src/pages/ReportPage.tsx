@@ -526,6 +526,7 @@ export default function BuildingHarvestedReportPage() {
                           <DatePicker
                             className="!w-full"
                             size="middle"
+                            styles={{ input: { fontSize: 16 } }}
                             value={dateRange?.[0] ?? null}
                             placeholder="Start"
                             allowClear
@@ -548,6 +549,7 @@ export default function BuildingHarvestedReportPage() {
                           <DatePicker
                             className="!w-full"
                             size="middle"
+                            styles={{ input: { fontSize: 16 } }}
                             value={dateRange?.[1] ?? null}
                             placeholder="End"
                             allowClear
@@ -586,9 +588,18 @@ export default function BuildingHarvestedReportPage() {
                         Clear Dates
                       </Button>
                     ) : (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Coverage</div>
-                        <div className="mt-1 text-sm font-medium text-slate-700">{dateRangeLabel}</div>
+                      <div
+                        className={[
+                          "border border-slate-200 bg-slate-50 text-right",
+                          isMobile ? "rounded-lg px-3 py-2" : "rounded-xl px-4 py-3",
+                        ].join(" ")}
+                      >
+                        <div className={isMobile ? "text-[9px] uppercase tracking-[0.12em] text-slate-500" : "text-[11px] uppercase tracking-[0.14em] text-slate-500"}>
+                          Coverage
+                        </div>
+                        <div className={isMobile ? "mt-0.5 text-xs font-medium text-slate-700" : "mt-1 text-sm font-medium text-slate-700"}>
+                          {dateRangeLabel}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -596,43 +607,49 @@ export default function BuildingHarvestedReportPage() {
               </div>
             </div>
 
-            <Row gutter={[16, 16]}>
-              <Col xs={24} sm={12} lg={8}>
+            <Row gutter={isMobile ? [8, 8] : [16, 16]}>
+              <Col xs={8} sm={12} lg={8}>
                 <Card
                   className="!rounded-sm !border !border-slate-200 shadow-sm"
-                  styles={{ body: { padding: isMobile ? 14 : 16 } }}
+                  styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvested Grows</div>
+                  <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500" : "text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"}>
+                    Harvested Grows
+                  </div>
                   <Statistic
                     value={summary.totalGrows}
-                    valueStyle={{ color: "#0f172a", fontSize: isMobile ? 24 : 28, fontWeight: 700, lineHeight: 1.1 }}
+                    valueStyle={{ color: "#0f172a", fontSize: isMobile ? 16 : 28, fontWeight: 700, lineHeight: 1.05 }}
                   />
                 </Card>
               </Col>
-              <Col xs={24} sm={12} lg={8}>
+              <Col xs={8} sm={12} lg={8}>
                 <Card
                   className="!rounded-sm !border !border-emerald-100 shadow-sm"
-                  styles={{ body: { padding: isMobile ? 14 : 16 } }}
+                  styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Birds Harvested</div>
+                  <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-700" : "text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700"}>
+                    Overall Birds Harvested
+                  </div>
                   <Statistic
                     value={summary.totalBirds}
                     groupSeparator=","
-                    valueStyle={{ color: BRAND, fontSize: isMobile ? 24 : 28, fontWeight: 700, lineHeight: 1.1 }}
+                    valueStyle={{ color: BRAND, fontSize: isMobile ? 16 : 28, fontWeight: 700, lineHeight: 1.05 }}
                   />
                 </Card>
               </Col>
-              <Col xs={24} sm={12} lg={8}>
+              <Col xs={8} sm={12} lg={8}>
                 <Card
                   className="!rounded-sm !border !border-amber-100 shadow-sm"
-                  styles={{ body: { padding: isMobile ? 14 : 16 } }}
+                  styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Average per Grow</div>
+                  <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700" : "text-xs font-semibold uppercase tracking-[0.16em] text-amber-700"}>
+                    Average per Grow
+                  </div>
                   <Statistic
                     value={summary.avgBirdsPerGrow}
                     precision={0}
                     groupSeparator=","
-                    valueStyle={{ color: "#92400e", fontSize: isMobile ? 24 : 28, fontWeight: 700, lineHeight: 1.1 }}
+                    valueStyle={{ color: "#92400e", fontSize: isMobile ? 16 : 28, fontWeight: 700, lineHeight: 1.05 }}
                   />
                 </Card>
               </Col>
@@ -695,25 +712,30 @@ export default function BuildingHarvestedReportPage() {
               fullScreen={false}
             />
           ) : isMobile ? (
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-3">
               {reportRows.map((row) => (
-                <Card key={row.growId} size="small" className="!rounded-sm !border !border-slate-200 shadow-sm">
-                  <div className="flex justify-between items-start mb-3">
+                <Card
+                  key={row.growId}
+                  size="small"
+                  className="!rounded-sm !border !border-slate-200 shadow-sm"
+                  styles={{ body: { padding: 10 } }}
+                >
+                  <div className="flex justify-between items-start mb-2">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Harvest Entry</div>
-                      <span className="font-semibold text-emerald-700 text-lg">Grow #{row.growId}</span>
-                      <div className="text-xs text-slate-500 mt-0.5">{row.buildingName}</div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Harvest Entry</div>
+                      <span className="font-semibold text-emerald-700 text-[20px] leading-none">Grow #{row.growId}</span>
+                      <div className="text-[10px] text-slate-500 mt-0.5">{row.buildingName}</div>
                     </div>
-                    <Tag color="orange" className="!rounded-full !px-3 !py-1 !font-medium">Harvested</Tag>
+                    <Tag color="orange" className="!rounded-full !px-2 !py-0 !text-[10px] !font-medium">Harvested</Tag>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 mt-2 text-sm">
-                    <div className="col-span-2 rounded-xl bg-slate-50 px-3 py-3">
-                      <div className="text-slate-500 text-xs uppercase tracking-wide">Created Date</div>
-                      <div className="font-medium text-slate-900">{dayjs(row.createdAt).format("MMM D, YYYY")}</div>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                      <div className="text-slate-500 text-[9px] uppercase tracking-wide">Created Date</div>
+                      <div className="font-medium text-[13px] leading-none text-slate-900 mt-1">{dayjs(row.createdAt).format("MMM D, YYYY")}</div>
                     </div>
-                    <div className="col-span-2 rounded-xl bg-emerald-50 px-3 py-3">
-                      <div className="text-emerald-700 text-xs uppercase tracking-wide">Total Birds</div>
-                      <div className="font-bold text-emerald-800 text-xl">{row.totalBirds.toLocaleString()}</div>
+                    <div className="rounded-lg bg-emerald-50 px-2.5 py-2">
+                      <div className="text-emerald-700 text-[9px] uppercase tracking-wide">Total Birds</div>
+                      <div className="font-bold text-emerald-800 text-[24px] leading-none mt-1">{row.totalBirds.toLocaleString()}</div>
                     </div>
                   </div>
                 </Card>

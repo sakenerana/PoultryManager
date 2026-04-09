@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { Layout, Typography, Card, Button, Divider, Grid, DatePicker, Drawer, Form, Input, Popconfirm } from "antd";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { FaSignOutAlt } from "react-icons/fa";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
@@ -149,16 +149,20 @@ function TruckRow({
   isMobile,
   displayName,
   canLoad,
+  canDelete,
   canEditBirdsLoad,
   onLoadClick,
+  onDeleteClick,
   onEditClick,
 }: {
   truck: Truck;
   isMobile: boolean;
   displayName: string;
   canLoad: boolean;
+  canDelete: boolean;
   canEditBirdsLoad: boolean;
   onLoadClick: (truck: Truck) => void;
+  onDeleteClick: (truck: Truck) => void;
   onEditClick: (truck: Truck) => void;
 }) {
   const avgWeight = computeAvgWeight(truck);
@@ -187,23 +191,56 @@ function TruckRow({
             <div className="font-semibold text-slate-900 truncate" style={{ fontSize: isMobile ? 13 : 15 }}>
               {displayName}
             </div>
-            {canLoad && truck.status === "Loading" && (
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onLoadClick(truck);
-                }}
-                className={[
-                  "!font-medium shadow-sm !rounded-md",
-                  isMobile ? "!px-3 !h-6 !text-[12px]" : "!px-4 !h-8 !text-[12px]",
-                ].join(" ")}
-                style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
-              >
-                Load Truck
-              </Button>
+            {truck.status === "Loading" && (
+              <div className="flex items-center gap-2">
+                {canDelete && (
+                  <Popconfirm
+                    title={`Remove ${truck.name}?`}
+                    description="This will permanently remove this truck record."
+                    okText="Yes, remove"
+                    cancelText="Cancel"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => onDeleteClick(truck)}
+                  >
+                    <Button
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                      className={[
+                        "!font-semibold !border-0 !text-white shadow-sm hover:!text-white",
+                        "!bg-gradient-to-r !from-rose-500 !to-red-600 hover:!from-rose-600 hover:!to-red-700",
+                        "!shadow-[0_8px_18px_rgba(220,38,38,0.22)] !rounded-full",
+                        isMobile ? "!px-3 !h-6 !text-[12px]" : "!px-4 !h-8 !text-[12px]",
+                      ].join(" ")}
+                      style={{
+                        borderColor: "transparent",
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </Popconfirm>
+                )}
+                {canLoad && (
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onLoadClick(truck);
+                    }}
+                    className={[
+                      "!font-medium shadow-sm !rounded-md",
+                      isMobile ? "!px-3 !h-6 !text-[12px]" : "!px-4 !h-8 !text-[12px]",
+                    ].join(" ")}
+                    style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
+                  >
+                    Load Truck
+                  </Button>
+                )}
+              </div>
             )}
           </div>
 
@@ -537,6 +574,24 @@ export default function HarvestTruckPage() {
       weightNoLoad: truck.weightNoLoad,
     });
     setIsAddModalOpen(true);
+  };
+
+  const handleDeleteTruck = async (truck: Truck) => {
+    if (userRole !== "Admin" || truck.status !== "Loading") return;
+
+    try {
+      await deleteHarvestTruck(truck.id);
+      if (activeTruckId === truck.id) {
+        handleCloseLoadDrawer();
+      }
+      await fetchTrucksFromSupabase();
+      setToastMessage(`${truck.name} deleted successfully.`);
+      setIsToastOpen(true);
+    } catch (error) {
+      console.error("Failed to delete truck:", error);
+      setToastMessage("Failed to delete truck.");
+      setIsToastOpen(true);
+    }
   };
 
   const handleSubmitAdd = async () => {
@@ -905,8 +960,10 @@ export default function HarvestTruckPage() {
                     isMobile={isMobile}
                     displayName={truck.name}
                     canLoad={canLoadTruck}
+                    canDelete={userRole === "Admin"}
                     canEditBirdsLoad={userRole === "Admin"}
                     onLoadClick={handleOpenLoadDrawer}
+                    onDeleteClick={handleDeleteTruck}
                     onEditClick={handleOpenEditTruck}
                   />
                 ))}
