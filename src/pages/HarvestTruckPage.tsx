@@ -63,6 +63,24 @@ const parseTruckDate = (value: string) => {
   return dayjs(value);
 };
 
+const getLocalDayBounds = (date: string) => {
+  const start = dayjs(date, "YYYY-MM-DD").startOf("day");
+  const end = start.add(1, "day");
+  return {
+    start,
+    end,
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+};
+
+const isDateWithinLocalDay = (value: string, date: string) => {
+  const parsed = parseTruckDate(value);
+  if (!parsed.isValid()) return false;
+  const { start, end } = getLocalDayBounds(date);
+  return (parsed.isSame(start) || parsed.isAfter(start)) && parsed.isBefore(end);
+};
+
 const computeAvgWeight = (truck: Truck) => {
   if (truck.birdsLoad <= 0) return null;
   return (truck.weightLoad - truck.weightNoLoad) / truck.birdsLoad;
@@ -333,7 +351,7 @@ export default function HarvestTruckPage() {
     };
 
     return trucks
-      .filter((truck) => parseTruckDate(truck.dateTime).format("YYYY-MM-DD") === selectedDate)
+      .filter((truck) => isDateWithinLocalDay(truck.dateTime, selectedDate))
       .sort((a, b) => {
         const aNum = getTrailingNumber(a.name);
         const bNum = getTrailingNumber(b.name);
@@ -382,8 +400,7 @@ export default function HarvestTruckPage() {
 
   const getGrowTotalAnimals = async (growId: number | null, fallbackBuildingId: number): Promise<number | null> => {
     if (growId !== null) {
-      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
-      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+      const { startIso: selectedDayStart, endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
 
       const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
         .from(GROW_LOGS_TABLE)
@@ -435,7 +452,7 @@ export default function HarvestTruckPage() {
   };
 
   const resolveCurrentGrowIdForBuilding = async (buildingId: number): Promise<number | null> => {
-    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const { endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
     const { data: growRows, error: growError } = await supabase
       .from(GROWS_TABLE)
       .select("id, created_at")
@@ -459,8 +476,7 @@ export default function HarvestTruckPage() {
 
     setIsLoadingTrucks(true);
     try {
-      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
-      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+      const { startIso: selectedDayStart, endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
       const growId = await resolveCurrentGrowIdForBuilding(buildingId);
       if (growId === null) {
         setTrucks([]);
