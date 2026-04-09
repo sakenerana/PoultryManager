@@ -55,14 +55,17 @@ function activateWaitingWorker(worker) {
 
 function trackInstallingWorker(worker) {
   if (!worker) return;
+  const hadActiveController = Boolean(navigator.serviceWorker.controller);
 
-  dispatchUpdateState({
-    status: "updating",
-    message: "Downloading the latest version...",
-  });
+  if (hadActiveController) {
+    dispatchUpdateState({
+      status: "updating",
+      message: "Downloading the latest version...",
+    });
+  }
 
   worker.addEventListener("statechange", () => {
-    if (worker.state === "installed") {
+    if (worker.state === "installed" && hadActiveController) {
       dispatchReadyState();
     }
   });
