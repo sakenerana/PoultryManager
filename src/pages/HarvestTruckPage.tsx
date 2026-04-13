@@ -10,6 +10,7 @@ import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { updateGrow } from "../controller/growsCrud";
 import { loadHarvestReductionTransactionsByHarvestId } from "../controller/harvestLogsCrud";
 import {
   addHarvest,
@@ -38,6 +39,8 @@ type Truck = {
   weightLoad: number;
   isLoaded: boolean;
 };
+
+type GrowStatus = "Growing" | "Harvested";
 
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
@@ -316,12 +319,13 @@ export default function HarvestTruckPage() {
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [userRole, setUserRole] = useState<UserRole>(null);
+  const [currentGrowStatus, setCurrentGrowStatus] = useState<GrowStatus>("Growing");
   const [addForm] = Form.useForm();
   const [loadForm] = Form.useForm();
   const loadFormValues = Form.useWatch([], loadForm);
 
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
-  const canLoadTruck = isTodaySelected || userRole === "Admin" || userRole === "Supervisor";
+  const canManageTruckLoads = currentGrowStatus !== "Harvested" && (isTodaySelected || userRole === "Admin" || userRole === "Supervisor");
   const isLoadFormValid =
     Number(loadFormValues?.weightLoad) > 0 &&
     Number(loadFormValues?.birdsLoad) > 0;
@@ -451,11 +455,13 @@ export default function HarvestTruckPage() {
     return Math.max(0, Math.floor(Number(data[0]?.total_animals ?? 0)));
   };
 
-  const resolveCurrentGrowIdForBuilding = async (buildingId: number): Promise<number | null> => {
+  const resolveCurrentGrowForBuilding = async (
+    buildingId: number
+  ): Promise<{ id: number; status: GrowStatus } | null> => {
     const { endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
     const { data: growRows, error: growError } = await supabase
       .from(GROWS_TABLE)
-      .select("id, created_at")
+      .select("id, created_at, status, is_harvested")
       .eq("building_id", buildingId)
       .lt("created_at", selectedDayEnd)
       .order("created_at", { ascending: false })
@@ -463,8 +469,39 @@ export default function HarvestTruckPage() {
 
     if (growError) throw growError;
 
-    const grow = (growRows?.[0] ?? null) as { id: number } | null;
-    return grow ? Number(grow.id) : null;
+    const grow = (growRows?.[0] ?? null) as { id: number; status: string | null; is_harvested?: boolean | null } | null;
+    if (!grow) return null;
+
+    const normalizedStatus = (grow.status ?? "").toLowerCase();
+    return {
+      id: Number(grow.id),
+      status: grow.is_harvested === true || normalizedStatus === "harvested" ? "Harvested" : "Growing",
+    };
+  };
+
+  const markGrowAsHarvested = async (growId: number) => {
+    const result = await updateGrow(growId, {
+      grow: {
+        status: "Harvested",
+        is_harvested: true,
+      },
+    });
+
+    if (!result.error) return;
+
+    const { data: updatedGrowRows, error: growUpdateError } = await supabase
+      .from(GROWS_TABLE)
+      .update({
+        status: "Harvested",
+        is_harvested: true,
+      })
+      .eq("id", growId)
+      .select("id");
+
+    if (growUpdateError) throw growUpdateError;
+    if (!updatedGrowRows || updatedGrowRows.length === 0) {
+      throw new Error(`Grows row ${growId} was not updated. ${result.error}`);
+    }
   };
 
   const fetchTrucksFromSupabase = async () => {
@@ -477,13 +514,15 @@ export default function HarvestTruckPage() {
     setIsLoadingTrucks(true);
     try {
       const { startIso: selectedDayStart, endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
-      const growId = await resolveCurrentGrowIdForBuilding(buildingId);
-      if (growId === null) {
+      const currentGrow = await resolveCurrentGrowForBuilding(buildingId);
+      if (currentGrow === null) {
+        setCurrentGrowStatus("Growing");
         setTrucks([]);
         return;
       }
+      setCurrentGrowStatus(currentGrow.status);
 
-      const harvests = await loadHarvests({ growId, limit: 500 });
+      const harvests = await loadHarvests({ growId: currentGrow.id, limit: 500 });
       if (harvests.length === 0) {
         setTrucks([]);
         return;
@@ -563,6 +602,7 @@ export default function HarvestTruckPage() {
   }, [user?.id]);
 
   const handleOpenAdd = () => {
+    if (currentGrowStatus === "Harvested") return;
     setActiveEditTruckId(null);
     const nextIndex = filteredTrucks.length + 1;
     addForm.setFieldsValue({
@@ -647,7 +687,8 @@ export default function HarvestTruckPage() {
       createdTruckId = createdTruck.id;
 
       // 2) Upsert Harvests with default status = Loading.
-      const growId = await resolveCurrentGrowIdForBuilding(buildingId);
+      const currentGrow = await resolveCurrentGrowForBuilding(buildingId);
+      const growId = currentGrow?.id ?? null;
 
       const existingHarvests = await loadHarvests({
         ...(growId !== null ? { growId } : { buildingId }),
@@ -690,6 +731,11 @@ export default function HarvestTruckPage() {
   };
 
   const handleOpenLoadDrawer = (truck: Truck) => {
+    if (currentGrowStatus === "Harvested") {
+      setToastMessage("This grow is already harvested.");
+      setIsToastOpen(true);
+      return;
+    }
     const buildingId = Number(buildingIdParam);
     setActiveTruckId(truck.id);
     setActiveTruckPreviousBirdsLoad(truck.birdsLoad || 0);
@@ -780,15 +826,8 @@ export default function HarvestTruckPage() {
         }
 
         if (shouldMarkHarvestCompleted && harvest.growId !== null) {
-          const { error: growUpdateError } = await supabase
-            .from(GROWS_TABLE)
-            .update({
-              status: "Harvested",
-              is_harvested: true,
-            })
-            .eq("id", harvest.growId);
-
-          if (growUpdateError) throw growUpdateError;
+          await markGrowAsHarvested(harvest.growId);
+          setCurrentGrowStatus("Harvested");
         }
       }
 
@@ -934,7 +973,7 @@ export default function HarvestTruckPage() {
                   <div className="mt-3 text-xs text-slate-500">
                     Showing data for {dayjs(selectedDate).format("MMMM D, YYYY")}
                   </div>
-                  {isTodaySelected && (
+                  {isTodaySelected && currentGrowStatus !== "Harvested" && (
                     <Button
                       type="primary"
                       icon={<PlusOutlined />}
@@ -975,7 +1014,7 @@ export default function HarvestTruckPage() {
                     truck={truck}
                     isMobile={isMobile}
                     displayName={truck.name}
-                    canLoad={canLoadTruck}
+                    canLoad={canManageTruckLoads}
                     canDelete={userRole === "Admin"}
                     canEditBirdsLoad={userRole === "Admin"}
                     onLoadClick={handleOpenLoadDrawer}
@@ -986,7 +1025,7 @@ export default function HarvestTruckPage() {
               </div>
             </div>
 
-            {isMobile && isTodaySelected && (
+            {isMobile && isTodaySelected && currentGrowStatus !== "Harvested" && (
               <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
                 <Button
                   type="primary"

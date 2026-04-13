@@ -8,8 +8,9 @@ import { IoHome } from "react-icons/io5";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { updateGrow } from "../controller/growsCrud";
 import { loadHarvestReductionTransactionsByHarvestId } from "../controller/harvestLogsCrud";
-import { loadHarvests, loadHarvestTrucks } from "../controller/harvestCrud";
+import { loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -146,6 +147,7 @@ export default function HarvestMetricHistoryPage() {
   const selectedDate = searchParams.get("date") ?? dayjs().format("YYYY-MM-DD");
   const [isLoading, setIsLoading] = useState(false);
   const [buildingName, setBuildingName] = useState("");
+  const [activeGrowId, setActiveGrowId] = useState<number | null>(null);
   const [activeHarvestId, setActiveHarvestId] = useState<number | null>(null);
   const [selectedDayTotalAnimals, setSelectedDayTotalAnimals] = useState(0);
   const [harvestTotalAnimalsOut, setHarvestTotalAnimalsOut] = useState(0);
@@ -173,6 +175,42 @@ export default function HarvestMetricHistoryPage() {
 
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
+  };
+
+  const loadHarvestSummaryForGrow = async (growId: number) => {
+    const harvests = await loadHarvests({ growId, limit: 500 });
+    if (harvests.length === 0) {
+      return {
+        latestHarvestId: null as number | null,
+        totalAnimalsOut: 0,
+        allTrucks: [] as Awaited<ReturnType<typeof loadHarvestTrucks>>,
+        allReductions: [] as Awaited<ReturnType<typeof loadHarvestReductionTransactionsByHarvestId>>,
+        harvests,
+      };
+    }
+
+    const harvestBundles = await Promise.all(
+      harvests.map(async (harvest) => {
+        const harvestId = Number(harvest.id);
+        const [trucks, reductions] = await Promise.all([
+          loadHarvestTrucks({ harvestId, ascending: true, limit: 500 }),
+          loadHarvestReductionTransactionsByHarvestId(harvestId),
+        ]);
+
+        return { harvest, trucks, reductions };
+      })
+    );
+
+    return {
+      latestHarvestId: Number(harvests[0].id),
+      totalAnimalsOut: harvests.reduce(
+        (sum, harvest) => sum + Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0))),
+        0
+      ),
+      allTrucks: harvestBundles.flatMap((entry) => entry.trucks),
+      allReductions: harvestBundles.flatMap((entry) => entry.reductions),
+      harvests,
+    };
   };
 
   useEffect(() => {
@@ -212,6 +250,7 @@ export default function HarvestMetricHistoryPage() {
 
         const latestGrow = ((growRows ?? []) as Array<{ id: number | null; total_animals?: number | null }>)[0] ?? null;
         const activeGrowId = latestGrow?.id ?? null;
+        setActiveGrowId(activeGrowId);
         const growFallbackTotal = Math.max(0, Math.floor(Number(latestGrow?.total_animals ?? 0)));
         let resolvedSelectedDayTotal = growFallbackTotal;
 
@@ -247,13 +286,7 @@ export default function HarvestMetricHistoryPage() {
         }
 
         setSelectedDayTotalAnimals(resolvedSelectedDayTotal);
-        const harvests =
-          activeGrowId != null
-            ? await loadHarvests({ growId: activeGrowId, limit: 1 })
-            : await loadHarvests({ buildingId, limit: 1 });
-        const harvest = harvests[0] ?? null;
-
-        if (!harvest) {
+        if (activeGrowId == null) {
           setActiveHarvestId(null);
           setHarvestTotalAnimalsOut(0);
           setReductionRows([]);
@@ -261,13 +294,22 @@ export default function HarvestMetricHistoryPage() {
           setMetricTotals({ mortality: 0, thinning: 0, takeOut: 0, defect: 0 });
           return;
         }
-        setActiveHarvestId(Number(harvest.id));
-        setHarvestTotalAnimalsOut(Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0))));
 
-        const [trucks, reductions] = await Promise.all([
-          loadHarvestTrucks({ harvestId: Number(harvest.id), ascending: true, limit: 500 }),
-          loadHarvestReductionTransactionsByHarvestId(Number(harvest.id)),
-        ]);
+        const harvestSummary = await loadHarvestSummaryForGrow(activeGrowId);
+        if (harvestSummary.latestHarvestId == null) {
+          setActiveHarvestId(null);
+          setHarvestTotalAnimalsOut(0);
+          setReductionRows([]);
+          setHistoryByMetric({ mortality: [], thinning: [], takeOut: [], defect: [] });
+          setMetricTotals({ mortality: 0, thinning: 0, takeOut: 0, defect: 0 });
+          return;
+        }
+
+        setActiveHarvestId(harvestSummary.latestHarvestId);
+        setHarvestTotalAnimalsOut(harvestSummary.totalAnimalsOut);
+
+        const trucks = harvestSummary.allTrucks;
+        const reductions = harvestSummary.allReductions;
         setReductionRows(
           reductions.map((row) => ({
             id: row.id,
@@ -386,7 +428,7 @@ export default function HarvestMetricHistoryPage() {
   };
 
   const handleSaveDay = async () => {
-    if (!selectedMetric || !activeDayRow || activeHarvestId == null) return;
+    if (!selectedMetric || !activeDayRow || activeHarvestId == null || activeGrowId == null) return;
 
     const nextValue = Math.max(0, Math.floor(dayCountDraft || 0));
     if (nextValue > dayMaxAllowed) {
@@ -491,6 +533,42 @@ export default function HarvestMetricHistoryPage() {
           .from(HARVEST_REDUCTION_TRANSACTIONS_TABLE)
           .insert([payload]);
         if (insertReductionError) throw insertReductionError;
+      }
+
+      const refreshedSummary = await loadHarvestSummaryForGrow(activeGrowId);
+      const refreshedReductionTotal = refreshedSummary.allReductions.reduce(
+        (sum, row) => sum + Math.max(0, Math.floor(Number(row.animalCount ?? 0))),
+        0
+      );
+      const remainingAfterSave = Math.max(0, selectedDayTotalAnimals - refreshedSummary.totalAnimalsOut - refreshedReductionTotal);
+
+      if (remainingAfterSave <= 0) {
+        await Promise.all(
+          refreshedSummary.harvests.map((harvest) =>
+            updateHarvest(harvest.id, {
+              status: "Completed",
+            })
+          )
+        );
+
+        const updateGrowResult = await updateGrow(activeGrowId, {
+          grow: {
+            status: "Harvested",
+            is_harvested: true,
+          },
+        });
+
+        if (updateGrowResult.error) {
+          const { error: growUpdateError } = await supabase
+            .from(GROWS_TABLE)
+            .update({
+              status: "Harvested",
+              is_harvested: true,
+            })
+            .eq("id", activeGrowId);
+
+          if (growUpdateError) throw growUpdateError;
+        }
       }
 
       setToastMessage(`${METRIC_META[selectedMetric].title} updated successfully.`);

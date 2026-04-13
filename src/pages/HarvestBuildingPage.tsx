@@ -9,7 +9,8 @@ import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
-import { getHarvestById, loadHarvests, loadHarvestTrucks } from "../controller/harvestCrud";
+import { getHarvestById, loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
+import { updateGrow } from "../controller/growsCrud";
 import {
   addHarvestLog,
   addHarvestReductionTransaction,
@@ -444,6 +445,12 @@ export default function HarvestBuildingPage() {
     takeOut: {},
     defect: {},
   });
+  const [cumulativeMetricTotals, setCumulativeMetricTotals] = useState<Record<EditableMetric, Record<string, Record<string, number>>>>({
+    mortality: {},
+    thinning: {},
+    takeOut: {},
+    defect: {},
+  });
   const [metricRemarksByType, setMetricRemarksByType] = useState<Record<EditableMetric, Record<string, Record<string, string>>>>({
     mortality: {},
     thinning: {},
@@ -470,6 +477,96 @@ export default function HarvestBuildingPage() {
 
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
+  };
+
+  const resolveLatestGrowIdForBuilding = async (buildingId: string): Promise<number | null> => {
+    const numericBuildingId = Number(buildingId);
+    if (!Number.isFinite(numericBuildingId) || numericBuildingId <= 0) return null;
+
+    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("id, created_at")
+      .eq("building_id", numericBuildingId)
+      .lt("created_at", selectedDayEnd)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    const row = (data?.[0] ?? null) as { id?: number | null } | null;
+    return row?.id ?? null;
+  };
+
+  const markGrowsAsHarvested = async (growIds: number[]) => {
+    const uniqueGrowIds = Array.from(new Set(growIds.filter((value): value is number => Number.isFinite(value) && value > 0)));
+    if (uniqueGrowIds.length === 0) return;
+
+    const rpcErrors: string[] = [];
+
+    for (const growId of uniqueGrowIds) {
+      const result = await updateGrow(growId, {
+        grow: {
+          status: "Harvested",
+          is_harvested: true,
+        },
+      });
+
+      if (!result.error) continue;
+      rpcErrors.push(`Grow ${growId}: ${result.error}`);
+
+      const { data: updatedGrowRows, error: growUpdateError } = await supabase
+        .from(GROWS_TABLE)
+        .update({
+          status: "Harvested",
+          is_harvested: true,
+        })
+        .eq("id", growId)
+        .select("id");
+
+      if (growUpdateError) {
+        throw new Error(`Failed to update Grows row ${growId}: ${growUpdateError.message}`);
+      }
+
+      if (!updatedGrowRows || updatedGrowRows.length === 0) {
+        throw new Error(`Grows row ${growId} was not updated. ${rpcErrors.join(" | ")}`.trim());
+      }
+    }
+  };
+
+  const loadHarvestSummaryForGrow = async (growId: number) => {
+    const harvests = await loadHarvests({ growId, limit: 500 });
+    if (harvests.length === 0) {
+      return {
+        latestHarvestId: null as number | null,
+        totalAnimalsOut: 0,
+        allTrucks: [] as Awaited<ReturnType<typeof loadHarvestTrucks>>,
+        allReductions: [] as Awaited<ReturnType<typeof loadHarvestReductionTransactionsByHarvestId>>,
+        harvests,
+      };
+    }
+
+    const harvestBundles = await Promise.all(
+      harvests.map(async (harvest) => {
+        const harvestId = Number(harvest.id);
+        const [trucks, reductions] = await Promise.all([
+          loadHarvestTrucks({ harvestId, limit: 500 }),
+          loadHarvestReductionTransactionsByHarvestId(harvestId),
+        ]);
+
+        return { harvest, trucks, reductions };
+      })
+    );
+
+    return {
+      latestHarvestId: Number(harvests[0].id),
+      totalAnimalsOut: harvests.reduce(
+        (sum, harvest) => sum + Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0))),
+        0
+      ),
+      allTrucks: harvestBundles.flatMap((entry) => entry.trucks),
+      allReductions: harvestBundles.flatMap((entry) => entry.reductions),
+      harvests,
+    };
   };
 
   const fetchBuildingsFromGrows = async () => {
@@ -637,25 +734,18 @@ export default function HarvestBuildingPage() {
   const isSameSelectedDate = (dateTime: string): boolean =>
     dayjs(dateTime).format("YYYY-MM-DD") === selectedDate;
 
-  const getHarvestForBuilding = async (
-    building: Building
-  ): Promise<{ harvestId: number; totalAnimalsOut: number } | null> => {
-    const byGrow = await loadHarvests({ growId: building.growId, limit: 1 });
-    if (byGrow.length > 0) {
-      return {
-        harvestId: Number(byGrow[0].id),
-        totalAnimalsOut: Math.max(0, Math.floor(Number(byGrow[0].totalAnimals ?? 0))),
-      };
-    }
-
-    return null;
-  };
-
   const fetchHarvestMetricsByDate = async () => {
     if (buildings.length === 0) {
       setHasTruckByBuildingId({});
       setHarvestAnimalsOutByBuilding((prev) => ({ ...prev, [selectedDate]: {} }));
       setMetricOverrides((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: {} },
+        thinning: { ...prev.thinning, [selectedDate]: {} },
+        takeOut: { ...prev.takeOut, [selectedDate]: {} },
+        defect: { ...prev.defect, [selectedDate]: {} },
+      }));
+      setCumulativeMetricTotals((prev) => ({
         ...prev,
         mortality: { ...prev.mortality, [selectedDate]: {} },
         thinning: { ...prev.thinning, [selectedDate]: {} },
@@ -677,6 +767,10 @@ export default function HarvestBuildingPage() {
       const thinningByBuilding: Record<string, number> = {};
       const takeOutByBuilding: Record<string, number> = {};
       const defectByBuilding: Record<string, number> = {};
+      const cumulativeMortalityByBuilding: Record<string, number> = {};
+      const cumulativeThinningByBuilding: Record<string, number> = {};
+      const cumulativeTakeOutByBuilding: Record<string, number> = {};
+      const cumulativeDefectByBuilding: Record<string, number> = {};
       const mortalityRemarksByBuilding: Record<string, string> = {};
       const thinningRemarksByBuilding: Record<string, string> = {};
       const takeOutRemarksByBuilding: Record<string, string> = {};
@@ -688,8 +782,8 @@ export default function HarvestBuildingPage() {
 
       await Promise.all(
         buildings.map(async (building) => {
-          const harvestInfo = await getHarvestForBuilding(building);
-          if (harvestInfo == null) {
+          const harvestSummary = await loadHarvestSummaryForGrow(building.growId);
+          if (harvestSummary.latestHarvestId == null) {
             editMap[building.id] = { harvestId: null, hasTruck: false };
             harvestAnimalsOutMap[building.id] = 0;
             truckCountMap[building.id] = 0;
@@ -698,15 +792,17 @@ export default function HarvestBuildingPage() {
             thinningByBuilding[building.id] = 0;
             takeOutByBuilding[building.id] = 0;
             defectByBuilding[building.id] = 0;
+            cumulativeMortalityByBuilding[building.id] = 0;
+            cumulativeThinningByBuilding[building.id] = 0;
+            cumulativeTakeOutByBuilding[building.id] = 0;
+            cumulativeDefectByBuilding[building.id] = 0;
             return;
           }
 
-          const [trucks, reductions] = await Promise.all([
-            loadHarvestTrucks({ harvestId: harvestInfo.harvestId, limit: 500 }),
-            loadHarvestReductionTransactionsByHarvestId(harvestInfo.harvestId),
-          ]);
+          const trucks = harvestSummary.allTrucks;
+          const reductions = harvestSummary.allReductions;
 
-          editMap[building.id] = { harvestId: harvestInfo.harvestId, hasTruck: trucks.length > 0 };
+          editMap[building.id] = { harvestId: harvestSummary.latestHarvestId, hasTruck: trucks.length > 0 };
           const selectedDayEnd = dayjs(selectedDate).add(1, "day").startOf("day");
           const cumulativeTrucks = trucks.filter((truck) =>
             dayjs(truck.createdAt).isBefore(selectedDayEnd)
@@ -728,10 +824,15 @@ export default function HarvestBuildingPage() {
           avgWeightMap[building.id] = totalBirdsLoaded > 0 ? totalNetWeight / totalBirdsLoaded : 0;
 
           const selectedDayRows = reductions.filter((row) => isSameSelectedDate(row.createdAt));
+          const cumulativeRows = reductions.filter((row) => dayjs(row.createdAt).isBefore(selectedDayEnd));
           mortalityByBuilding[building.id] = 0;
           thinningByBuilding[building.id] = 0;
           takeOutByBuilding[building.id] = 0;
           defectByBuilding[building.id] = 0;
+          cumulativeMortalityByBuilding[building.id] = 0;
+          cumulativeThinningByBuilding[building.id] = 0;
+          cumulativeTakeOutByBuilding[building.id] = 0;
+          cumulativeDefectByBuilding[building.id] = 0;
 
           selectedDayRows.forEach((row) => {
             const count = Math.max(0, Math.floor(Number(row.animalCount ?? 0)));
@@ -739,6 +840,14 @@ export default function HarvestBuildingPage() {
             if (row.reductionType === "thinning") thinningByBuilding[building.id] += count;
             if (row.reductionType === "take_out" || row.reductionType === "takeout") takeOutByBuilding[building.id] += count;
             if (row.reductionType === "defect") defectByBuilding[building.id] += count;
+          });
+
+          cumulativeRows.forEach((row) => {
+            const count = Math.max(0, Math.floor(Number(row.animalCount ?? 0)));
+            if (row.reductionType === "mortality") cumulativeMortalityByBuilding[building.id] += count;
+            if (row.reductionType === "thinning") cumulativeThinningByBuilding[building.id] += count;
+            if (row.reductionType === "take_out" || row.reductionType === "takeout") cumulativeTakeOutByBuilding[building.id] += count;
+            if (row.reductionType === "defect") cumulativeDefectByBuilding[building.id] += count;
           });
 
           const latestRemarkByType: Record<string, string> = {};
@@ -774,6 +883,13 @@ export default function HarvestBuildingPage() {
         thinning: { ...prev.thinning, [selectedDate]: thinningByBuilding },
         takeOut: { ...prev.takeOut, [selectedDate]: takeOutByBuilding },
         defect: { ...prev.defect, [selectedDate]: defectByBuilding },
+      }));
+      setCumulativeMetricTotals((prev) => ({
+        ...prev,
+        mortality: { ...prev.mortality, [selectedDate]: cumulativeMortalityByBuilding },
+        thinning: { ...prev.thinning, [selectedDate]: cumulativeThinningByBuilding },
+        takeOut: { ...prev.takeOut, [selectedDate]: cumulativeTakeOutByBuilding },
+        defect: { ...prev.defect, [selectedDate]: cumulativeDefectByBuilding },
       }));
       setMetricRemarksByType((prev) => ({
         ...prev,
@@ -839,17 +955,17 @@ export default function HarvestBuildingPage() {
       return;
     }
 
-    const harvestInfo = await getHarvestForBuilding(selectedBuilding);
-    if (!harvestInfo) {
+    const harvestSummary = await loadHarvestSummaryForGrow(selectedBuilding.growId);
+    if (harvestSummary.latestHarvestId == null) {
       setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
       setReductionTotalsByMetric(EMPTY_REDUCTION_TOTALS);
       return;
     }
 
-    const [trucks, reductions] = await Promise.all([
-      loadHarvestTrucks({ harvestId: harvestInfo.harvestId, ascending: true, limit: 500 }),
-      loadHarvestReductionTransactionsByHarvestId(harvestInfo.harvestId),
-    ]);
+    const trucks = [...harvestSummary.allTrucks].sort(
+      (a, b) => dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf()
+    );
+    const reductions = harvestSummary.allReductions;
 
     if (trucks.length === 0) {
       setReductionHistoryByMetric(EMPTY_REDUCTION_HISTORY);
@@ -1006,8 +1122,8 @@ export default function HarvestBuildingPage() {
     setIsMetricModalOpen(true);
 
     if (editInfo.harvestId != null) {
-      void getHarvestById(editInfo.harvestId)
-        .then(async (harvest) => {
+      void loadHarvestSummaryForGrow(selectedBuilding!.growId)
+        .then(async (harvestSummary) => {
           const currentTotal =
             currentTotalByBuildingId[buildingId] ??
             selectedBuilding?.total ??
@@ -1016,9 +1132,15 @@ export default function HarvestBuildingPage() {
             setActiveMetricRemaining(null);
             return;
           }
+          const cumulativeReductionTotal = harvestSummary.allReductions.reduce(
+            (sum, row) => sum + Math.max(0, Math.floor(Number(row.animalCount ?? 0))),
+            0
+          );
           const remaining = Math.max(
             0,
-            currentTotal - Math.max(0, Math.floor(Number(harvest.totalAnimals ?? 0)))
+            currentTotal -
+              harvestSummary.totalAnimalsOut -
+              cumulativeReductionTotal
           );
           setActiveMetricRemaining(remaining);
         })
@@ -1059,6 +1181,7 @@ export default function HarvestBuildingPage() {
 
     setIsSavingMetric(true);
     try {
+      const harvest = await getHarvestById(harvestId);
       const reductions = await loadHarvestReductionTransactionsByHarvestId(harvestId);
       const selectedDayRows = reductions.filter((row) => isSameSelectedDate(row.createdAt));
 
@@ -1127,6 +1250,16 @@ export default function HarvestBuildingPage() {
         next[activeMetric] = selectedMetric;
         return next;
       });
+      setCumulativeMetricTotals((prev) => {
+        const next = { ...prev };
+        const selectedMetric = { ...next[activeMetric] };
+        const day = selectedMetric[selectedDate] ? { ...selectedMetric[selectedDate] } : {};
+        const previousTotal = day[activeBuildingId] ?? 0;
+        day[activeBuildingId] = Math.max(0, previousTotal - previousValueForThisTx + nextValue);
+        selectedMetric[selectedDate] = day;
+        next[activeMetric] = selectedMetric;
+        return next;
+      });
       setMetricRemarksByType((prev) => {
         const next = { ...prev };
         const selectedMetric = { ...next[activeMetric] };
@@ -1136,6 +1269,60 @@ export default function HarvestBuildingPage() {
         next[activeMetric] = selectedMetric;
         return next;
       });
+
+      const selectedBuilding = buildings.find((building) => building.id === activeBuildingId);
+      const growTotalAnimals = currentTotalByBuildingId[activeBuildingId] ?? selectedBuilding?.total ?? null;
+      const growIdToUpdate = harvest.growId ?? selectedBuilding?.growId ?? null;
+      const refreshedGrowSummary =
+        growIdToUpdate != null ? await loadHarvestSummaryForGrow(growIdToUpdate) : null;
+      const remainingAfterSave = growTotalAnimals === null || refreshedGrowSummary === null
+        ? null
+        : Math.max(0, growTotalAnimals - refreshedGrowSummary.totalAnimalsOut - refreshedGrowSummary.allReductions.reduce(
+            (sum, row) => sum + Math.max(0, Math.floor(Number(row.animalCount ?? 0))),
+            0
+          ));
+      const shouldMarkHarvestCompleted = remainingAfterSave !== null && remainingAfterSave <= 0;
+
+      if (shouldMarkHarvestCompleted) {
+        if (refreshedGrowSummary !== null) {
+          await Promise.all(
+            refreshedGrowSummary.harvests.map((row) =>
+              updateHarvest(row.id, {
+                status: "Completed",
+              })
+            )
+          );
+        } else {
+          await updateHarvest(harvest.id, {
+            status: "Completed",
+          });
+        }
+
+        const candidateGrowIds = growIdToUpdate != null
+          ? [growIdToUpdate]
+          : Array.from(
+              new Set(
+                [
+                  await resolveLatestGrowIdForBuilding(activeBuildingId),
+                  selectedBuilding?.growId ?? null,
+                ].filter((value): value is number => value != null)
+              )
+            );
+
+        await markGrowsAsHarvested(candidateGrowIds);
+
+        setBuildings((prev) =>
+          prev.map((building) =>
+            building.id === activeBuildingId
+              ? {
+                  ...building,
+                  growStatus: "Harvested",
+                }
+              : building
+          )
+        );
+        await fetchBuildingsFromGrows();
+      }
 
       if (isReductionDrawerOpen && activeReductionBuildingId === activeBuildingId) {
         void loadReductionHistory(activeBuildingId).catch(() => undefined);
@@ -1155,10 +1342,10 @@ export default function HarvestBuildingPage() {
   const getStatsForBuilding = useMemo(() => {
     return (building: Building): BuildingStats => {
       const currentTotal = currentTotalByBuildingId[building.id] ?? building.total;
-      const mortality = metricOverrides.mortality[selectedDate]?.[building.id] ?? 0;
-      const thinning = metricOverrides.thinning[selectedDate]?.[building.id] ?? 0;
-      const takeOut = metricOverrides.takeOut[selectedDate]?.[building.id] ?? 0;
-      const defect = metricOverrides.defect[selectedDate]?.[building.id] ?? 0;
+      const mortality = cumulativeMetricTotals.mortality[selectedDate]?.[building.id] ?? 0;
+      const thinning = cumulativeMetricTotals.thinning[selectedDate]?.[building.id] ?? 0;
+      const takeOut = cumulativeMetricTotals.takeOut[selectedDate]?.[building.id] ?? 0;
+      const defect = cumulativeMetricTotals.defect[selectedDate]?.[building.id] ?? 0;
       const totalAnimalsOut = harvestAnimalsOutByBuilding[selectedDate]?.[building.id] ?? 0;
       const avgWeight = avgWeightByBuildingId[selectedDate]?.[building.id] ?? 0;
       const trucks = truckCountByBuildingId[selectedDate]?.[building.id] ?? 0;
@@ -1179,7 +1366,7 @@ export default function HarvestBuildingPage() {
         defect,
       };
     };
-  }, [avgWeightByBuildingId, currentTotalByBuildingId, harvestAnimalsOutByBuilding, metricOverrides, selectedDate, truckCountByBuildingId]);
+  }, [avgWeightByBuildingId, cumulativeMetricTotals, currentTotalByBuildingId, harvestAnimalsOutByBuilding, selectedDate, truckCountByBuildingId]);
 
   const isMetricValid = metricDraft > 0;
   const maxMetricAllowed = activeMetricRemaining === null ? null : activeMetricRemaining + activeMetricPreviousValue;
@@ -1630,15 +1817,14 @@ export default function HarvestBuildingPage() {
                   onClick={() => {
                     const selectedBuilding = buildings.find((building) => building.id === activeReductionBuildingId);
                     if (!selectedBuilding) return;
-                    const stats = getStatsForBuilding(selectedBuilding);
                     const currentValue =
                       activeReductionHistoryMetric === "mortality"
-                        ? stats.mortality
+                        ? metricOverrides.mortality[selectedDate]?.[activeReductionBuildingId] ?? 0
                         : activeReductionHistoryMetric === "thinning"
-                          ? stats.thinning
+                          ? metricOverrides.thinning[selectedDate]?.[activeReductionBuildingId] ?? 0
                           : activeReductionHistoryMetric === "takeOut"
-                            ? stats.takeOut
-                            : stats.defect;
+                            ? metricOverrides.takeOut[selectedDate]?.[activeReductionBuildingId] ?? 0
+                            : metricOverrides.defect[selectedDate]?.[activeReductionBuildingId] ?? 0;
                     openMetricModal(activeReductionHistoryMetric, activeReductionBuildingId, currentValue);
                   }}
                 >
