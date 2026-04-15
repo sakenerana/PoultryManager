@@ -33,6 +33,15 @@ type HistoryEntry = {
   total: number;
 };
 
+type TransferEntry = {
+  id: number;
+  date: string;
+  dateTime: string;
+  total: number;
+  sourceBuildingName: string;
+  remarks: string | null;
+};
+
 export default function BuildingLoadPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -60,6 +69,8 @@ export default function BuildingLoadPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [transferEntries, setTransferEntries] = useState<TransferEntry[]>([]);
+  const [isTransferLoading, setIsTransferLoading] = useState(false);
   const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null);
   const [editingTotalInput, setEditingTotalInput] = useState("");
   const [isEditingSaving, setIsEditingSaving] = useState(false);
@@ -73,6 +84,9 @@ export default function BuildingLoadPage() {
   const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
   const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
   const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+  const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
+  const TRANSFER_TRANSACTIONS_TABLE =
+    import.meta.env.VITE_SUPABASE_TRANSFER_TRANSACTIONS_TABLE ?? "TransferTransactions";
 
   const entriesForSelectedDate = useMemo(
     () => historyEntries.filter((entry) => entry.date === selectedDate),
@@ -91,6 +105,9 @@ export default function BuildingLoadPage() {
   const grandTotal = useMemo(() => {
     return historyEntries.reduce((sum, entry) => sum + entry.total, 0);
   }, [historyEntries]);
+  const transferGrandTotal = useMemo(() => {
+    return transferEntries.reduce((sum, entry) => sum + entry.total, 0);
+  }, [transferEntries]);
   const isCompleted = activeGrowStatus.toLowerCase() === "growing";
   const canUndoCompletion = userRole === "Admin" && isCompleted;
   const canEditHistory = userRole === "Admin";
@@ -235,6 +252,101 @@ export default function BuildingLoadPage() {
 
   useEffect(() => {
     void fetchHistoryByStatus();
+  }, [id, selectedDate]);
+
+  const fetchTransferHistoryByBuilding = async () => {
+    const buildingId = Number(id);
+    if (!Number.isFinite(buildingId)) {
+      setTransferEntries([]);
+      return;
+    }
+
+    setIsTransferLoading(true);
+    try {
+      const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+      const { data, error } = await supabase
+        .from(TRANSFER_TRANSACTIONS_TABLE)
+        .select("id, created_at, total_animals_count, remarks, grow_id")
+        .eq("building_id", buildingId)
+        .lt("created_at", selectedDayEnd)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        throw new Error(error.message || "Failed to load transfer history.");
+      }
+
+      const rows = (data ?? []) as Array<{
+        id: number;
+        created_at: string;
+        total_animals_count: number | null;
+        remarks: string | null;
+        grow_id: number | null;
+      }>;
+
+      const sourceGrowIds = rows
+        .map((row) => row.grow_id)
+        .filter((growId): growId is number => growId != null);
+
+      const sourceBuildingNameByGrowId: Record<number, string> = {};
+      if (sourceGrowIds.length > 0) {
+        const { data: sourceGrows, error: sourceGrowsError } = await supabase
+          .from(GROWS_TABLE)
+          .select("id, building_id")
+          .in("id", sourceGrowIds);
+
+        if (sourceGrowsError) {
+          throw new Error(sourceGrowsError.message || "Failed to load source grow data.");
+        }
+
+        const sourceBuildingIds = ((sourceGrows ?? []) as Array<{ id: number; building_id: number | null }>)
+          .map((row) => row.building_id)
+          .filter((buildingIdValue): buildingIdValue is number => buildingIdValue != null);
+
+        const { data: sourceBuildings, error: sourceBuildingsError } = await supabase
+          .from(BUILDINGS_TABLE)
+          .select("id, name")
+          .in("id", sourceBuildingIds.length > 0 ? sourceBuildingIds : [-1]);
+
+        if (sourceBuildingsError) {
+          throw new Error(sourceBuildingsError.message || "Failed to load source building names.");
+        }
+
+        const buildingNameById = ((sourceBuildings ?? []) as Array<{ id: number; name: string | null }>)
+          .reduce<Record<number, string>>((acc, row) => {
+            acc[row.id] = typeof row.name === "string" && row.name.trim().length > 0 ? row.name : `Building #${row.id}`;
+            return acc;
+          }, {});
+
+        ((sourceGrows ?? []) as Array<{ id: number; building_id: number | null }>).forEach((row) => {
+          if (row.building_id == null) return;
+          sourceBuildingNameByGrowId[row.id] = buildingNameById[row.building_id] ?? `Building #${row.building_id}`;
+        });
+      }
+
+      setTransferEntries(
+        rows.map((row) => ({
+          id: row.id,
+          date: dayjs(row.created_at).format("YYYY-MM-DD"),
+          dateTime: dayjs(row.created_at).format("MMMM D, YYYY h:mm A"),
+          total: Math.max(0, Math.floor(Number(row.total_animals_count ?? 0))),
+          sourceBuildingName: row.grow_id != null ? sourceBuildingNameByGrowId[row.grow_id] ?? "Unknown" : "Unknown",
+          remarks: typeof row.remarks === "string" ? row.remarks : null,
+        }))
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to load transfer history. Please try again.";
+      setToastType("error");
+      setToastMessage(message);
+      setIsToastOpen(true);
+      setTransferEntries([]);
+    } finally {
+      setIsTransferLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchTransferHistoryByBuilding();
   }, [id, selectedDate]);
 
   useEffect(() => {
@@ -1189,6 +1301,32 @@ export default function BuildingLoadPage() {
                 <span className="text-slate-500">Total Encoded (All)</span>
                 <span className="font-semibold text-slate-900">{grandTotal.toLocaleString()}</span>
               </div>
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <div className="text-xs font-semibold text-slate-500 mb-2">Transfer History (To This Building)</div>
+                {isTransferLoading ? (
+                  <div className="text-sm text-slate-500">Loading transfers...</div>
+                ) : transferEntries.length === 0 ? (
+                  <div className="text-sm text-slate-500">No transfer history yet.</div>
+                ) : (
+                  <ul className="space-y-1.5 text-sm text-slate-700">
+                    {transferEntries.map((item, index) => (
+                      <li key={`transfer-${item.id}-${index}`} className="rounded-sm border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">#{index + 1}</span>
+                          <span className="flex-1">{item.dateTime}</span>
+                          <span className="font-semibold text-slate-900">{item.total.toLocaleString()}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500">From: {item.sourceBuildingName}</div>
+                        {item.remarks ? <div className="mt-0.5 text-[11px] text-slate-500">{item.remarks}</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Total Transferred In</span>
+                  <span className="font-semibold text-slate-900">{transferGrandTotal.toLocaleString()}</span>
+                </div>
+              </div>
             </div>
 
             <div className="bg-white rounded-sm shadow-sm p-4 mt-auto">
@@ -1335,6 +1473,36 @@ export default function BuildingLoadPage() {
                   <div className="mt-5 border-t border-slate-100 pt-4 flex items-center justify-between text-sm">
                     <span className="text-slate-500">Total Encoded (All)</span>
                     <span className="font-semibold text-slate-900">{grandTotal.toLocaleString()}</span>
+                  </div>
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <div className="text-sm font-semibold text-slate-900">Transfer History (To This Building)</div>
+                    <div className="mt-3">
+                      {isTransferLoading ? (
+                        <div className="text-sm text-slate-500">Loading transfers...</div>
+                      ) : transferEntries.length === 0 ? (
+                        <div className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                          No transfer history yet.
+                        </div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {transferEntries.map((item, index) => (
+                            <li key={`transfer-desktop-${item.id}-${index}`} className="rounded-sm border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                              <div className="grid grid-cols-[52px_1fr_auto] items-center gap-3">
+                                <span className="text-xs font-semibold text-slate-500">#{index + 1}</span>
+                                <span className="text-sm text-slate-700">{item.dateTime}</span>
+                                <span className="text-sm font-semibold text-slate-900">{item.total.toLocaleString()}</span>
+                              </div>
+                              <div className="mt-1 text-[11px] text-slate-500">From: {item.sourceBuildingName}</div>
+                              {item.remarks ? <div className="mt-0.5 text-[11px] text-slate-500">{item.remarks}</div> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="mt-5 border-t border-slate-100 pt-4 flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Total Transferred In</span>
+                      <span className="font-semibold text-slate-900">{transferGrandTotal.toLocaleString()}</span>
+                    </div>
                   </div>
                 </div>
               </div>

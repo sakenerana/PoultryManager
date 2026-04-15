@@ -387,7 +387,10 @@ function BuildingRow({
             />
             <StatPill
               label="Avg Weight"
-              value=""
+              value={`${stats.avgWeight.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} g`}
               theme={theme}
               borderColor={getStatPillBorderColor(`${b.id}-avg-weight`)}
               backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-avg-weight`), "12")}
@@ -807,21 +810,30 @@ export default function HarvestBuildingPage() {
           const cumulativeTrucks = trucks.filter((truck) =>
             dayjs(truck.createdAt).isBefore(selectedDayEnd)
           );
-          const selectedDayTrucks = trucks.filter((truck) => isSameSelectedDate(truck.createdAt));
           harvestAnimalsOutMap[building.id] = cumulativeTrucks.reduce(
             (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
             0
           );
           truckCountMap[building.id] = cumulativeTrucks.length;
-          const totalBirdsLoaded = selectedDayTrucks.reduce(
-            (sum, truck) => sum + Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0))),
-            0
+          const avgWeightByDate = cumulativeTrucks.reduce<Record<string, { birds: number; netWeight: number }>>(
+            (acc, truck) => {
+              const dateKey = dayjs(truck.createdAt).format("YYYY-MM-DD");
+              const birds = Math.max(0, Math.floor(Number(truck.animalsLoaded ?? 0)));
+              const netWeight = Math.max(0, Number(truck.weightWithLoad ?? 0) - Number(truck.weightNoLoad ?? 0));
+              acc[dateKey] = acc[dateKey] ?? { birds: 0, netWeight: 0 };
+              acc[dateKey].birds += birds;
+              acc[dateKey].netWeight += netWeight;
+              return acc;
+            },
+            {}
           );
-          const totalNetWeight = selectedDayTrucks.reduce(
-            (sum, truck) => sum + Math.max(0, Number(truck.weightWithLoad ?? 0) - Number(truck.weightNoLoad ?? 0)),
-            0
-          );
-          avgWeightMap[building.id] = totalBirdsLoaded > 0 ? totalNetWeight / totalBirdsLoaded : 0;
+          const dailyAverages = Object.values(avgWeightByDate)
+            .filter((entry) => entry.birds > 0)
+            .map((entry) => entry.netWeight / entry.birds);
+          avgWeightMap[building.id] =
+            dailyAverages.length > 0
+              ? dailyAverages.reduce((sum, value) => sum + value, 0) / dailyAverages.length
+              : 0;
 
           const selectedDayRows = reductions.filter((row) => isSameSelectedDate(row.createdAt));
           const cumulativeRows = reductions.filter((row) => dayjs(row.createdAt).isBefore(selectedDayEnd));

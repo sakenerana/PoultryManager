@@ -571,6 +571,64 @@ export default function HarvestTruckPage() {
     }
   };
 
+  const resequenceTruckNamesForSelectedDate = async () => {
+    const buildingId = Number(buildingIdParam);
+    if (!Number.isFinite(buildingId) || buildingId <= 0) return;
+
+    const { startIso: selectedDayStart, endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
+    const currentGrow = await resolveCurrentGrowForBuilding(buildingId);
+    if (currentGrow === null) return;
+
+    const harvests = await loadHarvests({ growId: currentGrow.id, limit: 500 });
+    if (harvests.length === 0) return;
+
+    const trucksByHarvest = await Promise.all(
+      harvests.map((harvest) =>
+        loadHarvestTrucks({
+          harvestId: Number(harvest.id),
+          createdFrom: selectedDayStart,
+          createdTo: selectedDayEnd,
+          ascending: false,
+          limit: 500,
+        })
+      )
+    );
+
+    const getTrailingNumber = (name: string): number | null => {
+      const match = name.match(/(\d+)\s*$/);
+      if (!match) return null;
+      const value = Number(match[1]);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const ordered = trucksByHarvest
+      .flat()
+      .slice()
+      .sort((a, b) => {
+        const aName = a.name ?? "Truck";
+        const bName = b.name ?? "Truck";
+        const aNum = getTrailingNumber(aName);
+        const bNum = getTrailingNumber(bName);
+
+        if (aNum != null && bNum != null && aNum !== bNum) return aNum - bNum;
+        if (aNum != null && bNum == null) return -1;
+        if (aNum == null && bNum != null) return 1;
+
+        const nameOrder = aName.localeCompare(bName, undefined, { numeric: true, sensitivity: "base" });
+        if (nameOrder !== 0) return nameOrder;
+
+        return dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf();
+      });
+
+    await Promise.all(
+      ordered.map((truckRow, index) => {
+        const nextName = `Truck ${index + 1}`;
+        if ((truckRow.name ?? "Truck") === nextName) return Promise.resolve();
+        return updateHarvestTruck(truckRow.id, { name: nextName });
+      })
+    );
+  };
+
   useEffect(() => {
     void fetchTrucksFromSupabase();
   }, [buildingIdParam, selectedDate]);
@@ -637,6 +695,7 @@ export default function HarvestTruckPage() {
 
     try {
       await deleteHarvestTruck(truck.id);
+      await resequenceTruckNamesForSelectedDate();
       if (activeTruckId === truck.id) {
         handleCloseLoadDrawer();
       }

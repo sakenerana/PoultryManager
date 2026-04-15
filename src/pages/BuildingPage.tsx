@@ -116,6 +116,8 @@ const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLo
 const BODY_WEIGHT_LOGS_TABLE = import.meta.env.VITE_SUPABASE_BODY_WEIGHT_LOGS_TABLE ?? "BodyWeightLogs";
 const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
 const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
+const TRANSFER_TRANSACTIONS_TABLE =
+  import.meta.env.VITE_SUPABASE_TRANSFER_TRANSACTIONS_TABLE ?? "TransferTransactions";
 
 type UserAccess = {
   role: "Admin" | "Supervisor" | "Staff" | null;
@@ -657,10 +659,12 @@ export default function BuildingOverviewPage() {
       const overallMetricsByGrowId: Record<number, { mortality: number; thinning: number; takeOut: number }> = {};
       const doaTotalsByGrowId: Record<number, number> = {};
       const culledTotalsByGrowId: Record<number, number> = {};
+      const transferTotalsByGrowId: Record<number, number> = {};
       if (latestGrowIds.length > 0) {
         const [
           { data: doaRows, error: doaRowsError },
           { data: culledRows, error: culledRowsError },
+          { data: transferRows, error: transferRowsError },
         ] = await Promise.all([
           supabase
             .from(DOA_TRANSACTIONS_TABLE)
@@ -672,10 +676,16 @@ export default function BuildingOverviewPage() {
             .select("grow_id, total_animals_count")
             .in("grow_id", latestGrowIds)
             .lt("created_at", selectedDayEnd),
+          supabase
+            .from(TRANSFER_TRANSACTIONS_TABLE)
+            .select("grow_id, total_animals_count")
+            .in("grow_id", latestGrowIds)
+            .lt("created_at", selectedDayEnd),
         ]);
 
         if (doaRowsError) throw doaRowsError;
         if (culledRowsError) throw culledRowsError;
+        if (transferRowsError) throw transferRowsError;
 
         ((doaRows ?? []) as Array<{
           grow_id: number | null;
@@ -693,6 +703,14 @@ export default function BuildingOverviewPage() {
           if (row.grow_id == null) return;
           culledTotalsByGrowId[row.grow_id] =
             (culledTotalsByGrowId[row.grow_id] ?? 0) + toNonNegativeInt(row.total_animals_count);
+        });
+        ((transferRows ?? []) as Array<{
+          grow_id: number | null;
+          total_animals_count: number | null;
+        }>).forEach((row) => {
+          if (row.grow_id == null) return;
+          transferTotalsByGrowId[row.grow_id] =
+            (transferTotalsByGrowId[row.grow_id] ?? 0) + toNonNegativeInt(row.total_animals_count);
         });
 
         const reductionTransactionsByGrowIdEntries = await Promise.all(
@@ -860,6 +878,7 @@ export default function BuildingOverviewPage() {
         const overallMetrics = grow ? overallMetricsByGrowId[grow.growId] : undefined;
         const doa = grow ? doaTotalsByGrowId[grow.growId] ?? 0 : 0;
         const culled = grow ? culledTotalsByGrowId[grow.growId] ?? 0 : 0;
+        const transfer = grow ? transferTotalsByGrowId[grow.growId] ?? 0 : 0;
         const total = grow?.totalAnimals ?? 0;
         const remaining = growLog?.actualTotalAnimals ?? total;
         const days = grow
@@ -884,6 +903,7 @@ export default function BuildingOverviewPage() {
             (overallMetrics?.mortality ?? growLog?.mortality ?? 0) +
             (overallMetrics?.thinning ?? growLog?.thinning ?? 0) +
             (overallMetrics?.takeOut ?? growLog?.takeOut ?? 0) +
+            transfer +
             doa +
             culled,
         };

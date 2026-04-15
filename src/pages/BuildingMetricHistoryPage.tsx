@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Layout, Typography, Button, Divider, Grid, Drawer, Input, InputNumber, Modal } from "antd";
+import { Layout, Typography, Button, Divider, Grid, Drawer, Input, InputNumber, Modal, Select } from "antd";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import { jsPDF } from "jspdf";
@@ -31,6 +31,8 @@ const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLo
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
 const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
+const TRANSFER_TRANSACTIONS_TABLE =
+  import.meta.env.VITE_SUPABASE_TRANSFER_TRANSACTIONS_TABLE ?? "TransferTransactions";
 
 type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
@@ -41,6 +43,7 @@ type HistoryRow = {
   dayNumber: number;
   value: number;
   avgWeight: number | null;
+  transferTargets: string | null;
   expectedDailyDeaths: number | null;
   sourceTime: string | null;
 };
@@ -52,13 +55,18 @@ type DoaTransactionRow = {
   remarks: string | null;
 };
 
+type TransferTransactionRow = DoaTransactionRow & {
+  targetBuildingId: number | null;
+  targetBuildingName: string;
+};
+
 type MetricTotals = Record<MetricKey, number>;
 
 const METRIC_META: Record<MetricKey, { title: string; accent: string }> = {
   mortality: { title: "Actual Death", accent: "bg-red-500" },
   thinning: { title: "Thinning", accent: "bg-slate-400" },
   takeOut: { title: "Take Out", accent: "bg-amber-500" },
-  reduction: { title: "Reduction", accent: "bg-rose-500" },
+  reduction: { title: "Transfer", accent: "bg-rose-500" },
   doa: { title: "DOA", accent: "bg-sky-500" },
   culled: { title: "Culling", accent: "bg-emerald-500" },
 };
@@ -91,6 +99,13 @@ const METRIC_CARDS: Array<{
     borderColor: "#f59e0b",
     accent: "text-[#d97706]",
     icon: <img src="/img/chicken-head.svg" alt="Take Out" className="h-10 w-10" />,
+  },
+  {
+    key: "reduction",
+    label: "Transfer",
+    borderColor: "#f43f5e",
+    accent: "text-[#e11d48]",
+    icon: <img src="/img/chicken-head.svg" alt="Transfer" className="h-10 w-10" />,
   },
   {
     key: "doa",
@@ -189,6 +204,7 @@ function ChickenState({
 }
 
 const toMetricKey = (value: string | undefined): MetricKey => {
+  if (value === "transfer") return "reduction";
   if (
     value === "mortality" ||
     value === "thinning" ||
@@ -200,6 +216,11 @@ const toMetricKey = (value: string | undefined): MetricKey => {
     return value;
   }
   return "mortality";
+};
+
+const toMetricSlug = (value: MetricKey): string => {
+  if (value === "reduction") return "transfer";
+  return value;
 };
 
 const toNonNegativeInt = (value: unknown): number => {
@@ -245,6 +266,18 @@ export default function BuildingMetricHistoryPage() {
   const [doaCount, setDoaCount] = useState(0);
   const [doaRemarks, setDoaRemarks] = useState("");
   const [doaHistoryRows, setDoaHistoryRows] = useState<DoaTransactionRow[]>([]);
+  const [isTransferDrawerOpen, setIsTransferDrawerOpen] = useState(false);
+  const [transferDrawerDate, setTransferDrawerDate] = useState(selectedDate);
+  const [transferCount, setTransferCount] = useState(0);
+  const [transferBuildingId, setTransferBuildingId] = useState<number | null>(null);
+  const [transferRemarks, setTransferRemarks] = useState("");
+  const [transferHistoryRows, setTransferHistoryRows] = useState<TransferTransactionRow[]>([]);
+  const [isSavingTransfer, setIsSavingTransfer] = useState(false);
+  const [editingTransferTransactionId, setEditingTransferTransactionId] = useState<number | null>(null);
+  const [editingTransferCount, setEditingTransferCount] = useState(0);
+  const [editingTransferRemarks, setEditingTransferRemarks] = useState("");
+  const [isEditingTransfer, setIsEditingTransfer] = useState(false);
+  const [buildingOptions, setBuildingOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [isSavingDoa, setIsSavingDoa] = useState(false);
   const [editingDoaTransactionId, setEditingDoaTransactionId] = useState<number | null>(null);
   const [editingDoaCount, setEditingDoaCount] = useState(0);
@@ -271,6 +304,11 @@ export default function BuildingMetricHistoryPage() {
   });
 
   useEffect(() => {
+    if (!id || metric !== "reduction") return;
+    navigate(`/building-metric-history/${id}/transfer?date=${selectedDate}`, { replace: true });
+  }, [id, metric, navigate, selectedDate]);
+
+  useEffect(() => {
     const resolveUserRole = async () => {
       if (!user?.id) {
         setUserRole(null);
@@ -295,6 +333,31 @@ export default function BuildingMetricHistoryPage() {
 
     void resolveUserRole();
   }, [user?.id]);
+
+  useEffect(() => {
+    const loadBuildingOptions = async () => {
+      const { data, error } = await supabase
+        .from(BUILDINGS_TABLE)
+        .select("id, name")
+        .order("name", { ascending: true });
+
+      if (error) {
+        setBuildingOptions([]);
+        return;
+      }
+
+      const rows = ((data ?? []) as Array<{ id: number | null; name: string | null }>)
+        .filter((row) => Number.isFinite(Number(row.id)))
+        .map((row) => ({
+          id: Number(row.id),
+          name: typeof row.name === "string" && row.name.trim().length > 0 ? row.name : `Building #${row.id}`,
+        }));
+
+      setBuildingOptions(rows);
+    };
+
+    void loadBuildingOptions();
+  }, []);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -360,7 +423,7 @@ export default function BuildingMetricHistoryPage() {
         setActiveGrowStatus(typeof growRow.status === "string" ? growRow.status : "");
         setTotalBirdsLoaded(toNonNegativeInt(growRow.total_animals));
 
-        const [growLogs, reductionTransactions, bodyWeightLogs, doaTransactionsResult, culledTransactionsResult] = await Promise.all([
+        const [growLogs, reductionTransactions, bodyWeightLogs, doaTransactionsResult, culledTransactionsResult, transferTransactionsResult] = await Promise.all([
           loadGrowLogsByGrowId(growRow.id),
           loadGrowReductionTransactionsByGrowId(growRow.id),
           loadBodyWeightLogsByBuildingId(buildingId),
@@ -376,9 +439,16 @@ export default function BuildingMetricHistoryPage() {
             .eq("grow_id", growRow.id)
             .lt("created_at", selectedDayEnd)
             .order("created_at", { ascending: false }),
+          supabase
+            .from(TRANSFER_TRANSACTIONS_TABLE)
+            .select("created_at, total_animals_count, building_id")
+            .eq("grow_id", growRow.id)
+            .lt("created_at", selectedDayEnd)
+            .order("created_at", { ascending: false }),
         ]);
         if (doaTransactionsResult.error) throw doaTransactionsResult.error;
         if (culledTransactionsResult.error) throw culledTransactionsResult.error;
+        if (transferTransactionsResult.error) throw transferTransactionsResult.error;
         const logsUntilSelectedDate = growLogs.filter((row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf());
         const logsByDate = logsUntilSelectedDate.reduce<Record<string, typeof growLogs>>((acc, row) => {
           const dateKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
@@ -426,6 +496,28 @@ export default function BuildingMetricHistoryPage() {
           acc[dateKey].total += toNonNegativeInt(row.total_animals_count);
           return acc;
         }, {});
+        const transferTotalsByDate = ((transferTransactionsResult.data ?? []) as Array<{
+          created_at: string;
+          total_animals_count: number | null;
+          building_id: number | null;
+        }>).reduce<Record<string, { total: number; sourceTime: string | null; targetBuildingIds: number[] }>>((acc, row) => {
+          const dateKey = dayjs.utc(row.created_at).format("YYYY-MM-DD");
+          if (!acc[dateKey]) acc[dateKey] = { total: 0, sourceTime: row.created_at, targetBuildingIds: [] };
+          acc[dateKey].total += toNonNegativeInt(row.total_animals_count);
+          if (row.building_id != null && !acc[dateKey].targetBuildingIds.includes(row.building_id)) {
+            acc[dateKey].targetBuildingIds.push(row.building_id);
+          }
+          return acc;
+        }, {});
+
+        const formatTransferTargets = (targetBuildingIds: number[]): string | null => {
+          if (targetBuildingIds.length === 0) return null;
+          return targetBuildingIds
+            .map((targetBuildingId) => (
+              buildingOptions.find((option) => option.id === targetBuildingId)?.name ?? `Building #${targetBuildingId}`
+            ))
+            .join(", ");
+        };
 
         const startDate = dayjs.utc(growRow.created_at).startOf("day");
         const endDate = dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day");
@@ -471,20 +563,6 @@ export default function BuildingMetricHistoryPage() {
             };
           });
 
-          const latestReductionByCage = dayReductionRows.reduce<Record<string, number>>((acc, row) => {
-            if (row.subbuildingId == null || row.reductionType == null) return acc;
-            const reductionType = row.reductionType;
-            const reductionKey =
-              reductionType === "take_out" || reductionType === "mortality" || reductionType === "thinning"
-                ? reductionType
-                : null;
-            if (!reductionKey) return acc;
-            const key = `${row.subbuildingId}-${reductionKey}`;
-            if (acc[key] != null) return acc;
-            acc[key] = toNonNegativeInt(row.animalCount);
-            return acc;
-          }, {});
-
           const summarizeReductionRows = (rows: typeof dayReductionRows) =>
             rows.reduce<Record<string, number>>((acc, row) => {
               if (row.subbuildingId == null) return acc;
@@ -528,13 +606,7 @@ export default function BuildingMetricHistoryPage() {
                   ? Object.values(latestByCage).reduce((sum, row) => sum + row.takeOut, 0)
                   : toNonNegativeInt(latestRow?.takeOut ?? 0),
             reduction:
-              Object.keys(latestReductionByCage).length > 0
-                ? Object.values(latestReductionByCage).reduce((sum, current) => sum + current, 0)
-                : Object.keys(latestByCage).length > 0
-                  ? Object.values(latestByCage).reduce((sum, row) => sum + row.mortality + row.thinning + row.takeOut, 0)
-                  : toNonNegativeInt(latestRow?.mortality ?? 0) +
-                    toNonNegativeInt(latestRow?.thinning ?? 0) +
-                    toNonNegativeInt(latestRow?.takeOut ?? 0),
+              transferTotalsByDate[dateKey]?.total ?? 0,
             doa: doaTotalsByDate[dateKey]?.total ?? 0,
             culled: culledTotalsByDate[dateKey]?.total ?? 0,
           };
@@ -572,8 +644,13 @@ export default function BuildingMetricHistoryPage() {
             dayNumber: cursor.diff(startDate, "day"),
             value,
             avgWeight,
+            transferTargets: formatTransferTargets(transferTotalsByDate[dateKey]?.targetBuildingIds ?? []),
             expectedDailyDeaths: metricKey === "mortality" ? EXPECTED_DAILY_DEATHS[cursor.diff(startDate, "day")] ?? null : null,
-            sourceTime: specialMetricEntry?.sourceTime ?? dayReductionRows[0]?.createdAt ?? latestRow?.createdAt ?? null,
+            sourceTime:
+              (metricKey === "reduction" ? transferTotalsByDate[dateKey]?.sourceTime : specialMetricEntry?.sourceTime) ??
+              dayReductionRows[0]?.createdAt ??
+              latestRow?.createdAt ??
+              null,
           });
         }
 
@@ -599,7 +676,7 @@ export default function BuildingMetricHistoryPage() {
     };
 
     void fetchHistory();
-  }, [id, metricKey, selectedDate, isSelectorPage, historyRefreshKey]);
+  }, [id, metricKey, selectedDate, isSelectorPage, historyRefreshKey, buildingOptions]);
 
   const refreshMetricHistory = () => {
     setHistoryRefreshKey((current) => current + 1);
@@ -773,7 +850,7 @@ export default function BuildingMetricHistoryPage() {
   const handleMetricTabChange = (nextMetric: MetricKey) => {
     if (!id) return;
     if (selectedMetric === nextMetric) return;
-    navigate(`/building-metric-history/${id}/${nextMetric}?date=${selectedDate}`);
+    navigate(`/building-metric-history/${id}/${toMetricSlug(nextMetric)}?date=${selectedDate}`);
   };
 
   const resolveEffectiveGrowMeta = async (): Promise<{ growId: number | null; status: string }> => {
@@ -829,6 +906,34 @@ export default function BuildingMetricHistoryPage() {
     const totalAnimals = toNonNegativeInt(data?.total_animals);
     setTotalBirdsLoaded(totalAnimals);
     return { growId, totalAnimals };
+  };
+
+  const resolveGrowAnimalLimitByBuildingId = async (
+    buildingId: number
+  ): Promise<{ growId: number | null; totalAnimals: number; status: string }> => {
+    if (!Number.isFinite(buildingId)) {
+      return { growId: null, totalAnimals: 0, status: "" };
+    }
+
+    const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const { data, error } = await supabase
+      .from(GROWS_TABLE)
+      .select("id, total_animals, status")
+      .eq("building_id", buildingId)
+      .lt("created_at", selectedDayEnd)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      throw new Error(error.message || "Failed to load destination grow.");
+    }
+
+    const row = ((data ?? []) as Array<{ id: number | null; total_animals: number | null; status?: string | null }>)[0];
+    return {
+      growId: row?.id ?? null,
+      totalAnimals: toNonNegativeInt(row?.total_animals),
+      status: typeof row?.status === "string" ? row.status : "",
+    };
   };
 
   const updateGrowTotalAnimals = async (growId: number, totalAnimals: number) => {
@@ -1027,6 +1132,49 @@ export default function BuildingMetricHistoryPage() {
     setDoaHistoryRows(rows);
   };
 
+  const loadTransferHistory = async () => {
+    const { growId, status } = await resolveEffectiveGrowMeta();
+    if (growId == null || (status !== "Loading" && status !== "Growing")) {
+      setTransferHistoryRows([]);
+      return;
+    }
+
+    const drawerDayStart = `${dayjs(transferDrawerDate).format("YYYY-MM-DD")}T00:00:00+00:00`;
+    const drawerDayEnd = `${dayjs(transferDrawerDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
+
+    const { data, error } = await supabase
+      .from(TRANSFER_TRANSACTIONS_TABLE)
+      .select("id, created_at, total_animals_count, remarks, building_id")
+      .eq("grow_id", growId)
+      .gte("created_at", drawerDayStart)
+      .lt("created_at", drawerDayEnd)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(error.message || "Failed to load transfer history.");
+    }
+
+    const rows = ((data ?? []) as Array<{
+      id: number;
+      created_at: string;
+      total_animals_count: number | null;
+      remarks: string | null;
+      building_id: number | null;
+    }>).map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      totalAnimalsCount: toNonNegativeInt(row.total_animals_count),
+      remarks: typeof row.remarks === "string" ? row.remarks : null,
+      targetBuildingId: row.building_id ?? null,
+      targetBuildingName:
+        row.building_id != null
+          ? (buildingOptions.find((option) => option.id === row.building_id)?.name ?? `Building #${row.building_id}`)
+          : "Unknown Building",
+    }));
+
+    setTransferHistoryRows(rows);
+  };
+
   const loadCulledHistory = async () => {
     const { growId, status } = await resolveEffectiveGrowMeta();
     if (growId == null || (status !== "Loading" && status !== "Growing")) {
@@ -1134,6 +1282,22 @@ export default function BuildingMetricHistoryPage() {
     void fetchCulledHistory();
   }, [isCulledDrawerOpen, activeGrowId, id, culledDrawerDate]);
 
+  useEffect(() => {
+    if (!isTransferDrawerOpen) return;
+
+    const fetchTransferHistory = async () => {
+      try {
+        await loadTransferHistory();
+      } catch (error) {
+        setTransferHistoryRows([]);
+        setToastMessage(getErrorMessage(error));
+        setIsToastOpen(true);
+      }
+    };
+
+    void fetchTransferHistory();
+  }, [isTransferDrawerOpen, activeGrowId, activeGrowStatus, id, transferDrawerDate, buildingOptions]);
+
   const handleOpenDoaDrawer = (date = selectedDate) => {
     setDoaDrawerDate(date);
     setDoaCount(0);
@@ -1143,6 +1307,392 @@ export default function BuildingMetricHistoryPage() {
     setEditingDoaRemarks("");
     setIsEditingDoa(false);
     setIsDoaDrawerOpen(true);
+  };
+
+  const handleOpenTransferDrawer = (date = selectedDate) => {
+    setTransferDrawerDate(date);
+    setTransferCount(0);
+    setTransferBuildingId(null);
+    setTransferRemarks("");
+    setTransferHistoryRows([]);
+    setEditingTransferTransactionId(null);
+    setEditingTransferCount(0);
+    setEditingTransferRemarks("");
+    setIsEditingTransfer(false);
+    setIsTransferDrawerOpen(true);
+  };
+
+  const handleCloseTransferDrawer = () => {
+    setIsTransferDrawerOpen(false);
+    setTransferDrawerDate(selectedDate);
+    setTransferCount(0);
+    setTransferBuildingId(null);
+    setTransferRemarks("");
+    setTransferHistoryRows([]);
+    setEditingTransferTransactionId(null);
+    setEditingTransferCount(0);
+    setEditingTransferRemarks("");
+    setIsEditingTransfer(false);
+  };
+
+  const startEditingTransferEntry = (entry: TransferTransactionRow) => {
+    setEditingTransferTransactionId(entry.id);
+    setEditingTransferCount(entry.totalAnimalsCount);
+    setEditingTransferRemarks(entry.remarks ?? "");
+  };
+
+  const resetTransferEditState = () => {
+    setEditingTransferTransactionId(null);
+    setEditingTransferCount(0);
+    setEditingTransferRemarks("");
+    setIsEditingTransfer(false);
+  };
+
+  const handleSaveTransfer = async () => {
+    if (isSavingTransfer) return;
+    const sourceBuildingId = Number(id);
+    if (!Number.isFinite(sourceBuildingId)) {
+      setToastMessage("Invalid source building.");
+      setIsToastOpen(true);
+      return;
+    }
+    if (transferBuildingId == null) {
+      setToastMessage("Transfer To Building is required.");
+      setIsToastOpen(true);
+      return;
+    }
+    if (transferBuildingId === sourceBuildingId) {
+      setToastMessage("Transfer To Building must be different from source building.");
+      setIsToastOpen(true);
+      return;
+    }
+    if (transferCount <= 0) {
+      setToastMessage("Transfer Count is required.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setIsSavingTransfer(true);
+
+    let sourceGrowId: number | null = null;
+    let sourceTotalAnimals = 0;
+    let destinationGrowId: number | null = null;
+    let destinationTotalAnimals = 0;
+
+    try {
+      const [sourceGrowSummary, destinationGrowSummary] = await Promise.all([
+        resolveGrowAnimalLimit(),
+        resolveGrowAnimalLimitByBuildingId(transferBuildingId),
+      ]);
+      sourceGrowId = sourceGrowSummary.growId;
+      sourceTotalAnimals = sourceGrowSummary.totalAnimals;
+      destinationGrowId = destinationGrowSummary.growId;
+      destinationTotalAnimals = destinationGrowSummary.totalAnimals;
+
+      if (destinationGrowSummary.status !== "Loading" && destinationGrowSummary.status !== "Growing") {
+        setToastMessage("Destination building has no active Loading/Growing grow.");
+        setIsToastOpen(true);
+        setIsSavingTransfer(false);
+        return;
+      }
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsSavingTransfer(false);
+      return;
+    }
+
+    if (sourceGrowId == null) {
+      setToastMessage("No active grow found for this building.");
+      setIsToastOpen(true);
+      setIsSavingTransfer(false);
+      return;
+    }
+    if (destinationGrowId == null) {
+      setToastMessage("No active grow found for destination building.");
+      setIsToastOpen(true);
+      setIsSavingTransfer(false);
+      return;
+    }
+
+    if (!ensureCountWithinGrowTotal(transferCount, sourceTotalAnimals, "Transfer Count")) {
+      setIsSavingTransfer(false);
+      return;
+    }
+
+    const now = dayjs();
+    const createdAt = dayjs(transferDrawerDate)
+      .hour(now.hour())
+      .minute(now.minute())
+      .second(now.second())
+      .millisecond(0)
+      .toISOString();
+
+    const { error } = await supabase.from(TRANSFER_TRANSACTIONS_TABLE).insert([
+      {
+        created_at: createdAt,
+        grow_id: sourceGrowId,
+        building_id: transferBuildingId,
+        total_animals_count: transferCount,
+        remarks: transferRemarks.trim() || null,
+      },
+    ]);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to save transfer record.");
+      setIsToastOpen(true);
+      setIsSavingTransfer(false);
+      return;
+    }
+
+    try {
+      const nextSourceTotalAnimals = sourceTotalAnimals - transferCount;
+      const nextDestinationTotalAnimals = destinationTotalAnimals + transferCount;
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(sourceGrowId, nextSourceTotalAnimals);
+
+      await Promise.all([
+        updateGrowTotalAnimals(sourceGrowId, nextSourceTotalAnimals),
+        updateGrowTotalAnimals(destinationGrowId, nextDestinationTotalAnimals),
+      ]);
+      await createGrowLogSnapshotFromLatestDate(sourceGrowId, nextDisplayedCurrentAnimals, createdAt);
+      await syncLatestGrowLogActualTotal(sourceGrowId, nextDisplayedCurrentAnimals);
+      setTotalBirdsLoaded(nextSourceTotalAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsSavingTransfer(false);
+      return;
+    }
+
+    try {
+      await loadTransferHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsSavingTransfer(false);
+      return;
+    }
+
+    setTransferCount(0);
+    setTransferBuildingId(null);
+    setTransferRemarks("");
+    refreshMetricHistory();
+    setToastMessage("Transfer record saved.");
+    setIsToastOpen(true);
+    setIsSavingTransfer(false);
+  };
+
+  const handleSaveEditedTransfer = async (entry: TransferTransactionRow) => {
+    if (isEditingTransfer) return;
+    if (editingTransferCount <= 0) {
+      setToastMessage("Transfer Count is required.");
+      setIsToastOpen(true);
+      return;
+    }
+    const sourceBuildingId = Number(id);
+    if (!Number.isFinite(sourceBuildingId)) {
+      setToastMessage("Invalid source building.");
+      setIsToastOpen(true);
+      return;
+    }
+    if (entry.targetBuildingId == null) {
+      setToastMessage("Transfer destination building is missing on this record.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setIsEditingTransfer(true);
+
+    let sourceGrowId: number | null = null;
+    let sourceTotalAnimals = 0;
+    let destinationGrowId: number | null = null;
+    let destinationTotalAnimals = 0;
+
+    try {
+      const [sourceGrowSummary, destinationGrowSummary] = await Promise.all([
+        resolveGrowAnimalLimit(),
+        resolveGrowAnimalLimitByBuildingId(entry.targetBuildingId),
+      ]);
+      sourceGrowId = sourceGrowSummary.growId;
+      sourceTotalAnimals = sourceGrowSummary.totalAnimals;
+      destinationGrowId = destinationGrowSummary.growId;
+      destinationTotalAnimals = destinationGrowSummary.totalAnimals;
+
+      if (sourceGrowId == null) {
+        setToastMessage("No active grow found for this building.");
+        setIsToastOpen(true);
+        setIsEditingTransfer(false);
+        return;
+      }
+      if (destinationGrowId == null) {
+        setToastMessage("No active grow found for destination building.");
+        setIsToastOpen(true);
+        setIsEditingTransfer(false);
+        return;
+      }
+
+      const maxAllowed = sourceTotalAnimals + entry.totalAnimalsCount;
+      if (!ensureCountWithinGrowTotal(editingTransferCount, maxAllowed, "Transfer Count")) {
+        setIsEditingTransfer(false);
+        return;
+      }
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from(TRANSFER_TRANSACTIONS_TABLE)
+      .update({
+        total_animals_count: editingTransferCount,
+        remarks: editingTransferRemarks.trim() || null,
+      })
+      .eq("id", entry.id);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to update transfer record.");
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    try {
+      const delta = editingTransferCount - entry.totalAnimalsCount;
+      const nextSourceTotalAnimals = sourceTotalAnimals - delta;
+      const nextDestinationTotalAnimals = destinationTotalAnimals + delta;
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(sourceGrowId, nextSourceTotalAnimals);
+      await Promise.all([
+        updateGrowTotalAnimals(sourceGrowId, nextSourceTotalAnimals),
+        updateGrowTotalAnimals(destinationGrowId, nextDestinationTotalAnimals),
+      ]);
+      await syncLatestGrowLogActualTotal(sourceGrowId, nextDisplayedCurrentAnimals);
+      setTotalBirdsLoaded(nextSourceTotalAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    try {
+      await loadTransferHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    resetTransferEditState();
+    refreshMetricHistory();
+    setToastMessage("Transfer record updated.");
+    setIsToastOpen(true);
+  };
+
+  const handleDeleteTransferEntry = async (entry: TransferTransactionRow) => {
+    if (isEditingTransfer) return;
+    if (entry.targetBuildingId == null) {
+      setToastMessage("Transfer destination building is missing on this record.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: "Remove Transfer Entry",
+        content: "Are you sure you want to remove this transfer record?",
+        okText: "Remove",
+        cancelText: "Cancel",
+        okButtonProps: {
+          danger: true,
+        },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+
+    if (!confirmed) return;
+
+    setIsEditingTransfer(true);
+
+    let sourceGrowId: number | null = null;
+    let sourceTotalAnimals = 0;
+    let destinationGrowId: number | null = null;
+    let destinationTotalAnimals = 0;
+
+    try {
+      const [sourceGrowSummary, destinationGrowSummary] = await Promise.all([
+        resolveGrowAnimalLimit(),
+        resolveGrowAnimalLimitByBuildingId(entry.targetBuildingId),
+      ]);
+      sourceGrowId = sourceGrowSummary.growId;
+      sourceTotalAnimals = sourceGrowSummary.totalAnimals;
+      destinationGrowId = destinationGrowSummary.growId;
+      destinationTotalAnimals = destinationGrowSummary.totalAnimals;
+    } catch (error) {
+      setToastMessage(getErrorMessage(error));
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    if (sourceGrowId == null) {
+      setToastMessage("No active grow found for this building.");
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+    if (destinationGrowId == null) {
+      setToastMessage("No active grow found for destination building.");
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from(TRANSFER_TRANSACTIONS_TABLE)
+      .delete()
+      .eq("id", entry.id);
+
+    if (error) {
+      setToastMessage(error.message || "Failed to remove transfer record.");
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    try {
+      const nextSourceTotalAnimals = sourceTotalAnimals + entry.totalAnimalsCount;
+      const nextDestinationTotalAnimals = Math.max(0, destinationTotalAnimals - entry.totalAnimalsCount);
+      const nextDisplayedCurrentAnimals = await resolveDisplayedCurrentAnimals(sourceGrowId, nextSourceTotalAnimals);
+      await Promise.all([
+        updateGrowTotalAnimals(sourceGrowId, nextSourceTotalAnimals),
+        updateGrowTotalAnimals(destinationGrowId, nextDestinationTotalAnimals),
+      ]);
+      await syncLatestGrowLogActualTotal(sourceGrowId, nextDisplayedCurrentAnimals);
+      setTotalBirdsLoaded(nextSourceTotalAnimals);
+    } catch (growUpdateError) {
+      setToastMessage(getErrorMessage(growUpdateError));
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    try {
+      await loadTransferHistory();
+    } catch (historyError) {
+      setToastMessage(getErrorMessage(historyError));
+      setIsToastOpen(true);
+      setIsEditingTransfer(false);
+      return;
+    }
+
+    resetTransferEditState();
+    refreshMetricHistory();
+    setToastMessage("Transfer record removed.");
+    setIsToastOpen(true);
   };
 
   const handleCloseDoaDrawer = () => {
@@ -1706,13 +2256,25 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const totalValue = useMemo(() => historyRows.reduce((sum, row) => sum + row.value, 0), [historyRows]);
+  const sourceBuildingId = useMemo(() => {
+    const parsed = Number(id);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [id]);
+  const transferTargetBuildingOptions = useMemo(
+    () =>
+      buildingOptions
+        .filter((option) => sourceBuildingId == null || option.id !== sourceBuildingId)
+        .map((option) => ({ label: option.name, value: option.id })),
+    [buildingOptions, sourceBuildingId]
+  );
   const totalLabel = useMemo(() => {
     if (metricKey === "mortality") return "Total";
     if (metricKey === "thinning") return "Total";
     if (metricKey === "takeOut") return "Total";
+    if (metricKey === "reduction") return "Total Transfer";
     if (metricKey === "doa") return "Total DOA";
     if (metricKey === "culled") return "Total Culling";
-    return "Total Reduction";
+    return "Total";
   }, [metricKey]);
   const totalAvgWeight = useMemo(() => {
     const rowsWithAvgWeight = historyRows.filter((row) => row.avgWeight != null);
@@ -1722,6 +2284,10 @@ export default function BuildingMetricHistoryPage() {
   const doaTotalEncoded = useMemo(
     () => doaHistoryRows.reduce((sum, row) => sum + row.totalAnimalsCount, 0),
     [doaHistoryRows]
+  );
+  const transferTotalEncoded = useMemo(
+    () => transferHistoryRows.reduce((sum, row) => sum + row.totalAnimalsCount, 0),
+    [transferHistoryRows]
   );
   const culledTotalEncoded = useMemo(
     () => culledHistoryRows.reduce((sum, row) => sum + row.totalAnimalsCount, 0),
@@ -1736,7 +2302,7 @@ export default function BuildingMetricHistoryPage() {
     [userRole]
   );
 
-  const renderSpecialDrawerHeader = (title: "DOA" | "Culling", onClose: () => void) => (
+  const renderSpecialDrawerHeader = (title: "DOA" | "Culling" | "Transfer", onClose: () => void) => (
     <div
       className={[
         "sticky top-0 z-10 flex items-center justify-between",
@@ -1958,6 +2524,10 @@ export default function BuildingMetricHistoryPage() {
                   role="button"
                   tabIndex={0}
                   onClick={() => {
+                    if (metricKey === "reduction") {
+                      handleOpenTransferDrawer(row.date);
+                      return;
+                    }
                     if (metricKey === "doa") {
                       handleOpenDoaDrawer(row.date);
                       return;
@@ -1971,6 +2541,10 @@ export default function BuildingMetricHistoryPage() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
+                      if (metricKey === "reduction") {
+                        handleOpenTransferDrawer(row.date);
+                        return;
+                      }
                       if (metricKey === "doa") {
                         handleOpenDoaDrawer(row.date);
                         return;
@@ -2020,17 +2594,26 @@ export default function BuildingMetricHistoryPage() {
                       <div className="mt-0.5 text-2xl font-bold leading-none text-slate-900">{row.value.toLocaleString()}</div>
                       {!isSpecialMetric(metricKey) ? (
                         <div className="mt-2 grid gap-1 text-[10px] text-slate-500">
-                          <div className="flex items-baseline justify-between gap-3">
-                            <span className="uppercase tracking-wide">Avg. Weight</span>
-                            <span className="text-xs font-semibold text-slate-700">
-                              {row.avgWeight !== null
-                                ? `${row.avgWeight.toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })} g`
-                                : "-"}
-                            </span>
-                          </div>
+                          {metricKey === "reduction" ? (
+                            <div className="flex items-baseline justify-between gap-3">
+                              <span className="uppercase tracking-wide">Transfer To</span>
+                              <span className="text-xs font-semibold text-slate-700 text-right">
+                                {row.transferTargets ?? "-"}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-baseline justify-between gap-3">
+                              <span className="uppercase tracking-wide">Avg. Weight</span>
+                              <span className="text-xs font-semibold text-slate-700">
+                                {row.avgWeight !== null
+                                  ? `${row.avgWeight.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })} g`
+                                  : "-"}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -2041,6 +2624,199 @@ export default function BuildingMetricHistoryPage() {
           </>
         )}
       </Content>
+
+      <Drawer
+        open={isTransferDrawerOpen}
+        onClose={handleCloseTransferDrawer}
+        placement="right"
+        width={isMobile ? "100%" : 420}
+        className="transfer-drawer"
+        closable={false}
+        headerStyle={{ display: "none" }}
+        bodyStyle={{ padding: 0, backgroundColor: "#f8fafc" }}
+      >
+        {renderSpecialDrawerHeader("Transfer", handleCloseTransferDrawer)}
+
+        <div className="p-5">
+          <div className="rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-[#2563eb]">{buildingName || `Building #${id}`}</div>
+              <div className="text-xs font-medium text-slate-500">{dayjs(transferDrawerDate).format("MMMM D, YYYY")}</div>
+            </div>
+            <div className="mt-4">
+              <div className="text-sm font-semibold text-slate-900">History</div>
+              {transferHistoryRows.length === 0 ? (
+                <div className="mt-2 text-sm text-slate-500">No history yet.</div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {transferHistoryRows.map((row) => {
+                    const isEditing = editingTransferTransactionId === row.id;
+
+                    return (
+                    <div key={row.id} className="rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-slate-900">
+                            {formatSpecialTransactionTimestamp(row.createdAt)}
+                          </div>
+                          <div className="mt-0.5 text-[11px] font-medium text-slate-600">
+                            To: {row.targetBuildingName}
+                          </div>
+                          {isEditing ? (
+                            <div className="mt-2 flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <InputNumber
+                                  min={0}
+                                  value={editingTransferCount}
+                                  onChange={(value) => setEditingTransferCount(Number(value) || 0)}
+                                  parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
+                                  inputMode="numeric"
+                                  className="!w-[110px]"
+                                  size="small"
+                                  styles={{ input: { fontSize: 16 } }}
+                                />
+                                <div className="text-[11px] font-semibold text-slate-500">birds</div>
+                              </div>
+                              <Input.TextArea
+                                rows={1}
+                                value={editingTransferRemarks}
+                                onChange={(event) => setEditingTransferRemarks(event.target.value)}
+                                placeholder="Add remarks (optional)"
+                                autoSize={{ minRows: 1, maxRows: 2 }}
+                                className="!text-base"
+                                style={{ fontSize: 16 }}
+                              />
+                            </div>
+                          ) : row.remarks ? (
+                            <div className="mt-1 line-clamp-2 text-[11px] text-slate-500 break-words">{row.remarks}</div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {!isEditing ? (
+                            <div className="inline-flex min-w-[76px] items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-bold text-slate-900">
+                              {row.totalAnimalsCount.toLocaleString()}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex justify-end">
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={resetTransferEditState}
+                              disabled={isEditingTransfer}
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-500 disabled:opacity-60"
+                            >
+                              <FiX size={12} />
+                              <span>Cancel</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveEditedTransfer(row)}
+                              disabled={editingTransferCount <= 0 || isEditingTransfer}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
+                            >
+                              <FiCheck size={12} />
+                              <span>{isEditingTransfer ? "Saving..." : "Save"}</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => startEditingTransferEntry(row)}
+                              disabled={isEditingTransfer}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
+                            >
+                              <FiEdit2 size={11} />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteTransferEntry(row)}
+                              disabled={isEditingTransfer}
+                              className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 disabled:opacity-60"
+                            >
+                              <FiTrash2 size={11} />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )})}
+                </div>
+              )}
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
+              <span className="text-slate-500">Total Encoded</span>
+              <span className="font-semibold text-slate-900">{transferTotalEncoded.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-full">
+                <div className="mb-2 text-xs font-medium text-slate-500">Transfer Count</div>
+              <InputNumber
+                min={0}
+                value={transferCount}
+                onChange={(value) => setTransferCount(Number(value) || 0)}
+                parser={(value) => Number(String(value ?? "").replace(/[^\d]/g, "") || "0")}
+                inputMode="numeric"
+                placeholder="Enter total count"
+                className="!w-full"
+                styles={{ input: { fontSize: 16, height: 44 } }}
+              />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="mb-2 text-xs font-medium text-slate-500">Transfer To Building</div>
+              <Select
+                value={transferBuildingId ?? undefined}
+                onChange={(value) => setTransferBuildingId(Number(value))}
+                placeholder="Select destination building"
+                options={transferTargetBuildingOptions}
+                className="!w-full"
+                size="large"
+              />
+            </div>
+            <div className="mt-3">
+              <div className="mb-2 text-xs font-medium text-slate-500">Remarks</div>
+              <Input.TextArea
+                rows={3}
+                value={transferRemarks}
+                onChange={(event) => setTransferRemarks(event.target.value)}
+                placeholder="Add remarks (optional)"
+                className="!text-base"
+              />
+            </div>
+
+            {transferCount <= 0 && (
+              <div className="text-xs text-red-500 mt-2">
+                Transfer Count is required.
+              </div>
+            )}
+            {transferBuildingId == null && (
+              <div className="text-xs text-red-500 mt-2">
+                Transfer To Building is required.
+              </div>
+            )}
+
+            <Button
+              type="primary"
+              className="mt-4 !h-11 !w-full !rounded-lg !border-0 text-base font-semibold"
+              style={{ backgroundColor: "#66bb7a" }}
+              onClick={handleSaveTransfer}
+              disabled={transferCount <= 0 || transferBuildingId == null || isSavingTransfer}
+              loading={isSavingTransfer}
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      </Drawer>
 
       <Drawer
         open={isDoaDrawerOpen}
