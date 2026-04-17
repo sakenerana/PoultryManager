@@ -403,6 +403,11 @@ function BuildingRow({
 
           {/* Stats Grid */}
           <div className="mt-2 w-full grid grid-cols-2 gap-1.5">
+            {stats.status === "Harvested" && (
+              <div className="col-span-2 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-800">
+                Ready for new load.
+              </div>
+            )}
             <StatPill
               label="Total Birds Loaded"
               value={stats.total.toLocaleString()}
@@ -887,25 +892,28 @@ export default function BuildingOverviewPage() {
             dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day").diff(dayjs.utc(grow.createdAt).startOf("day"), "day")
           )
           : 0;
+        const isHarvested = grow?.status === "Harvested";
+        const mortality = isHarvested ? 0 : (overallMetrics?.mortality ?? growLog?.mortality ?? 0);
+        const thinning = isHarvested ? 0 : (overallMetrics?.thinning ?? growLog?.thinning ?? 0);
+        const takeOut = isHarvested ? 0 : (overallMetrics?.takeOut ?? growLog?.takeOut ?? 0);
+        const displayTotal = isHarvested ? 0 : total;
+        const displayRemaining = isHarvested ? 0 : remaining;
+        const displayAvgWeight = isHarvested ? 0 : (Number.isFinite(buildingId) ? avgWeightByBuildingId[buildingId] ?? 0 : 0);
+        const displayDoa = isHarvested ? 0 : doa;
+        const displayCulled = isHarvested ? 0 : culled;
 
         nextStatsByBuildingId[building.id] = {
           days,
-          total,
-          remaining,
-          avgWeight: Number.isFinite(buildingId) ? avgWeightByBuildingId[buildingId] ?? 0 : 0,
+          total: displayTotal,
+          remaining: displayRemaining,
+          avgWeight: displayAvgWeight,
           status: grow?.status ?? "Ready",
-          doa,
-          culled,
-          mortality: overallMetrics?.mortality ?? growLog?.mortality ?? 0,
-          thinning: overallMetrics?.thinning ?? growLog?.thinning ?? 0,
-          takeOut: overallMetrics?.takeOut ?? growLog?.takeOut ?? 0,
-          reduction:
-            (overallMetrics?.mortality ?? growLog?.mortality ?? 0) +
-            (overallMetrics?.thinning ?? growLog?.thinning ?? 0) +
-            (overallMetrics?.takeOut ?? growLog?.takeOut ?? 0) +
-            transfer +
-            doa +
-            culled,
+          doa: displayDoa,
+          culled: displayCulled,
+          mortality,
+          thinning,
+          takeOut,
+          reduction: isHarvested ? 0 : mortality + thinning + takeOut + transfer + displayDoa + displayCulled,
         };
       });
 
