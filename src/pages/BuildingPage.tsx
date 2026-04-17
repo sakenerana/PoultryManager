@@ -439,7 +439,7 @@ function BuildingRow({
               theme={theme}
               borderColor={getStatPillBorderColor(`${b.id}-avg-weight`)}
               backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-avg-weight`), "12")}
-              onClick={onAvgWeightOpen}
+              onClick={stats.status === "Harvested" ? undefined : onAvgWeightOpen}
             />
             <StatPill
               label="Reduction"
@@ -448,7 +448,7 @@ function BuildingRow({
               theme={theme}
               borderColor={getStatPillBorderColor(`${b.id}-reduction`)}
               backgroundColor={withAlpha(getStatPillBorderColor(`${b.id}-reduction`), "12")}
-              onClick={onMetricOpen}
+              onClick={stats.status === "Harvested" ? undefined : onMetricOpen}
             />
           </div>
         </div>
