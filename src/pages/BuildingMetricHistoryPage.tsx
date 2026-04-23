@@ -158,6 +158,7 @@ const EXPECTED_DAILY_DEATHS: Record<number, number> = {
   29: 25,
   30: 22,
 };
+const REDUCTION_LOCK_DAY = 32;
 
 const getErrorMessage = (error: unknown): string => {
   if (error && typeof error === "object") {
@@ -684,6 +685,12 @@ export default function BuildingMetricHistoryPage() {
 
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
+  };
+  const showHarvestReadyNotification = () => {
+    setToastMessage(
+      "You're now unable to add reduction since this grow is already ready for harvested. Please go to harvested section for harvested reductions."
+    );
+    setIsToastOpen(true);
   };
 
   const handlePdfClick = () => {
@@ -2518,12 +2525,20 @@ export default function BuildingMetricHistoryPage() {
             </div>
 
             <div className="mt-4 flex flex-col gap-3">
-              {historyRows.map((row) => (
+              {historyRows.map((row) => {
+                const isLockedForHarvestReady = row.dayNumber >= REDUCTION_LOCK_DAY;
+
+                return (
                 <div
                   key={row.date}
                   role="button"
-                  tabIndex={0}
+                  tabIndex={isLockedForHarvestReady ? -1 : 0}
+                  aria-disabled={isLockedForHarvestReady}
                   onClick={() => {
+                    if (isLockedForHarvestReady) {
+                      showHarvestReadyNotification();
+                      return;
+                    }
                     if (metricKey === "reduction") {
                       handleOpenTransferDrawer(row.date);
                       return;
@@ -2541,6 +2556,10 @@ export default function BuildingMetricHistoryPage() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
+                      if (isLockedForHarvestReady) {
+                        showHarvestReadyNotification();
+                        return;
+                      }
                       if (metricKey === "reduction") {
                         handleOpenTransferDrawer(row.date);
                         return;
@@ -2558,7 +2577,9 @@ export default function BuildingMetricHistoryPage() {
                   }}
                   className={[
                     "rounded-sm border border-emerald-200 bg-white px-4 py-3 shadow-sm transition",
-                    "hover:border-emerald-300 hover:shadow-md cursor-pointer",
+                    isLockedForHarvestReady
+                      ? "cursor-not-allowed opacity-70"
+                      : "hover:border-emerald-300 hover:shadow-md cursor-pointer",
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -2619,7 +2640,7 @@ export default function BuildingMetricHistoryPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </>
         )}

@@ -103,6 +103,9 @@ export default function BuildingHarvestedReportPage() {
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
   };
+  const openGrowHistory = (growId: number) => {
+    navigate(`/reports/grow/${growId}/history`);
+  };
 
   const handlePdfClick = () => {
     if (reportRows.length === 0) {
@@ -369,7 +372,18 @@ export default function BuildingHarvestedReportPage() {
       title: "Grow ID",
       dataIndex: "growId",
       key: "growId",
-      render: (id: number) => <span className="font-semibold text-emerald-700">#{id}</span>,
+      render: (id: number) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            openGrowHistory(id);
+          }}
+          className="font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+        >
+          #{id}
+        </button>
+      ),
       sorter: (a: ReportRow, b: ReportRow) => a.growId - b.growId,
     },
     {
@@ -712,13 +726,15 @@ export default function BuildingHarvestedReportPage() {
               fullScreen={false}
             />
           ) : isMobile ? (
-            <div className="mt-3 space-y-3">
+            <div className="mt-4 space-y-4">
               {reportRows.map((row) => (
                 <Card
                   key={row.growId}
                   size="small"
                   className="!rounded-sm !border !border-slate-200 shadow-sm"
-                  styles={{ body: { padding: 10 } }}
+                  styles={{ body: { padding: 12 } }}
+                  hoverable
+                  onClick={() => openGrowHistory(row.growId)}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
@@ -763,6 +779,10 @@ export default function BuildingHarvestedReportPage() {
                 pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} harvested grows` }}
                 className="shadow-none"
                 loading={isLoading}
+                onRow={(record) => ({
+                  onClick: () => openGrowHistory(record.growId),
+                  className: "cursor-pointer",
+                })}
               />
             </Card>
           )}

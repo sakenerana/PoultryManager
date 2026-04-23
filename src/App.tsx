@@ -9,6 +9,7 @@ import BuildingCage from "./pages/BuildingCage";
 import BuildingMetricHistoryPage from "./pages/BuildingMetricHistoryPage";
 import BuildingAvgWeightHistoryPage from "./pages/BuildingAvgWeightHistoryPage";
 import ReportPage from "./pages/ReportPage";
+import ReportGrowHistoryPage from "./pages/ReportGrowHistoryPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
 import HarvestMetricHistoryPage from "./pages/HarvestMetricHistoryPage";
@@ -46,6 +47,7 @@ function App() {
             <Route path="/harvest-avg-weight-history/:id" element={<HarvestAvgWeightHistoryPage />} />
             <Route path="/harvest-truck-history/:id" element={<HarvestTruckHistoryPage />} />
             <Route path="/reports" element={<ReportPage />} />
+            <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/accounts" element={<AccountsPage />} />
           </Route>
