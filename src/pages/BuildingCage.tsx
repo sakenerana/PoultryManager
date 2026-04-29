@@ -937,7 +937,7 @@ export default function BuildingCage() {
       setIsToastOpen(true);
       return;
     }
-    if (metricDraft <= 0) return;
+    if (metricDraft < 0) return;
 
     const buildingId = Number(id);
     const subbuildingId = Number(activeCageId);
@@ -1149,7 +1149,7 @@ export default function BuildingCage() {
     }
   };
 
-  const isMetricValid = metricDraft > 0;
+  const isMetricValid = metricDraft >= 0;
 
   const handleUpdateWeight = async () => {
     if (isLatestGrowHarvested) {

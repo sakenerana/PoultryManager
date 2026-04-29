@@ -1728,8 +1728,8 @@ export default function BuildingMetricHistoryPage() {
 
   const handleSaveDoa = async () => {
     if (isSavingDoa) return;
-    if (doaCount <= 0) {
-      setToastMessage("DOA Count is required.");
+    if (doaCount < 0) {
+      setToastMessage("DOA Count cannot be negative.");
       setIsToastOpen(true);
       return;
     }
@@ -1819,8 +1819,8 @@ export default function BuildingMetricHistoryPage() {
 
   const handleSaveEditedDoa = async (entry: DoaTransactionRow) => {
     if (isEditingDoa) return;
-    if (editingDoaCount <= 0) {
-      setToastMessage("DOA Count is required.");
+    if (editingDoaCount < 0) {
+      setToastMessage("DOA Count cannot be negative.");
       setIsToastOpen(true);
       return;
     }
@@ -2016,8 +2016,8 @@ export default function BuildingMetricHistoryPage() {
 
   const handleSaveCulled = async () => {
     if (isSavingCulled) return;
-    if (culledCount <= 0) {
-      setToastMessage("Culling Count is required.");
+    if (culledCount < 0) {
+      setToastMessage("Culling Count cannot be negative.");
       setIsToastOpen(true);
       return;
     }
@@ -2103,8 +2103,8 @@ export default function BuildingMetricHistoryPage() {
 
   const handleSaveEditedCulled = async (entry: DoaTransactionRow) => {
     if (isEditingCulled) return;
-    if (editingCulledCount <= 0) {
-      setToastMessage("Culling Count is required.");
+    if (editingCulledCount < 0) {
+      setToastMessage("Culling Count cannot be negative.");
       setIsToastOpen(true);
       return;
     }
@@ -2925,7 +2925,7 @@ export default function BuildingMetricHistoryPage() {
                             <button
                               type="button"
                               onClick={() => void handleSaveEditedDoa(row)}
-                              disabled={editingDoaCount <= 0 || isEditingDoa}
+                              disabled={editingDoaCount < 0 || isEditingDoa}
                               className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
                             >
                               <FiCheck size={12} />
@@ -2993,9 +2993,9 @@ export default function BuildingMetricHistoryPage() {
               />
             </div>
 
-            {doaCount <= 0 && (
+            {doaCount < 0 && (
               <div className="text-xs text-red-500 mt-2">
-                DOA Count is required.
+                DOA Count cannot be negative.
               </div>
             )}
 
@@ -3004,7 +3004,7 @@ export default function BuildingMetricHistoryPage() {
               className="mt-4 !h-11 !w-full !rounded-lg !border-0 text-base font-semibold"
               style={{ backgroundColor: "#66bb7a" }}
               onClick={handleSaveDoa}
-              disabled={doaCount <= 0 || isSavingDoa}
+              disabled={doaCount < 0 || isSavingDoa}
               loading={isSavingDoa}
             >
               Save
@@ -3099,7 +3099,7 @@ export default function BuildingMetricHistoryPage() {
                             <button
                               type="button"
                               onClick={() => void handleSaveEditedCulled(row)}
-                              disabled={editingCulledCount <= 0 || isEditingCulled}
+                              disabled={editingCulledCount < 0 || isEditingCulled}
                               className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-60"
                             >
                               <FiCheck size={12} />
@@ -3168,9 +3168,9 @@ export default function BuildingMetricHistoryPage() {
               />
             </div>
 
-            {culledCount <= 0 && (
+            {culledCount < 0 && (
               <div className="text-xs text-red-500 mt-2">
-                Culling Count is required.
+                Culling Count cannot be negative.
               </div>
             )}
 
@@ -3179,7 +3179,7 @@ export default function BuildingMetricHistoryPage() {
               className="mt-4 !h-11 !w-full !rounded-lg !border-0 text-base font-semibold"
               style={{ backgroundColor: "#66bb7a" }}
               onClick={handleSaveCulled}
-              disabled={culledCount <= 0 || isSavingCulled}
+              disabled={culledCount < 0 || isSavingCulled}
               loading={isSavingCulled}
             >
               Save
