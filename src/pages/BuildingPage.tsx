@@ -718,48 +718,6 @@ export default function BuildingOverviewPage() {
             (transferTotalsByGrowId[row.grow_id] ?? 0) + toNonNegativeInt(row.total_animals_count);
         });
 
-        const reductionTransactionsByGrowIdEntries = await Promise.all(
-          latestGrowIds.map(async (growId) => {
-            const transactions = await loadGrowReductionTransactionsByGrowId(growId);
-            return [growId, transactions] as const;
-          })
-        );
-        const reductionTransactionsByGrowId = Object.fromEntries(reductionTransactionsByGrowIdEntries);
-
-        latestGrowIds.forEach((growId) => {
-          const transactions = (reductionTransactionsByGrowId[growId] ?? []).filter(
-            (row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
-          );
-          const latestByDayCageAndType: Record<string, { animalCount: number; reductionType: string | null }> = {};
-
-          transactions
-            .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
-            .forEach((row) => {
-              if (row.subbuildingId == null || !row.reductionType) return;
-              const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
-              const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
-              if (latestByDayCageAndType[key]) return;
-              latestByDayCageAndType[key] = {
-                animalCount: toNonNegativeInt(row.animalCount),
-                reductionType: row.reductionType,
-              };
-            });
-
-          const totals = Object.values(latestByDayCageAndType).reduce(
-            (acc, row) => {
-              if (row.reductionType === "mortality") acc.mortality += row.animalCount;
-              if (row.reductionType === "thinning") acc.thinning += row.animalCount;
-              if (row.reductionType === "take_out") acc.takeOut += row.animalCount;
-              return acc;
-            },
-            { mortality: 0, thinning: 0, takeOut: 0 }
-          );
-
-          if (totals.mortality > 0 || totals.thinning > 0 || totals.takeOut > 0) {
-            overallMetricsByGrowId[growId] = totals;
-          }
-        });
-
         const { data: growMetricRows, error: growMetricRowsError } = await supabase
           .from(GROW_LOGS_TABLE)
           .select("grow_id, subbuilding_id, mortality, thinning, take_out, created_at")
@@ -769,7 +727,7 @@ export default function BuildingOverviewPage() {
 
         if (growMetricRowsError) throw growMetricRowsError;
 
-        const latestByGrowDayAndCage: Record<string, { growId: number; mortality: number; thinning: number; takeOut: number }> = {};
+        const latestByGrowDayAndCage: Record<string, { growId: number; dayKey: string; subbuildingId: number; mortality: number; thinning: number; takeOut: number }> = {};
         ((growMetricRows ?? []) as Array<{
           grow_id: number | null;
           created_at: string;
@@ -784,18 +742,66 @@ export default function BuildingOverviewPage() {
           if (latestByGrowDayAndCage[key]) return;
           latestByGrowDayAndCage[key] = {
             growId: row.grow_id,
+            dayKey,
+            subbuildingId: row.subbuilding_id,
             mortality: toNonNegativeInt(row.mortality),
             thinning: toNonNegativeInt(row.thinning),
             takeOut: toNonNegativeInt(row.take_out),
           };
         });
 
-        Object.values(latestByGrowDayAndCage).forEach((row) => {
-          if (!overallMetricsByGrowId[row.growId]) {
-            overallMetricsByGrowId[row.growId] = { mortality: 0, thinning: 0, takeOut: 0 };
-            overallMetricsByGrowId[row.growId].mortality += row.mortality;
-            overallMetricsByGrowId[row.growId].thinning += row.thinning;
-            overallMetricsByGrowId[row.growId].takeOut += row.takeOut;
+        const reductionTransactionsByGrowIdEntries = await Promise.all(
+          latestGrowIds.map(async (growId) => {
+            const transactions = await loadGrowReductionTransactionsByGrowId(growId);
+            return [growId, transactions] as const;
+          })
+        );
+        const reductionTransactionsByGrowId = Object.fromEntries(reductionTransactionsByGrowIdEntries);
+
+        latestGrowIds.forEach((growId) => {
+          const latestFromLogsByDayCageType: Record<string, number> = {};
+          Object.values(latestByGrowDayAndCage).forEach((row) => {
+            if (row.growId !== growId) return;
+            latestFromLogsByDayCageType[`${row.dayKey}-${row.subbuildingId}-mortality`] = row.mortality;
+            latestFromLogsByDayCageType[`${row.dayKey}-${row.subbuildingId}-thinning`] = row.thinning;
+            latestFromLogsByDayCageType[`${row.dayKey}-${row.subbuildingId}-take_out`] = row.takeOut;
+          });
+
+          const latestFromTxByDayCageType: Record<string, number> = {};
+          (reductionTransactionsByGrowId[growId] ?? [])
+            .filter((row) => dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf())
+            .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
+            .forEach((row) => {
+              if (row.subbuildingId == null || !row.reductionType) return;
+              if (
+                row.reductionType !== "mortality" &&
+                row.reductionType !== "thinning" &&
+                row.reductionType !== "take_out"
+              ) {
+                return;
+              }
+              const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+              const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
+              if (latestFromTxByDayCageType[key] != null) return;
+              latestFromTxByDayCageType[key] = toNonNegativeInt(row.animalCount);
+            });
+
+          const mergedTotals = { mortality: 0, thinning: 0, takeOut: 0 };
+          const mergedKeys = new Set([
+            ...Object.keys(latestFromLogsByDayCageType),
+            ...Object.keys(latestFromTxByDayCageType),
+          ]);
+
+          mergedKeys.forEach((key) => {
+            const effectiveValue =
+              latestFromTxByDayCageType[key] ?? latestFromLogsByDayCageType[key] ?? 0;
+            if (key.endsWith("-mortality")) mergedTotals.mortality += effectiveValue;
+            if (key.endsWith("-thinning")) mergedTotals.thinning += effectiveValue;
+            if (key.endsWith("-take_out")) mergedTotals.takeOut += effectiveValue;
+          });
+
+          if (mergedTotals.mortality > 0 || mergedTotals.thinning > 0 || mergedTotals.takeOut > 0) {
+            overallMetricsByGrowId[growId] = mergedTotals;
           }
         });
 
