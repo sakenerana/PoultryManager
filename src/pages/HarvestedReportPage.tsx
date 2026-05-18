@@ -6,7 +6,7 @@ import { FaSignOutAlt } from "react-icons/fa";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoHome } from "react-icons/io5";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import dayjs, { Dayjs } from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
@@ -86,10 +86,10 @@ function ChickenState({
   );
 }
 
-export default function BuildingHarvestedReportPage() {
+export default function HarvestedReportPage() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const isHarvestedMode = location.pathname === "/reports/harvested";
+  
+  const isHarvestedMode = true;
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -106,11 +106,7 @@ export default function BuildingHarvestedReportPage() {
     void signOutAndRedirect(navigate);
   };
   const openGrowHistory = (growId: number) => {
-    if (location.pathname === "/reports/harvested") {
-      navigate(`/reports/harvested/grow/${growId}/history`);
-      return;
-    }
-    navigate(`/reports/grow/${growId}/history`);
+    navigate(`/reports/harvested/grow/${growId}/history`);
   };
 
   const handlePdfClick = () => {
@@ -718,6 +714,7 @@ export default function BuildingHarvestedReportPage() {
                 </div>
               </Card>
             )}
+
           </div>
 
           {/* Report Table / Mobile Cards */}

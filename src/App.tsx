@@ -8,8 +8,11 @@ import BuildingLoadPage from "./pages/BuildingLoadPage";
 import BuildingCage from "./pages/BuildingCage";
 import BuildingMetricHistoryPage from "./pages/BuildingMetricHistoryPage";
 import BuildingAvgWeightHistoryPage from "./pages/BuildingAvgWeightHistoryPage";
-import ReportPage from "./pages/ReportPage";
+import GrowsReportPage from "./pages/GrowsReportPage";
+import HarvestedReportPage from "./pages/HarvestedReportPage";
 import ReportGrowHistoryPage from "./pages/ReportGrowHistoryPage";
+import HarvestedReportHistoryPage from "./pages/HarvestedReportHistoryPage";
+import ReportsMenuPage from "./pages/ReportsMenuPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
 import HarvestMetricHistoryPage from "./pages/HarvestMetricHistoryPage";
@@ -46,8 +49,11 @@ function App() {
             <Route path="/harvest-metric-history/:id/:metric?" element={<HarvestMetricHistoryPage />} />
             <Route path="/harvest-avg-weight-history/:id" element={<HarvestAvgWeightHistoryPage />} />
             <Route path="/harvest-truck-history/:id" element={<HarvestTruckHistoryPage />} />
-            <Route path="/reports" element={<ReportPage />} />
+            <Route path="/reports" element={<ReportsMenuPage />} />
+            <Route path="/reports/grows" element={<GrowsReportPage />} />
+            <Route path="/reports/harvested" element={<HarvestedReportPage />} />
             <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
+            <Route path="/reports/harvested/grow/:id/history" element={<HarvestedReportHistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/accounts" element={<AccountsPage />} />
           </Route>

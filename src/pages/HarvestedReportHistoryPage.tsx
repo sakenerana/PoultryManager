@@ -127,7 +127,7 @@ function ChickenState({ title, subtitle }: { title: string; subtitle: string }) 
   );
 }
 
-export default function ReportGrowHistoryPage() {
+export default function HarvestedReportHistoryPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const screens = useBreakpoint();
@@ -143,7 +143,7 @@ export default function ReportGrowHistoryPage() {
   const [toastMessage, setToastMessage] = useState("");
   const [exportingSection, setExportingSection] = useState<"summary" | "grow" | "harvest" | "reduction" | null>(null);
   const [selectedChartMonth, setSelectedChartMonth] = useState<string | null>(null);
-  const [selectedChartMetric, setSelectedChartMetric] = useState<"actualTotal" | "reductions">("actualTotal");
+  const [selectedChartMetric, setSelectedChartMetric] = useState<"animalsOut" | "reductions">("animalsOut");
 
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
@@ -201,39 +201,78 @@ export default function ReportGrowHistoryPage() {
     }
   };
 
-  const exportGrowLogsPdf = () => {
-    if (!growInfo || growHistory.length === 0) {
-      setToastMessage("No grow logs available to export.");
+
+  const exportHarvestHistoryPdf = () => {
+    if (!growInfo || harvestHistory.length === 0) {
+      setToastMessage("No harvest history available to export.");
       setIsToastOpen(true);
       return;
     }
 
-    setExportingSection("grow");
+    setExportingSection("harvest");
     try {
       const generatedAt = dayjs();
-      const fileName = `grow-${growInfo.growId}-logs_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `grow-${growInfo.growId}-harvest-history_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Grow #${growInfo.growId} - Daily Grow Logs`, 14, 16);
+      doc.text(`Grow #${growInfo.growId} - Harvest History`, 14, 16);
 
       autoTable(doc, {
         startY: 22,
-        head: [["Date", "Actual Total", "Mortality", "Thinning", "Take Out"]],
-        body: growHistory.map((row) => [
+        head: [["Harvest #", "Date", "Status", "Total Animals Out"]],
+        body: harvestHistory.map((row) => [
+          `#${row.id}`,
           dayjs(row.created_at).format("MMM D, YYYY h:mm A"),
-          toNonNegativeInt(row.actual_total_animals).toLocaleString(),
-          toNonNegativeInt(row.mortality).toLocaleString(),
-          toNonNegativeInt(row.thinning).toLocaleString(),
-          toNonNegativeInt(row.take_out).toLocaleString(),
+          row.status ?? "Unknown",
+          getHarvestTotalAnimals(row).toLocaleString(),
         ]),
         headStyles: { fillColor: [0, 136, 34] },
       });
 
       openPdfPreview(doc, fileName);
     } catch (error) {
-      setToastMessage(`Failed to export grow logs PDF: ${getErrorMessage(error)}`);
+      setToastMessage(`Failed to export harvest history PDF: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    } finally {
+      setExportingSection(null);
+    }
+  };
+
+  const exportReductionHistoryPdf = () => {
+    if (!growInfo || harvestReductionHistory.length === 0) {
+      setToastMessage("No reduction history available to export.");
+      setIsToastOpen(true);
+      return;
+    }
+
+    setExportingSection("reduction");
+    try {
+      const generatedAt = dayjs();
+      const fileName = `grow-${growInfo.growId}-reduction-history_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text(`Grow #${growInfo.growId} - Reduction Transactions`, 14, 16);
+
+      autoTable(doc, {
+        startY: 22,
+        head: [["Date", "Harvest #", "Type", "Count", "Remarks"]],
+        body: harvestReductionHistory.map((row) => [
+          dayjs(row.created_at).format("MMM D, YYYY h:mm A"),
+          row.harvest_id == null ? "-" : `#${row.harvest_id}`,
+          row.reduction_type ?? "Unknown",
+          getHarvestReductionCount(row).toLocaleString(),
+          row.remarks ?? "-",
+        ]),
+        headStyles: { fillColor: [0, 136, 34] },
+      });
+
+      openPdfPreview(doc, fileName);
+    } catch (error) {
+      setToastMessage(`Failed to export reduction history PDF: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
     } finally {
       setExportingSection(null);
@@ -359,73 +398,59 @@ export default function ReportGrowHistoryPage() {
     };
   }, [growHistory, harvestHistory, harvestReductionHistory]);
 
-  const growLogChartData = useMemo(() => {
-    const monthKeys = Array.from(new Set(growHistory.map((row) => dayjs(row.created_at).format("YYYY-MM"))))
+  const harvestedChartData = useMemo(() => {
+    const harvestMonths = harvestHistory.map((r) => dayjs(r.created_at).format("YYYY-MM"));
+    const reductionMonths = harvestReductionHistory.map((r) => dayjs(r.created_at).format("YYYY-MM"));
+    const monthKeys = Array.from(new Set([...harvestMonths, ...reductionMonths]))
       .sort((a, b) => dayjs(b).valueOf() - dayjs(a).valueOf());
+    const activeMonth = selectedChartMonth && monthKeys.includes(selectedChartMonth) ? selectedChartMonth : (monthKeys[0] ?? null);
 
-    const activeMonth = selectedChartMonth && monthKeys.includes(selectedChartMonth)
-      ? selectedChartMonth
-      : (monthKeys[0] ?? null);
-
-    const rowsInMonth = activeMonth
-      ? growHistory.filter((row) => dayjs(row.created_at).format("YYYY-MM") === activeMonth)
-      : [];
-
-    const byDay = rowsInMonth.reduce<Record<string, { actualTotal: number; reductions: number; lastTs: number }>>((acc, row) => {
-      const dayKey = dayjs(row.created_at).format("YYYY-MM-DD");
-      const ts = dayjs(row.created_at).valueOf();
-      const reductions = toNonNegativeInt(row.mortality) + toNonNegativeInt(row.thinning) + toNonNegativeInt(row.take_out);
-      if (!acc[dayKey]) {
-        acc[dayKey] = { actualTotal: toNonNegativeInt(row.actual_total_animals), reductions, lastTs: ts };
-        return acc;
+    const byDay = new Map<string, { animalsOut: number; reductions: number }>();
+    if (activeMonth) {
+      for (const row of harvestHistory) {
+        if (dayjs(row.created_at).format("YYYY-MM") !== activeMonth) continue;
+        const key = dayjs(row.created_at).format("YYYY-MM-DD");
+        const prev = byDay.get(key) ?? { animalsOut: 0, reductions: 0 };
+        prev.animalsOut += getHarvestTotalAnimals(row);
+        byDay.set(key, prev);
       }
-      acc[dayKey].reductions += reductions;
-      if (ts >= acc[dayKey].lastTs) {
-        acc[dayKey].actualTotal = toNonNegativeInt(row.actual_total_animals);
-        acc[dayKey].lastTs = ts;
+      for (const row of harvestReductionHistory) {
+        if (dayjs(row.created_at).format("YYYY-MM") !== activeMonth) continue;
+        const key = dayjs(row.created_at).format("YYYY-MM-DD");
+        const prev = byDay.get(key) ?? { animalsOut: 0, reductions: 0 };
+        prev.reductions += getHarvestReductionCount(row);
+        byDay.set(key, prev);
       }
-      return acc;
-    }, {});
+    }
 
     const points = activeMonth
       ? Array.from({ length: dayjs(activeMonth).daysInMonth() }, (_, i) => {
           const dayNum = i + 1;
           const dayKey = dayjs(`${activeMonth}-${String(dayNum).padStart(2, "0")}`).format("YYYY-MM-DD");
-          const stats = byDay[dayKey] ?? { actualTotal: 0, reductions: 0, lastTs: 0 };
-          return {
-            id: dayKey,
-            label: String(dayNum),
-            actualTotal: stats.actualTotal,
-            reductions: stats.reductions,
-          };
+          const v = byDay.get(dayKey) ?? { animalsOut: 0, reductions: 0 };
+          return { day: String(dayNum), animalsOut: v.animalsOut, reductions: v.reductions };
         })
       : [];
-
-    const maxActualTotal = points.reduce((max, p) => Math.max(max, p.actualTotal), 0);
-    const maxReductions = points.reduce((max, p) => Math.max(max, p.reductions), 0);
-    return { points, maxActualTotal, maxReductions, monthKeys, activeMonth };
-  }, [growHistory, selectedChartMonth]);
-
-  const dailyChartData = useMemo(
-    () =>
-      growLogChartData.points.map((p) => ({
-        day: p.label,
-        value: selectedChartMetric === "actualTotal" ? p.actualTotal : p.reductions,
-      })),
-    [growLogChartData.points, selectedChartMetric]
-  );
+    return { monthKeys, activeMonth, points };
+  }, [harvestHistory, harvestReductionHistory, selectedChartMonth]);
 
   useEffect(() => {
-    if (growLogChartData.monthKeys.length === 0) {
+    if (harvestedChartData.monthKeys.length === 0) {
       if (selectedChartMonth !== null) setSelectedChartMonth(null);
       return;
     }
-    if (!selectedChartMonth || !growLogChartData.monthKeys.includes(selectedChartMonth)) {
-      setSelectedChartMonth(growLogChartData.monthKeys[0]);
+    if (!selectedChartMonth || !harvestedChartData.monthKeys.includes(selectedChartMonth)) {
+      setSelectedChartMonth(harvestedChartData.monthKeys[0]);
     }
-  }, [growLogChartData.monthKeys, selectedChartMonth]);
+  }, [harvestedChartData.monthKeys, selectedChartMonth]);
 
-  const growHistoryColumns = [
+  const harvestHistoryColumns = [
+    {
+      title: "Harvest #",
+      dataIndex: "id",
+      key: "id",
+      render: (value: number) => <span className="font-semibold text-emerald-700">#{value}</span>,
+    },
     {
       title: "Date",
       dataIndex: "created_at",
@@ -433,28 +458,47 @@ export default function ReportGrowHistoryPage() {
       render: (value: string) => dayjs(value).format("MMM D, YYYY h:mm A"),
     },
     {
-      title: "Actual Total",
-      dataIndex: "actual_total_animals",
-      key: "actual_total_animals",
-      render: (value: number | null) => toNonNegativeInt(value).toLocaleString(),
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      render: (value: string | null) => <Tag color="orange">{value ?? "Unknown"}</Tag>,
     },
     {
-      title: "Mortality",
-      dataIndex: "mortality",
-      key: "mortality",
-      render: (value: number | null) => toNonNegativeInt(value).toLocaleString(),
+      title: "Total Animals Out",
+      key: "total_animals_out",
+      render: (_: unknown, row: HarvestRow) => getHarvestTotalAnimals(row).toLocaleString(),
+    },
+  ];
+
+  const harvestReductionColumns = [
+    {
+      title: "Date",
+      dataIndex: "created_at",
+      key: "created_at",
+      render: (value: string) => dayjs(value).format("MMM D, YYYY h:mm A"),
     },
     {
-      title: "Thinning",
-      dataIndex: "thinning",
-      key: "thinning",
-      render: (value: number | null) => toNonNegativeInt(value).toLocaleString(),
+      title: "Harvest #",
+      dataIndex: "harvest_id",
+      key: "harvest_id",
+      render: (value: number | null) => (value == null ? "-" : `#${value}`),
     },
     {
-      title: "Take Out",
-      dataIndex: "take_out",
-      key: "take_out",
-      render: (value: number | null) => toNonNegativeInt(value).toLocaleString(),
+      title: "Type",
+      dataIndex: "reduction_type",
+      key: "reduction_type",
+      render: (value: string | null) => value ?? "Unknown",
+    },
+    {
+      title: "Count",
+      key: "count",
+      render: (_: unknown, row: HarvestReductionRow) => getHarvestReductionCount(row).toLocaleString(),
+    },
+    {
+      title: "Remarks",
+      dataIndex: "remarks",
+      key: "remarks",
+      render: (value: string | null) => value ?? "-",
     },
   ];
 
@@ -571,26 +615,12 @@ export default function ReportGrowHistoryPage() {
               </Row>
             </Card>
 
-            <Card className="!rounded-sm !border !border-slate-200 shadow-sm !mt-6" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
-              <div className="mb-4 flex items-end justify-between gap-2">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Grow History</div>
-                  <div className="text-lg font-bold text-slate-900">Daily Grow Logs</div>
-                </div>
-                <Button
-                  icon={<MdOutlinePictureAsPdf size={18} />}
-                  onClick={exportGrowLogsPdf}
-                  loading={exportingSection === "grow"}
-                >
-                  PDF
-                </Button>
-              </div>
-
-              {growLogChartData.points.length > 0 && (
+            <Card className="!rounded-sm !border !border-slate-200 shadow-sm !mt-4" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
+              {harvestedChartData.points.length > 0 && (
                 <div className="mb-5 space-y-3">
-                  <div className="md:col-span-2 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                     <div className={isMobile ? "text-[11px] text-slate-500" : "text-[11px] uppercase tracking-[0.14em] text-slate-500"}>
-                      Daily view for {growLogChartData.activeMonth ? dayjs(growLogChartData.activeMonth).format("MMMM YYYY") : "-"}
+                      Daily view for {harvestedChartData.activeMonth ? dayjs(harvestedChartData.activeMonth).format("MMMM YYYY") : "-"}
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <Select
@@ -598,63 +628,172 @@ export default function ReportGrowHistoryPage() {
                         value={selectedChartMetric}
                         onChange={(value) => setSelectedChartMetric(value)}
                         options={[
-                          { value: "actualTotal", label: "Actual Total" },
+                          { value: "animalsOut", label: "Animals Out" },
                           { value: "reductions", label: "Reductions" },
                         ]}
                         className="min-w-[150px]"
                       />
                       <Select
                         size="small"
-                        value={growLogChartData.activeMonth ?? undefined}
+                        value={harvestedChartData.activeMonth ?? undefined}
                         onChange={(value) => setSelectedChartMonth(value)}
-                        options={growLogChartData.monthKeys.map((month) => ({
-                          value: month,
-                          label: dayjs(month).format("MMMM YYYY"),
-                        }))}
+                        options={harvestedChartData.monthKeys.map((month) => ({ value: month, label: dayjs(month).format("MMMM YYYY") }))}
                         className="min-w-[150px]"
                       />
                     </div>
                   </div>
-
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                      {selectedChartMetric === "actualTotal" ? "Actual Total Trend" : "Daily Reductions Trend"}
+                      {selectedChartMetric === "animalsOut" ? "Animals Out Trend" : "Daily Reductions Trend"}
                     </div>
                     <Column
                       height={isMobile ? 200 : 320}
-                      data={dailyChartData}
+                      data={harvestedChartData.points.map((p) => ({ day: p.day, value: selectedChartMetric === "animalsOut" ? p.animalsOut : p.reductions }))}
                       xField="day"
                       yField="value"
                       axis={{
-                        y: {
-                          grid: true,
-                          labelFormatter: (v: string) => Number(v).toLocaleString(),
-                        },
-                        x: {
-                          title: false,
-                          labelAutoHide: true,
-                          labelAutoRotate: true,
-                        },
+                        y: { grid: true, labelFormatter: (v: string) => Number(v).toLocaleString() },
+                        x: { title: false, labelAutoHide: true, labelAutoRotate: true },
                       }}
-                      style={{
-                        fill: selectedChartMetric === "actualTotal" ? "#3b82f6" : "#22c55e",
-                        radiusTopLeft: 4,
-                        radiusTopRight: 4,
-                      }}
+                      style={{ fill: selectedChartMetric === "animalsOut" ? "#3b82f6" : "#22c55e", radiusTopLeft: 4, radiusTopRight: 4 }}
                       interaction={{ tooltip: true }}
                     />
                   </div>
                 </div>
               )}
 
-              <Table
-                dataSource={growHistory}
-                columns={growHistoryColumns}
-                rowKey="id"
-                pagination={{ pageSize: 8, showSizeChanger: true }}
-                size="middle"
-                locale={{ emptyText: "No grow logs found for this grow." }}
-              />
+              <div className="mb-4 flex items-end justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvest History</div>
+                  <div className="text-lg font-bold text-slate-900">Harvest Batches</div>
+                </div>
+                <Button
+                  icon={<MdOutlinePictureAsPdf size={18} />}
+                  onClick={exportHarvestHistoryPdf}
+                  loading={exportingSection === "harvest"}
+                >
+                  PDF
+                </Button>
+              </div>
+              {isMobile ? (
+                harvestHistory.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
+                    No harvest entries found for this grow.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {harvestHistory.map((row) => (
+                      <div key={row.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Harvest #</div>
+                            <div className="text-base font-bold text-emerald-700">#{row.id}</div>
+                          </div>
+                          <Tag color="orange" className="!m-0 !text-[10px]">
+                            {row.status ?? "Unknown"}
+                          </Tag>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <div className="rounded-md bg-slate-50 px-2.5 py-2">
+                            <div className="text-[9px] uppercase tracking-wide text-slate-500">Date</div>
+                            <div className="mt-1 text-[12px] font-medium text-slate-900">
+                              {dayjs(row.created_at).format("MMM D, YYYY h:mm A")}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-emerald-50 px-2.5 py-2">
+                            <div className="text-[9px] uppercase tracking-wide text-emerald-700">Total Animals Out</div>
+                            <div className="mt-1 text-[16px] font-bold leading-none text-emerald-800">
+                              {getHarvestTotalAnimals(row).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <Table
+                  dataSource={harvestHistory}
+                  columns={harvestHistoryColumns}
+                  rowKey="id"
+                  pagination={{ pageSize: 8, showSizeChanger: true }}
+                  size="middle"
+                  locale={{ emptyText: "No harvest entries found for this grow." }}
+                />
+              )}
+            </Card>
+
+            <Card className="!rounded-sm !border !border-slate-200 shadow-sm !mt-4" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
+              <div className="mb-4 flex items-end justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvest Reduction History</div>
+                  <div className="text-lg font-bold text-slate-900">Reduction Transactions</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Total: {summary.totalReductions.toLocaleString()}
+                  </div>
+                  <Button
+                    icon={<MdOutlinePictureAsPdf size={18} />}
+                    onClick={exportReductionHistoryPdf}
+                    loading={exportingSection === "reduction"}
+                  >
+                    PDF
+                  </Button>
+                </div>
+              </div>
+              {isMobile ? (
+                harvestReductionHistory.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
+                    No harvest reduction transactions found for this grow.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {harvestReductionHistory.map((row) => (
+                      <div key={String(row.id)} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Reduction</div>
+                            <div className="text-sm font-bold text-slate-900">
+                              {row.reduction_type ?? "Unknown"}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                            {getHarvestReductionCount(row).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <div className="rounded-md bg-slate-50 px-2.5 py-2">
+                            <div className="text-[9px] uppercase tracking-wide text-slate-500">Date</div>
+                            <div className="mt-1 text-[12px] font-medium text-slate-900">
+                              {dayjs(row.created_at).format("MMM D, YYYY h:mm A")}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-slate-50 px-2.5 py-2">
+                            <div className="text-[9px] uppercase tracking-wide text-slate-500">Harvest #</div>
+                            <div className="mt-1 text-[12px] font-medium text-slate-900">
+                              {row.harvest_id == null ? "-" : `#${row.harvest_id}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2 rounded-md bg-slate-50 px-2.5 py-2">
+                          <div className="text-[9px] uppercase tracking-wide text-slate-500">Remarks</div>
+                          <div className="mt-1 text-[12px] text-slate-800">{row.remarks ?? "-"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <Table
+                  dataSource={harvestReductionHistory}
+                  columns={harvestReductionColumns}
+                  rowKey={(row) => String(row.id)}
+                  pagination={{ pageSize: 8, showSizeChanger: true }}
+                  size="middle"
+                  locale={{ emptyText: "No harvest reduction transactions found for this grow." }}
+                />
+              )}
             </Card>
 
           </div>
