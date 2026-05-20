@@ -13,6 +13,8 @@ import HarvestedReportPage from "./pages/HarvestedReportPage";
 import ReportGrowHistoryPage from "./pages/ReportGrowHistoryPage";
 import HarvestedReportHistoryPage from "./pages/HarvestedReportHistoryPage";
 import ReportsMenuPage from "./pages/ReportsMenuPage";
+import IncomeReportPage from "./pages/IncomeReportPage";
+import IncomeSummaryFormPage from "./pages/IncomeSummaryFormPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
 import HarvestMetricHistoryPage from "./pages/HarvestMetricHistoryPage";
@@ -52,6 +54,8 @@ function App() {
             <Route path="/reports" element={<ReportsMenuPage />} />
             <Route path="/reports/grows" element={<GrowsReportPage />} />
             <Route path="/reports/harvested" element={<HarvestedReportPage />} />
+            <Route path="/reports/income" element={<IncomeReportPage />} />
+            <Route path="/reports/income/new" element={<IncomeSummaryFormPage />} />
             <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
             <Route path="/reports/harvested/grow/:id/history" element={<HarvestedReportHistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
