@@ -1,8 +1,9 @@
-import { Button, Divider, Layout, Table, Typography } from "antd";
+import { Button, Divider, Grid, Layout, Pagination, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import dayjs from "dayjs";
+import { useEffect, useMemo, useState } from "react";
 import { FaSignOutAlt } from "react-icons/fa";
-import { IoHome } from "react-icons/io5";
+import { IoCreateOutline, IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { IoAdd } from "react-icons/io5";
 import { jsPDF } from "jspdf";
@@ -15,6 +16,7 @@ const BRAND = "#008822";
 const INCOME_SUMMARY_TABLE = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
 const { Header, Content } = Layout;
 const { Title } = Typography;
+const { useBreakpoint } = Grid;
 
 type BroilerSummaryReport = {
   key: string;
@@ -25,47 +27,106 @@ type BroilerSummaryReport = {
   dateStart: string;
   dateFinish: string;
   pdfUrl: string;
+  row: Record<string, any>;
+};
+
+const asNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(String(value).replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatNumber = (value: unknown, fractionDigits = 0): string => {
+  const parsed = asNumber(value);
+  if (parsed === null) return "-";
+  return parsed.toLocaleString("en-US", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+};
+
+const formatPercent = (value: unknown, fractionDigits = 2): string => {
+  const parsed = asNumber(value);
+  if (parsed === null) return "-";
+  return `${parsed.toFixed(fractionDigits)}%`;
+};
+
+const formatDate = (value: unknown): string => {
+  const text = String(value ?? "").trim();
+  if (!text) return "-";
+  const parsed = dayjs(text);
+  return parsed.isValid() ? parsed.format("DD/MM/YYYY") : text;
+};
+
+const multiply = (...values: Array<unknown>): number | null => {
+  const parsed = values.map(asNumber);
+  if (parsed.some((value) => value === null)) return null;
+  return parsed.reduce<number>((total, value) => total * Number(value), 1);
 };
 
 export default function IncomeReportPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
   const [reports, setReports] = useState<BroilerSummaryReport[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>("");
+  const [mobilePage, setMobilePage] = useState(1);
+  const [mobilePageSize, setMobilePageSize] = useState(5);
+  const mobilePagedReports = useMemo(() => {
+    const start = (mobilePage - 1) * mobilePageSize;
+    return reports.slice(start, start + mobilePageSize);
+  }, [mobilePage, mobilePageSize, reports]);
 
-  const columns: ColumnsType<BroilerSummaryReport> = [
-    { title: "Report No", dataIndex: "reportNo", key: "reportNo", width: 160 },
-    { title: "Farm Name", dataIndex: "farmName", key: "farmName", width: 160 },
-    { title: "Flock", dataIndex: "flock", key: "flock", width: 90 },
-    { title: "Date Start", dataIndex: "dateStart", key: "dateStart", width: 120 },
-    { title: "Date Finish", dataIndex: "dateFinish", key: "dateFinish", width: 120 },
-    {
-      title: "Action",
-      key: "action",
-      width: 100,
-      render: (_value, record) => (
-        <Button
-          size="small"
-          type="default"
-          className="!rounded-md !border-emerald-200 !bg-emerald-50 !text-emerald-700 hover:!border-emerald-300 hover:!bg-emerald-100 hover:!text-emerald-800"
-          onClick={(event) => {
-            event.stopPropagation();
-            navigate("/reports/income/new", {
-              state: {
-                mode: "edit",
-                editId: record.id,
-                reportNo: record.reportNo,
-                existingReportNos: reports.map((item) => item.reportNo),
-              },
-            });
-          }}
-        >
-          Edit
-        </Button>
-      ),
-    },
-  ];
+  const columns: ColumnsType<BroilerSummaryReport> = useMemo(
+    () => [
+      { title: "Report No", dataIndex: "reportNo", key: "reportNo", width: 160 },
+      { title: "Farm Name", dataIndex: "farmName", key: "farmName", width: 160 },
+      { title: "Flock", dataIndex: "flock", key: "flock", width: 90 },
+      { title: "Date Start", dataIndex: "dateStart", key: "dateStart", width: 120 },
+      { title: "Date Finish", dataIndex: "dateFinish", key: "dateFinish", width: 120 },
+      {
+        title: "PDF",
+        key: "pdf",
+        width: 90,
+        render: (_value, record) => (
+          <Tag color={record.pdfUrl ? "green" : "default"} className="!mr-0">
+            {record.pdfUrl ? "Ready" : "Missing"}
+          </Tag>
+        ),
+      },
+      {
+        title: "Action",
+        key: "action",
+        width: 120,
+        fixed: "right",
+        align: "right",
+        render: (_value, record) => (
+          <Button
+            size="small"
+            type="default"
+            icon={<IoCreateOutline size={14} />}
+            className="!rounded-md !border-emerald-200 !bg-emerald-50 !text-emerald-700 hover:!border-emerald-300 hover:!bg-emerald-100 hover:!text-emerald-800"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate("/reports/income/new", {
+                state: {
+                  mode: "edit",
+                  editId: record.id,
+                  reportNo: record.reportNo,
+                  existingReportNos: reports.map((item) => item.reportNo),
+                },
+              });
+            }}
+          >
+            Edit
+          </Button>
+        ),
+      },
+    ],
+    [isMobile, navigate, reports]
+  );
 
   useEffect(() => {
     let active = true;
@@ -73,7 +134,7 @@ export default function IncomeReportPage() {
     const loadReports = async () => {
       const { data, error } = await supabase
         .from(INCOME_SUMMARY_TABLE)
-        .select("id, created_at, farm_name, flock, date_start, date_finish, pdf_url")
+        .select("*")
         .order("id", { ascending: true });
 
       if (!active) return;
@@ -96,6 +157,7 @@ export default function IncomeReportPage() {
           dateStart: String(row.date_start ?? ""),
           dateFinish: String(row.date_finish ?? ""),
           pdfUrl: String(row.pdf_url ?? import.meta.env.VITE_BROILER_SUMMARY_PDF_URL ?? "/docs/broiler-summary-sample.pdf"),
+          row,
         };
       });
 
@@ -114,6 +176,36 @@ export default function IncomeReportPage() {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const yellow: [number, number, number] = [255, 242, 0];
     const green: [number, number, number] = [146, 208, 80];
+    const r = report.row;
+    const mortalityTotal = asNumber(r.mortality);
+    const totalDocLoad = asNumber(r.total_doc_load);
+    const firstWeek = asNumber(r.first_week);
+    const mortalityPercent = asNumber(r.mortality_percent);
+    const firstWeekPercent = firstWeek !== null && totalDocLoad ? (firstWeek / totalDocLoad) * 100 : null;
+    const feedRows = [
+      ["510 HF", r["510_hf_bags"], r["510_hf_kilo"], r["510_hf_percent"], r["510_hf_feeds/head"]],
+      ["511 HF", r["511_hf_bags"], r["511_hf_kilo"], r["511_hf_percent"], r["511_hf_feeds/head"]],
+      ["524", r["524_bags"], r["524_kilo"], r["524_percent"], r["524_feeds/head"]],
+      ["532", r["532_bags"], r["532_kilo"], r["532_percent"], r["532_feeds/head"]],
+    ] as const;
+    const feedTotalBags = feedRows.reduce((sum, row) => sum + (asNumber(row[1]) ?? 0), 0);
+    const feedTotalKilo = feedRows.reduce((sum, row) => sum + (asNumber(row[2]) ?? 0), 0);
+    const feedTotalPercent = feedRows.reduce((sum, row) => sum + (asNumber(row[3]) ?? 0), 0);
+    const feedTotalHead = feedRows.reduce((sum, row) => sum + (asNumber(row[4]) ?? 0), 0);
+    const growersFeeAmount = multiply(r.harvest_kilo, r.growers_fee_rate);
+    const performanceAmount = multiply(r.harvest_qty, r.performance_efficiency_rate);
+    const bonusAmount = multiply(r.harvest_qty, r.bonus_fc_rate);
+    const recoveryAmount = multiply(r.harvest_qty, r.harvest_recovery_rate);
+    const lpgAmount = multiply(r.harvest_qty, r.lpg_rate);
+    const electricityAmount = multiply(r.harvest_qty, r.electricity_rate);
+    const cashBondAmount = multiply(r.harvest_qty, r.cash_bond_rate);
+    const grossPayable = [growersFeeAmount, performanceAmount, bonusAmount, recoveryAmount, lpgAmount, electricityAmount].reduce<number>(
+      (sum, value) => sum + (value ?? 0),
+      0
+    );
+    const withholdingTax = grossPayable * 0.02;
+    const netAfterTax = grossPayable - withholdingTax;
+    const netAmountPayable = netAfterTax - (cashBondAmount ?? 0);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -122,14 +214,14 @@ export default function IncomeReportPage() {
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(`FARM NAME   ${report.farmName}`, 8, 20);
-    doc.text("CODE   0", 8, 25);
-    doc.text("HOUSE: 2", 35, 25);
+    doc.text(`CODE   ${r.code ?? "-"}`, 8, 25);
+    doc.text(`HOUSE: ${r.house ?? "-"}`, 35, 25);
     doc.text(`FLOCK: ${report.flock}`, 58, 25);
     // Header right-side lanes to avoid overlap.
     doc.text("Address:", 95, 20);
-    doc.text("BALAO, BARILI, CEBU", 112, 20);
-    doc.text("AREA: 53x416", 139, 25);
-    doc.text("VAT REG NO", 172, 25);
+    doc.text(String(r.address ?? "-"), 112, 20);
+    doc.text(`AREA: ${r.area ?? "-"}`, 139, 25);
+    doc.text(`VAT REG NO ${r.vat_reg_no ?? ""}`, 172, 25);
 
     autoTable(doc, {
       startY: 30,
@@ -137,10 +229,10 @@ export default function IncomeReportPage() {
       tableWidth: 54,
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
       body: [
-        ["DATE START", "17/03/2026"],
-        ["HARVEST START", "15/04/2026"],
-        ["DATE FINISH", "16/04/2026"],
-        ["HARV. PERIOD", "2"],
+        ["DATE START", formatDate(r.date_start)],
+        ["HARVEST START", formatDate(r.harvest_start)],
+        ["DATE FINISH", formatDate(r.date_finish)],
+        ["HARV. PERIOD", formatNumber(r.harvest_period)],
       ],
       columnStyles: {
         1: { halign: "center", fillColor: yellow },
@@ -153,11 +245,11 @@ export default function IncomeReportPage() {
       tableWidth: 78,
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
       body: [
-        ["TOTAL DOC LOAD", "105,000"],
-        ["TOTAL DOC START", "104,302"],
-        ["TOTAL HARVEST", "101,100"],
-        ["MORTALITY", "3,202"],
-        ["% MORTALITY", "3.07%"],
+        ["TOTAL DOC LOAD", formatNumber(r.total_doc_load)],
+        ["TOTAL DOC START", formatNumber(r.total_doc_start)],
+        ["TOTAL HARVEST", formatNumber(r.total_harvest)],
+        ["MORTALITY", formatNumber(r.mortality)],
+        ["% MORTALITY", formatPercent(r.mortality_percent)],
       ],
       columnStyles: {
         1: { halign: "right", fillColor: [255, 255, 255] },
@@ -176,8 +268,8 @@ export default function IncomeReportPage() {
       tableWidth: 40,
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
       body: [
-        ["EFF", "346.30"],
-        ["ADG", "51.12"],
+        ["EFF", formatNumber(r.eff, 2)],
+        ["ADG", formatNumber(r.adg, 2)],
       ],
       columnStyles: {
         1: { halign: "center" },
@@ -191,13 +283,13 @@ export default function IncomeReportPage() {
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
       body: [
         [{ content: "MORTALITY", colSpan: 3, styles: { halign: "center", fontStyle: "bold" } }],
-        ["DOA", "698", "0.66%"],
-        ["DEAD", "2,529", "2.42%"],
-        ["CULL", "673", "0.65%"],
-        ["TOTAL", "3,202", "3.07%"],
-        ["1ST WK.", "244", "0.23%"],
-        ["STD. MORT.", "", "4.00%"],
-        ["DIFF. MORT.", "", "-0.93%"],
+        ["DOA", formatNumber(r.DOA), totalDocLoad ? formatPercent((asNumber(r.DOA) ?? 0) / totalDocLoad * 100) : "-"],
+        ["DEAD", formatNumber(r.Dead), totalDocLoad ? formatPercent((asNumber(r.Dead) ?? 0) / totalDocLoad * 100) : "-"],
+        ["CULL", formatNumber(r.Cull), totalDocLoad ? formatPercent((asNumber(r.Cull) ?? 0) / totalDocLoad * 100) : "-"],
+        ["TOTAL", formatNumber(mortalityTotal), formatPercent(mortalityPercent)],
+        ["1ST WK.", formatNumber(firstWeek), formatPercent(firstWeekPercent)],
+        ["STD. MORT.", "", formatPercent(r.std_mort_percent)],
+        ["DIFF. MORT.", "", formatPercent(r.diff_mort_percent)],
       ],
       didParseCell: (d) => {
         if (d.section === "body" && d.column.index === 1 && d.row.index >= 1 && d.row.index <= 5) d.cell.styles.fillColor = yellow;
@@ -222,11 +314,14 @@ export default function IncomeReportPage() {
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
       head: [["TYPE", "BAGS", "KILO", "%", "FEEDS/HEAD"]],
       body: [
-        ["510 HF", "1,640.00", "82,000.00", "37%", "0.81"],
-        ["511 HF", "2,796.56", "139,828.00", "63%", "1.38"],
-        ["524", "-", "-", "-", ""],
-        ["532", "-", "-", "-", ""],
-        ["TOTAL", "4,436.56", "221,828.00", "100%", "2.19"],
+        ...feedRows.map(([type, bags, kilo, percent, feedsHead]) => [
+          type,
+          formatNumber(bags, 2),
+          formatNumber(kilo, 2),
+          asNumber(percent) === null ? "-" : `${formatNumber(percent, 0)}%`,
+          formatNumber(feedsHead, 2),
+        ]),
+        ["TOTAL", formatNumber(feedTotalBags, 2), formatNumber(feedTotalKilo, 2), `${formatNumber(feedTotalPercent, 0)}%`, formatNumber(feedTotalHead, 2)],
       ],
       columnStyles: {
         1: { halign: "right" },
@@ -258,9 +353,9 @@ export default function IncomeReportPage() {
       },
       body: [
         [{ content: "FCR", colSpan: 2, styles: { halign: "center" } }],
-        ["ACTUAL", "1.43"],
-        ["STD.", "1.638"],
-        ["DIFF.", "-0.207"],
+        ["ACTUAL", formatNumber(r.fcr_actual, 3)],
+        ["STD.", formatNumber(r.fcr_std, 3)],
+        ["DIFF.", formatNumber(r.fcr_diff, 3)],
       ],
       didParseCell: (d) => {
         if (d.section === "body" && d.row.index === 2 && d.column.index === 1) d.cell.styles.fillColor = yellow;
@@ -274,7 +369,7 @@ export default function IncomeReportPage() {
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
       head: [["", "QTY", "", "ALW", ""]],
       body: [
-        ["HARVEST", "101,100", "155,040.00", "1.53", "1.53"],
+        ["HARVEST", formatNumber(r.harvest_qty), formatNumber(r.harvest_kilo, 2), formatNumber(r.alw, 2), formatNumber(r.alw, 2)],
       ],
       columnStyles: {
         0: { halign: "center" },
@@ -295,7 +390,7 @@ export default function IncomeReportPage() {
       margin: { left: 75 },
       tableWidth: 60,
       styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2 },
-      body: [["UNACCOUNTED BIRDS", "0"]],
+      body: [["UNACCOUNTED BIRDS", formatNumber(r.unaccounted_birds)]],
       columnStyles: {
         0: { halign: "left" },
         1: { halign: "right" },
@@ -312,18 +407,18 @@ export default function IncomeReportPage() {
       tableWidth: 194,
       styles: { fontSize: 7, cellPadding: 0.7, lineColor: [220, 220, 220], lineWidth: 0.05 },
       body: [
-        ["1", "Grower's Fee for total weight out in kilograms", "155,040.00", "4.50", "Php", "697,680.00"],
-        ["2", "Performance Efficiency", "101,100", "9.05", "", "914,955.00"],
-        ["3", "Bonus FC", "101,100", "3.25", "", "328,575.00"],
-        ["4", "% Harvest Recovery", "101,100", "2.75", "", "278,025.00"],
+        ["1", "Grower's Fee for total weight out in kilograms", formatNumber(r.harvest_kilo, 2), formatNumber(r.growers_fee_rate, 2), "Php", formatNumber(growersFeeAmount, 2)],
+        ["2", "Performance Efficiency", formatNumber(r.harvest_qty), formatNumber(r.performance_efficiency_rate, 2), "", formatNumber(performanceAmount, 2)],
+        ["3", "Bonus FC", formatNumber(r.harvest_qty), formatNumber(r.bonus_fc_rate, 2), "", formatNumber(bonusAmount, 2)],
+        ["4", "% Harvest Recovery", formatNumber(r.harvest_qty), formatNumber(r.harvest_recovery_rate, 2), "", formatNumber(recoveryAmount, 2)],
         ["5", "Energy Subsidies", "", "", "", ""],
-        ["", "5.1 LPG", "101,100", "1.00", "", "101,100.00"],
-        ["", "5.2 Electricity", "101,100", "1.00", "", "101,100.00"],
+        ["", "5.1 LPG", formatNumber(r.harvest_qty), formatNumber(r.lpg_rate, 2), "", formatNumber(lpgAmount, 2)],
+        ["", "5.2 Electricity", formatNumber(r.harvest_qty), formatNumber(r.electricity_rate, 2), "", formatNumber(electricityAmount, 2)],
         ["6", "Unaccounted Penalty", "", "", "", "-"],
-        ["", "Special Payment", "101,100", "", "", "-"],
-        ["", "", "", "", "", "2,421,435.00"],
-        ["", "SILO", "101,100", "1.00", "", "101,100.00"],
-        ["", "", "", "", "", "2,522,535.00"],
+        ["", "Special Payment", formatNumber(r.harvest_qty), "", "", "-"],
+        ["", "", "", "", "", formatNumber(grossPayable, 2)],
+        ["", "SILO", formatNumber(r.harvest_qty), formatNumber(r.cash_bond_rate, 2), "", formatNumber(cashBondAmount, 2)],
+        ["", "", "", "", "", formatNumber(grossPayable + (cashBondAmount ?? 0), 2)],
       ],
       didParseCell: (d) => {
         if (d.section === "body" && d.row.index === 1 && d.column.index === 3) d.cell.styles.fillColor = yellow;
@@ -336,21 +431,22 @@ export default function IncomeReportPage() {
     const summaryY = (doc as any).lastAutoTable.finalY + 8;
     doc.setFontSize(7);
     doc.text("Average Scheme (Php/Head)", 10, summaryY);
-    doc.text("24.95", 52, summaryY);
+    doc.text(formatNumber(r.avg_scheme, 2), 52, summaryY);
     const totalRowY = summaryY - 4;
     doc.text("TOTAL Net of 12% VAT", 92, totalRowY);
+    doc.text(formatNumber(grossPayable, 2), 188, totalRowY, { align: "right" });
     doc.text("Less - 2% Withholding Tax", 92, summaryY + 4);
-    doc.text("50,450.70", 188, summaryY + 4, { align: "right" });
-    doc.text("2,472,084.30", 188, summaryY + 10, { align: "right" });
+    doc.text(formatNumber(withholdingTax, 2), 188, summaryY + 4, { align: "right" });
+    doc.text(formatNumber(netAfterTax, 2), 188, summaryY + 10, { align: "right" });
     doc.text("LESS", 20, summaryY + 16);
     doc.text("Cash Bond", 30, summaryY + 16);
-    doc.text("101,100", 125, summaryY + 16, { align: "right" });
-    doc.text("1.00", 145, summaryY + 16, { align: "right" });
-    doc.text("101,100.00", 188, summaryY + 16, { align: "right" });
+    doc.text(formatNumber(r.harvest_qty), 125, summaryY + 16, { align: "right" });
+    doc.text(formatNumber(r.cash_bond_rate, 2), 145, summaryY + 16, { align: "right" });
+    doc.text(formatNumber(cashBondAmount, 2), 188, summaryY + 16, { align: "right" });
     doc.text("Net Amount Payable", 100, summaryY + 22);
     doc.text("Php", 156, summaryY + 22);
     doc.setFont("helvetica", "bold");
-    doc.text("2,370,984.30", 188, summaryY + 22, { align: "right" });
+    doc.text(formatNumber(netAmountPayable, 2), 188, summaryY + 22, { align: "right" });
     doc.setFont("helvetica", "normal");
 
     const footY = summaryY + 27;
@@ -436,28 +532,98 @@ export default function IncomeReportPage() {
                   }
                 >
                   Income Summary
-                </Button>
+              </Button>
               </div>
-              <Table<BroilerSummaryReport>
-                size="small"
-                rowKey="key"
-                columns={columns}
-                dataSource={reports}
-                pagination={{
-                  pageSize: 5,
-                  showSizeChanger: true,
-                  pageSizeOptions: ["5", "10", "20"],
-                  showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} reports`,
-                }}
-                scroll={{ x: 680 }}
-                onRow={(record) => ({
-                  onClick: () => {
-                    setSelectedKey(record.key);
-                    exportBroilerSummaryPdf(record);
-                  },
-                  className: record.key === selectedKey ? "!bg-emerald-50" : "",
-                })}
-              />
+              <div className="mb-2 text-xs text-slate-500">Tap or click a row to preview the report PDF.</div>
+              {isMobile ? (
+                <div className="space-y-2">
+                  {mobilePagedReports.map((record) => (
+                    <button
+                      key={record.key}
+                      type="button"
+                      className={`w-full rounded-lg border p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40 ${
+                        record.key === selectedKey ? "border-emerald-300 bg-emerald-50/70" : "border-slate-200 bg-white"
+                      }`}
+                      onClick={() => {
+                        setSelectedKey(record.key);
+                        exportBroilerSummaryPdf(record);
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-xs text-slate-500">Report No</div>
+                          <div className="font-semibold text-slate-800">{record.reportNo}</div>
+                        </div>
+                        <Tag color={record.pdfUrl ? "green" : "default"} className="!mr-0">
+                          {record.pdfUrl ? "Ready" : "Missing"}
+                        </Tag>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-slate-700">
+                        <div><span className="text-slate-500">Farm:</span> {record.farmName || "-"}</div>
+                        <div><span className="text-slate-500">Flock:</span> {record.flock || "-"}</div>
+                        <div><span className="text-slate-500">Start:</span> {record.dateStart || "-"}</div>
+                        <div><span className="text-slate-500">Finish:</span> {record.dateFinish || "-"}</div>
+                      </div>
+                      <div className="mt-2 flex justify-end">
+                        <Button
+                          size="small"
+                          icon={<IoCreateOutline size={14} />}
+                          className="!rounded-md !border-emerald-200 !bg-emerald-50 !text-emerald-700 hover:!border-emerald-300 hover:!bg-emerald-100 hover:!text-emerald-800"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate("/reports/income/new", {
+                              state: {
+                                mode: "edit",
+                                editId: record.id,
+                                reportNo: record.reportNo,
+                                existingReportNos: reports.map((item) => item.reportNo),
+                              },
+                            });
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                    </button>
+                  ))}
+                  <div className="pt-1">
+                    <Pagination
+                      current={mobilePage}
+                      pageSize={mobilePageSize}
+                      total={reports.length}
+                      size="small"
+                      showSizeChanger={reports.length > 5}
+                      pageSizeOptions={["5", "10", "20"]}
+                      onChange={(page, pageSize) => {
+                        setMobilePage(page);
+                        setMobilePageSize(pageSize);
+                      }}
+                      showTotal={(total, range) => `${range[0]}-${range[1]} of ${total}`}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <Table<BroilerSummaryReport>
+                  size="small"
+                  rowKey="key"
+                  columns={columns}
+                  dataSource={reports}
+                  pagination={{
+                    pageSize: 5,
+                    showSizeChanger: reports.length > 5,
+                    pageSizeOptions: ["5", "10", "20"],
+                    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} reports`,
+                  }}
+                  scroll={{ x: 760 }}
+                  onRow={(record) => ({
+                    onClick: () => {
+                      setSelectedKey(record.key);
+                      exportBroilerSummaryPdf(record);
+                    },
+                    className: `${record.key === selectedKey ? "!bg-emerald-50" : ""} cursor-pointer hover:!bg-emerald-50/60`,
+                  })}
+                />
+              )}
             </div>
 
           </div>

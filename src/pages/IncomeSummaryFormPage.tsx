@@ -1,7 +1,8 @@
-import { Button, Divider, Form, Input, Layout, Typography, message } from "antd";
+import { Button, DatePicker, Divider, Form, Input, InputNumber, Layout, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import dayjs, { type Dayjs } from "dayjs";
 import { FaSignOutAlt } from "react-icons/fa";
-import { IoHome } from "react-icons/io5";
+import { IoHome, IoCalendarOutline, IoStatsChartOutline, IoLeafOutline, IoDocumentTextOutline } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { useLocation, useNavigate } from "react-router-dom";
 import { signOutAndRedirect } from "../utils/auth";
@@ -9,65 +10,77 @@ import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
 const INCOME_SUMMARY_TABLE = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
+const DEFAULT_PDF_URL = import.meta.env.VITE_BROILER_SUMMARY_PDF_URL ?? "/docs/broiler-summary-sample.pdf";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 
 const sectionCardClass =
-  "rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur-sm md:p-5";
+  "rounded-2xl border border-slate-200/90 bg-white/95 p-3 shadow-sm backdrop-blur-sm md:p-4";
+
+const toNullableNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 type IncomeSummaryFormValues = {
   reportNo: string;
   farmName: string;
   flock: string;
-  dateStart: string;
-  dateFinish: string;
-  harvestStart: string;
-  harvestPeriod: string;
+  dateStart: Dayjs | null;
+  dateFinish: Dayjs | null;
+  harvestStart: Dayjs | null;
+  harvestPeriod: string | number | null;
   address: string;
   code: string;
   house: string;
   area: string;
   vatRegNo: string;
-  totalDocLoad: string;
-  totalDocStart: string;
-  totalHarvest: string;
-  mortalityTotal: string;
-  mortalityPercent: string;
-  eff: string;
-  adg: string;
-  doa: string;
-  dead: string;
-  cull: string;
-  firstWeek: string;
-  stdMort: string;
-  diffMort: string;
-  hf510Bags: string;
-  hf510Kilo: string;
-  hf510Percent: string;
-  hf510FeedsHead: string;
-  hf511Bags: string;
-  hf511Kilo: string;
-  hf511Percent: string;
-  hf511FeedsHead: string;
-  feed524: string;
-  feed532: string;
+  totalDocLoad: string | number | null;
+  totalDocStart: string | number | null;
+  totalHarvest: string | number | null;
+  mortalityTotal: string | number | null;
+  mortalityPercent: string | number | null;
+  eff: string | number | null;
+  adg: string | number | null;
+  doa: string | number | null;
+  dead: string | number | null;
+  cull: string | number | null;
+  firstWeek: string | number | null;
+  stdMort: string | number | null;
+  diffMort: string | number | null;
+  hf510Bags: string | number | null;
+  hf510Kilo: string | number | null;
+  hf510Percent: string | number | null;
+  hf510FeedsHead: string | number | null;
+  hf511Bags: string | number | null;
+  hf511Kilo: string | number | null;
+  hf511Percent: string | number | null;
+  hf511FeedsHead: string | number | null;
+  feed524Bags: string | number | null;
+  feed524Kilo: string | number | null;
+  feed524Percent: string | number | null;
+  feed524FeedsHead: string | number | null;
+  feed532Bags: string | number | null;
+  feed532Kilo: string | number | null;
+  feed532Percent: string | number | null;
+  feed532FeedsHead: string | number | null;
   feedsTotalBags: string;
   feedsTotalKilo: string;
   feedsTotalPercent: string;
   feedsTotalHead: string;
-  fcrActual: string;
-  fcrStd: string;
-  fcrDiff: string;
-  qtyHarvest: string;
-  kiloHarvest: string;
-  alw: string;
-  unaccountedBirds: string;
-  growersFeeRate: string;
-  performanceEfficiencyRate: string;
-  bonusFCRate: string;
-  harvestRecoveryRate: string;
-  lpgRate: string;
-  electricityRate: string;
+  fcrActual: string | number | null;
+  fcrStd: string | number | null;
+  fcrDiff: string | number | null;
+  qtyHarvest: string | number | null;
+  kiloHarvest: string | number | null;
+  alw: string | number | null;
+  unaccountedBirds: string | number | null;
+  growersFeeRate: string | number | null;
+  performanceEfficiencyRate: string | number | null;
+  bonusFCRate: string | number | null;
+  harvestRecoveryRate: string | number | null;
+  lpgRate: string | number | null;
+  electricityRate: string | number | null;
   cashBondQty: string;
   cashBondRate: string;
   avgScheme: string;
@@ -89,6 +102,12 @@ export default function IncomeSummaryFormPage() {
   const [form] = Form.useForm<IncomeSummaryFormValues>();
   const [autoReportNo, setAutoReportNo] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const SectionTitle = ({ title, icon }: { title: string; icon?: React.ReactNode }) => (
+    <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/65 px-3 py-2">
+      {icon ? <span className="text-emerald-700">{icon}</span> : null}
+      <span className="text-sm font-semibold tracking-wide text-emerald-900">{title}</span>
+    </div>
+  );
   const fallbackReportNo = useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -156,47 +175,53 @@ export default function IncomeSummaryFormPage() {
         code: String(data.code ?? ""),
         area: String(data.area ?? ""),
         address: String(data.address ?? ""),
-        dateStart: String(data.date_start ?? ""),
-        harvestStart: String(data.harvest_start ?? ""),
-        dateFinish: String(data.date_finish ?? ""),
-        harvestPeriod: String(data.harvest_period ?? ""),
-        totalDocLoad: String(data.total_doc_load ?? ""),
-        totalDocStart: String(data.total_doc_start ?? ""),
-        totalHarvest: String(data.total_harvest ?? ""),
-        mortalityTotal: String(data.mortality ?? ""),
-        mortalityPercent: String(data.mortality_percent ?? ""),
-        eff: String(data.eff ?? ""),
-        adg: String(data.adg ?? ""),
+        dateStart: data.date_start ? dayjs(String(data.date_start)) : null,
+        harvestStart: data.harvest_start ? dayjs(String(data.harvest_start)) : null,
+        dateFinish: data.date_finish ? dayjs(String(data.date_finish)) : null,
+        harvestPeriod: toNullableNumber(data.harvest_period),
+        totalDocLoad: toNullableNumber(data.total_doc_load),
+        totalDocStart: toNullableNumber(data.total_doc_start),
+        totalHarvest: toNullableNumber(data.total_harvest),
+        mortalityTotal: toNullableNumber(data.mortality),
+        mortalityPercent: toNullableNumber(data.mortality_percent),
+        eff: toNullableNumber(data.eff),
+        adg: toNullableNumber(data.adg),
         vatRegNo: String(data.vat_reg_no ?? ""),
-        doa: String(data.DOA ?? ""),
-        dead: String(data.Dead ?? ""),
-        cull: String(data.Cull ?? ""),
-        firstWeek: String(data.first_week ?? ""),
-        stdMort: String(data.std_mort_percent ?? ""),
-        diffMort: String(data.diff_mort_percent ?? ""),
-        hf510Bags: String(data["510_hf_bags"] ?? ""),
-        hf510Kilo: String(data["510_hf_kilo"] ?? ""),
-        hf510Percent: String(data["510_hf_percent"] ?? ""),
-        hf510FeedsHead: String(data["510_hf_feeds/head"] ?? ""),
-        hf511Bags: String(data["511_hf_bags"] ?? ""),
-        hf511Kilo: String(data["511_hf_kilo"] ?? ""),
-        hf511Percent: String(data["511_hf_percent"] ?? ""),
-        hf511FeedsHead: String(data["511_hf_feeds/head"] ?? ""),
-        feed524: String(data["524_bags"] ?? "-"),
-        feed532: String(data["532_bags"] ?? "-"),
-        fcrActual: String(data.fcr_actual ?? ""),
-        fcrStd: String(data.fcr_std ?? ""),
-        fcrDiff: String(data.fcr_diff ?? ""),
-        qtyHarvest: String(data.harvest_qty ?? ""),
-        kiloHarvest: String(data.harvest_kilo ?? ""),
-        alw: String(data.alw ?? ""),
-        unaccountedBirds: String(data.unaccounted_birds ?? ""),
-        growersFeeRate: String(data.growers_fee_rate ?? ""),
-        performanceEfficiencyRate: String(data.performance_efficiency_rate ?? ""),
-        bonusFCRate: String(data.bonus_fc_rate ?? ""),
-        harvestRecoveryRate: String(data.harvest_recovery_rate ?? ""),
-        lpgRate: String(data.lpg_rate ?? ""),
-        electricityRate: String(data.electricity_rate ?? ""),
+        doa: toNullableNumber(data.DOA),
+        dead: toNullableNumber(data.Dead),
+        cull: toNullableNumber(data.Cull),
+        firstWeek: toNullableNumber(data.first_week),
+        stdMort: toNullableNumber(data.std_mort_percent),
+        diffMort: toNullableNumber(data.diff_mort_percent),
+        hf510Bags: toNullableNumber(data["510_hf_bags"]),
+        hf510Kilo: toNullableNumber(data["510_hf_kilo"]),
+        hf510Percent: toNullableNumber(data["510_hf_percent"]),
+        hf510FeedsHead: toNullableNumber(data["510_hf_feeds/head"]),
+        hf511Bags: toNullableNumber(data["511_hf_bags"]),
+        hf511Kilo: toNullableNumber(data["511_hf_kilo"]),
+        hf511Percent: toNullableNumber(data["511_hf_percent"]),
+        hf511FeedsHead: toNullableNumber(data["511_hf_feeds/head"]),
+        feed524Bags: toNullableNumber(data["524_bags"]),
+        feed524Kilo: toNullableNumber(data["524_kilo"]),
+        feed524Percent: toNullableNumber(data["524_percent"]),
+        feed524FeedsHead: toNullableNumber(data["524_feeds/head"]),
+        feed532Bags: toNullableNumber(data["532_bags"]),
+        feed532Kilo: toNullableNumber(data["532_kilo"]),
+        feed532Percent: toNullableNumber(data["532_percent"]),
+        feed532FeedsHead: toNullableNumber(data["532_feeds/head"]),
+        fcrActual: toNullableNumber(data.fcr_actual),
+        fcrStd: toNullableNumber(data.fcr_std),
+        fcrDiff: toNullableNumber(data.fcr_diff),
+        qtyHarvest: toNullableNumber(data.harvest_qty),
+        kiloHarvest: toNullableNumber(data.harvest_kilo),
+        alw: toNullableNumber(data.alw),
+        unaccountedBirds: toNullableNumber(data.unaccounted_birds),
+        growersFeeRate: toNullableNumber(data.growers_fee_rate),
+        performanceEfficiencyRate: toNullableNumber(data.performance_efficiency_rate),
+        bonusFCRate: toNullableNumber(data.bonus_fc_rate),
+        harvestRecoveryRate: toNullableNumber(data.harvest_recovery_rate),
+        lpgRate: toNullableNumber(data.lpg_rate),
+        electricityRate: toNullableNumber(data.electricity_rate),
         avgScheme: String(data.avg_scheme ?? ""),
         cashBondRate: String(data.cash_bond_rate ?? ""),
         pdfUrl: String(data.pdf_url ?? ""),
@@ -232,9 +257,9 @@ export default function IncomeSummaryFormPage() {
         code: String(values.code ?? "").trim() || null,
         area: String(values.area ?? "").trim() || null,
         address: String(values.address ?? "").trim() || null,
-        date_start: String(values.dateStart ?? "").trim() || null,
-        harvest_start: String(values.harvestStart ?? "").trim() || null,
-        date_finish: String(values.dateFinish ?? "").trim() || null,
+        date_start: values.dateStart ? values.dateStart.format("YYYY-MM-DD") : null,
+        harvest_start: values.harvestStart ? values.harvestStart.format("YYYY-MM-DD") : null,
+        date_finish: values.dateFinish ? values.dateFinish.format("YYYY-MM-DD") : null,
         harvest_period: toInteger(values.harvestPeriod),
         total_doc_load: toNumber(values.totalDocLoad),
         total_doc_start: toNumber(values.totalDocStart),
@@ -258,14 +283,14 @@ export default function IncomeSummaryFormPage() {
         "511_hf_kilo": toNumber(values.hf511Kilo),
         "511_hf_percent": toNumber(values.hf511Percent),
         "511_hf_feeds/head": toNumber(values.hf511FeedsHead),
-        "524_bags": toNumber(values.feed524),
-        "524_kilo": null,
-        "524_percent": null,
-        "524_feeds/head": null,
-        "532_bags": toNumber(values.feed532),
-        "532_kilo": null,
-        "532_percent": null,
-        "532_feeds/head": null,
+        "524_bags": toNumber(values.feed524Bags),
+        "524_kilo": toNumber(values.feed524Kilo),
+        "524_percent": toNumber(values.feed524Percent),
+        "524_feeds/head": toNumber(values.feed524FeedsHead),
+        "532_bags": toNumber(values.feed532Bags),
+        "532_kilo": toNumber(values.feed532Kilo),
+        "532_percent": toNumber(values.feed532Percent),
+        "532_feeds/head": toNumber(values.feed532FeedsHead),
         fcr_actual: toNumber(values.fcrActual),
         fcr_std: toNumber(values.fcrStd),
         fcr_diff: toNumber(values.fcrDiff),
@@ -358,78 +383,19 @@ export default function IncomeSummaryFormPage() {
           <Form
             form={form}
             layout="vertical"
-            className="space-y-4"
+            className="space-y-2.5 [&_.ant-form-item]:!mb-2 [&_.ant-form-item-label>label]:!text-slate-700 [&_.ant-form-item-label>label]:!text-[13px] [&_.ant-form-item-label]:!pb-0.5 [&_.ant-input]:!rounded-lg [&_.ant-input-number]:!rounded-lg [&_.ant-picker]:!rounded-lg"
             initialValues={{
               reportNo: autoReportNo || fallbackReportNo,
-              farmName: "GGDC H1",
-              flock: "3",
-              dateStart: "2026-03-17",
-              dateFinish: "2026-04-16",
-              harvestStart: "2026-04-15",
-              harvestPeriod: "2",
-              address: "BALAO, BARILI, CEBU",
-              code: "0",
-              house: "2",
-              area: "53x416",
-              vatRegNo: "",
-              totalDocLoad: "105000",
-              totalDocStart: "104302",
-              totalHarvest: "101100",
-              mortalityTotal: "3202",
-              mortalityPercent: "3.07",
-              eff: "346.30",
-              adg: "51.12",
-              doa: "698",
-              dead: "2529",
-              cull: "673",
-              firstWeek: "244",
-              stdMort: "4.00",
-              diffMort: "-0.93",
-              hf510Bags: "1640.00",
-              hf510Kilo: "82000.00",
-              hf510Percent: "37",
-              hf510FeedsHead: "0.81",
-              hf511Bags: "2796.56",
-              hf511Kilo: "139828.00",
-              hf511Percent: "63",
-              hf511FeedsHead: "1.38",
-              feed524: "-",
-              feed532: "-",
-              feedsTotalBags: "4436.56",
-              feedsTotalKilo: "221828.00",
-              feedsTotalPercent: "100",
-              feedsTotalHead: "2.19",
-              fcrActual: "1.43",
-              fcrStd: "1.638",
-              fcrDiff: "-0.207",
-              qtyHarvest: "101100",
-              kiloHarvest: "155040.00",
-              alw: "1.53",
-              unaccountedBirds: "0",
-              growersFeeRate: "4.50",
-              performanceEfficiencyRate: "9.05",
-              bonusFCRate: "3.25",
-              harvestRecoveryRate: "2.75",
-              lpgRate: "1.00",
-              electricityRate: "1.00",
-              cashBondQty: "101100",
-              cashBondRate: "1.00",
-              avgScheme: "24.95",
-              totalNetVat: "2522535.00",
-              withholdingTax: "50450.70",
-              netAfterTax: "2472084.30",
-              cashBondAmount: "101100.00",
-              netAmountPayable: "2370984.30",
-              pdfUrl: import.meta.env.VITE_BROILER_SUMMARY_PDF_URL ?? "/docs/broiler-summary-sample.pdf",
+              pdfUrl: DEFAULT_PDF_URL,
             }}
           >
             <section className={sectionCardClass}>
-              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
+              <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
                 <Form.Item name="reportNo" label={isEditMode ? "Report No" : "Report No (Auto Generated)"} className="!mb-0">
                   <Input size="large" readOnly className="!font-semibold !text-emerald-900" />
                 </Form.Item>
               </div>
-              <Divider className="!mt-0 !mb-3">Farm & Header</Divider>
+              <SectionTitle title="Farm & Header" icon={<IoLeafOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Form.Item name="farmName" label="Farm Name" rules={[{ required: true, message: "Farm Name is required." }]}>
                   <Input size="large" />
@@ -456,111 +422,111 @@ export default function IncomeSummaryFormPage() {
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">Schedule</Divider>
+              <SectionTitle title="Schedule" icon={<IoCalendarOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Form.Item name="dateStart" label="Date Start">
-                <Input />
+                <DatePicker size="large" className="!w-full" format="YYYY-MM-DD" />
               </Form.Item>
               <Form.Item name="harvestStart" label="Harvest Start">
-                <Input />
+                <DatePicker size="large" className="!w-full" format="YYYY-MM-DD" />
               </Form.Item>
               <Form.Item name="dateFinish" label="Date Finish">
-                <Input />
+                <DatePicker size="large" className="!w-full" format="YYYY-MM-DD" />
               </Form.Item>
               <Form.Item name="harvestPeriod" label="Harvest Period">
-                <Input />
+                <InputNumber className="!w-full" controls={false} placeholder="0" />
               </Form.Item>
               </div>
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">Totals / KPI</Divider>
+              <SectionTitle title="Totals / KPI" icon={<IoStatsChartOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Form.Item name="totalDocLoad" label="Total Doc Load"><Input /></Form.Item>
-              <Form.Item name="totalDocStart" label="Total Doc Start"><Input /></Form.Item>
-              <Form.Item name="totalHarvest" label="Total Harvest"><Input /></Form.Item>
-              <Form.Item name="mortalityTotal" label="Mortality"><Input /></Form.Item>
-              <Form.Item name="mortalityPercent" label="% Mortality"><Input /></Form.Item>
-              <Form.Item name="eff" label="EFF"><Input /></Form.Item>
-              <Form.Item name="adg" label="ADG"><Input /></Form.Item>
+              <Form.Item name="totalDocLoad" label="Total Doc Load"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="totalDocStart" label="Total Doc Start"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="totalHarvest" label="Total Harvest"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="mortalityTotal" label="Mortality"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="mortalityPercent" label="% Mortality"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="eff" label="EFF"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="adg" label="ADG"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
               </div>
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">Mortality</Divider>
+              <SectionTitle title="Mortality" icon={<IoStatsChartOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-              <Form.Item name="doa" label="DOA"><Input /></Form.Item>
-              <Form.Item name="dead" label="Dead"><Input /></Form.Item>
-              <Form.Item name="cull" label="Cull"><Input /></Form.Item>
-              <Form.Item name="firstWeek" label="1st Wk"><Input /></Form.Item>
-              <Form.Item name="stdMort" label="Std. Mort %"><Input /></Form.Item>
-              <Form.Item name="diffMort" label="Diff. Mort %"><Input /></Form.Item>
+              <Form.Item name="doa" label="DOA"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="dead" label="Dead"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="cull" label="Cull"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="firstWeek" label="1st Wk"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="stdMort" label="Std. Mort %"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="diffMort" label="Diff. Mort %"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
               </div>
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">Feeds Phase Usage</Divider>
+              <SectionTitle title="Feeds Phase Usage" icon={<IoLeafOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Form.Item name="hf510Bags" label="510 HF Bags"><Input /></Form.Item>
-              <Form.Item name="hf510Kilo" label="510 HF Kilo"><Input /></Form.Item>
-              <Form.Item name="hf510Percent" label="510 HF %"><Input /></Form.Item>
-              <Form.Item name="hf510FeedsHead" label="510 HF Feeds/Head"><Input /></Form.Item>
-              <Form.Item name="hf511Bags" label="511 HF Bags"><Input /></Form.Item>
-              <Form.Item name="hf511Kilo" label="511 HF Kilo"><Input /></Form.Item>
-              <Form.Item name="hf511Percent" label="511 HF %"><Input /></Form.Item>
-              <Form.Item name="hf511FeedsHead" label="511 HF Feeds/Head"><Input /></Form.Item>
-              <Form.Item name="feed524Bags" label="524 Bags"><Input /></Form.Item>
-              <Form.Item name="feed524Kilo" label="524 Kilo"><Input /></Form.Item>
-              <Form.Item name="feed524Percent" label="524 %"><Input /></Form.Item>
-              <Form.Item name="feed524FeedsHead" label="524 Feeds/Head"><Input /></Form.Item>
-              <Form.Item name="feed532Bags" label="532 Bags"><Input /></Form.Item>
-              <Form.Item name="feed532Kilo" label="532 Kilo"><Input /></Form.Item>
-              <Form.Item name="feed532Percent" label="532 %"><Input /></Form.Item>
-              <Form.Item name="feed532FeedsHead" label="532 Feeds/Head"><Input /></Form.Item>
+              <Form.Item name="hf510Bags" label="510 HF Bags"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf510Kilo" label="510 HF Kilo"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf510Percent" label="510 HF %"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf510FeedsHead" label="510 HF Feeds/Head"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf511Bags" label="511 HF Bags"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf511Kilo" label="511 HF Kilo"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf511Percent" label="511 HF %"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="hf511FeedsHead" label="511 HF Feeds/Head"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed524Bags" label="524 Bags"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed524Kilo" label="524 Kilo"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed524Percent" label="524 %"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed524FeedsHead" label="524 Feeds/Head"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed532Bags" label="532 Bags"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed532Kilo" label="532 Kilo"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed532Percent" label="532 %"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="feed532FeedsHead" label="532 Feeds/Head"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
               </div>
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">FCR / Harvest</Divider>
+              <SectionTitle title="FCR / Harvest" icon={<IoStatsChartOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-              <Form.Item name="fcrActual" label="FCR Actual"><Input /></Form.Item>
-              <Form.Item name="fcrStd" label="FCR Std"><Input /></Form.Item>
-              <Form.Item name="fcrDiff" label="FCR Diff"><Input /></Form.Item>
-              <Form.Item name="qtyHarvest" label="Harvest Qty"><Input /></Form.Item>
-              <Form.Item name="kiloHarvest" label="Harvest Kilo"><Input /></Form.Item>
-              <Form.Item name="alw" label="ALW"><Input /></Form.Item>
-              <Form.Item name="unaccountedBirds" label="Unaccounted Birds"><Input /></Form.Item>
+              <Form.Item name="fcrActual" label="FCR Actual"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="fcrStd" label="FCR Std"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="fcrDiff" label="FCR Diff"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="qtyHarvest" label="Harvest Qty"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="kiloHarvest" label="Harvest Kilo"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="alw" label="ALW"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="unaccountedBirds" label="Unaccounted Birds"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
               </div>
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">Scheme / Summary</Divider>
+              <SectionTitle title="Scheme / Summary" icon={<IoStatsChartOutline size={16} />} />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Form.Item name="growersFeeRate" label="Grower's Fee Rate"><Input /></Form.Item>
-              <Form.Item name="performanceEfficiencyRate" label="Performance Efficiency Rate"><Input /></Form.Item>
-              <Form.Item name="bonusFCRate" label="Bonus FC Rate"><Input /></Form.Item>
-              <Form.Item name="harvestRecoveryRate" label="Harvest Recovery Rate"><Input /></Form.Item>
-              <Form.Item name="lpgRate" label="LPG Rate"><Input /></Form.Item>
-              <Form.Item name="electricityRate" label="Electricity Rate"><Input /></Form.Item>
-              <Form.Item name="avgScheme" label="Average Scheme (Php/Head)"><Input /></Form.Item>
-              <Form.Item name="cashBondRate" label="Cash Bond Rate"><Input /></Form.Item>
+              <Form.Item name="growersFeeRate" label="Grower's Fee Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="performanceEfficiencyRate" label="Performance Efficiency Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="bonusFCRate" label="Bonus FC Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="harvestRecoveryRate" label="Harvest Recovery Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="lpgRate" label="LPG Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="electricityRate" label="Electricity Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="avgScheme" label="Average Scheme (Php/Head)"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
+              <Form.Item name="cashBondRate" label="Cash Bond Rate"><InputNumber className="!w-full" controls={false} placeholder="0" /></Form.Item>
               </div>
             </section>
 
             <section className={sectionCardClass}>
-              <Divider className="!mt-0 !mb-3">Output</Divider>
+              <SectionTitle title="Output" icon={<IoDocumentTextOutline size={16} />} />
               <Form.Item name="pdfUrl" label="PDF URL" rules={[{ required: true, message: "PDF URL is required." }]}>
                 <Input placeholder="/docs/broiler-summary-sample.pdf" />
               </Form.Item>
             </section>
 
-            <div className="sticky bottom-3 z-20 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
-              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button size="large" onClick={() => navigate(-1)}>Cancel</Button>
+            <div className="sticky bottom-2 z-20 rounded-xl border border-emerald-100 bg-white/92 p-2.5 shadow-lg backdrop-blur-sm md:bottom-4 md:p-3">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button size="large" className="sm:!min-w-[110px]" onClick={() => navigate(-1)}>Cancel</Button>
                 <Button
                   size="large"
                   type="primary"
-                  className="!bg-emerald-700 hover:!bg-emerald-600"
+                  className="w-full !rounded-lg !bg-emerald-700 !font-semibold hover:!bg-emerald-600 sm:!w-auto sm:!min-w-[220px]"
                   loading={submitting}
                   disabled={submitting}
                   onClick={() => void handleSubmit()}
