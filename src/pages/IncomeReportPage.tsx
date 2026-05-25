@@ -203,8 +203,9 @@ export default function IncomeReportPage() {
       (sum, value) => sum + (value ?? 0),
       0
     );
-    const withholdingTax = grossPayable * 0.02;
-    const netAfterTax = grossPayable - withholdingTax;
+    const withholdingTaxBase = grossPayable + (cashBondAmount ?? 0);
+    const withholdingTax = withholdingTaxBase * 0.02;
+    const netAfterTax = withholdingTaxBase - withholdingTax;
     const netAmountPayable = netAfterTax - (cashBondAmount ?? 0);
 
     doc.setFont("helvetica", "bold");
@@ -434,7 +435,6 @@ export default function IncomeReportPage() {
     doc.text(formatNumber(r.avg_scheme, 2), 52, summaryY);
     const totalRowY = summaryY - 4;
     doc.text("TOTAL Net of 12% VAT", 92, totalRowY);
-    doc.text(formatNumber(grossPayable, 2), 188, totalRowY, { align: "right" });
     doc.text("Less - 2% Withholding Tax", 92, summaryY + 4);
     doc.text(formatNumber(withholdingTax, 2), 188, summaryY + 4, { align: "right" });
     doc.text(formatNumber(netAfterTax, 2), 188, summaryY + 10, { align: "right" });
