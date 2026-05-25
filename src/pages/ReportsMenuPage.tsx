@@ -60,17 +60,21 @@ export default function ReportsMenuPage() {
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
   const [growsCount, setGrowsCount] = useState(0);
   const [harvestedCount, setHarvestedCount] = useState(0);
+  const [incomeCount, setIncomeCount] = useState(0);
 
   useEffect(() => {
     let alive = true;
 
     const loadCounts = async () => {
       const growsTable = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
-      const { data, error } = await supabase
-        .from(growsTable)
-        .select("total_animals, status, is_harvested");
+      const incomeTable = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
+      const [{ data, error }, { count: incomeRows, error: incomeError }] = await Promise.all([
+        supabase.from(growsTable).select("total_animals, status, is_harvested"),
+        supabase.from(incomeTable).select("id", { count: "exact", head: true }),
+      ]);
 
-      if (error || !alive) return;
+      if (!alive) return;
+      if (error) return;
 
       const rows = (data ?? []) as Array<{
         total_animals: number | null;
@@ -91,6 +95,7 @@ export default function ReportsMenuPage() {
       if (!alive) return;
       setGrowsCount(nextGrowsCount);
       setHarvestedCount(nextHarvestedCount);
+      if (!incomeError) setIncomeCount(incomeRows ?? 0);
     };
 
     void loadCounts();
@@ -103,9 +108,9 @@ export default function ReportsMenuPage() {
     () => ({
       grows: growsCount,
       harvested: harvestedCount,
-      income: 1,
+      income: incomeCount,
     }),
-    [growsCount, harvestedCount]
+    [growsCount, harvestedCount, incomeCount]
   );
 
   return (
