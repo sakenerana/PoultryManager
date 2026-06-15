@@ -4,12 +4,15 @@ import { FaSignOutAlt } from "react-icons/fa";
 import { IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const { Header, Content } = Layout;
 const { Title } = Typography;
+type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
 type ReportTile = {
   key: "grows" | "harvested" | "income";
@@ -57,21 +60,53 @@ const tiles: ReportTile[] = [
 
 export default function ReportsMenuPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
+  const [userRole, setUserRole] = useState<UserRole>(null);
   const [growsCount, setGrowsCount] = useState(0);
   const [harvestedCount, setHarvestedCount] = useState(0);
   const [incomeCount, setIncomeCount] = useState(0);
+  const isAdmin = userRole === "Admin";
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadRole = async () => {
+      if (!user?.id) {
+        if (alive) setUserRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select("role, status")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!alive) return;
+      if (error || data?.status === "Inactive") {
+        if (error) console.error("Failed to load user role:", error.message);
+        setUserRole(null);
+        return;
+      }
+
+      setUserRole(data?.role === "Admin" || data?.role === "Supervisor" ? data.role : "Staff");
+    };
+
+    void loadRole();
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let alive = true;
 
     const loadCounts = async () => {
       const growsTable = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
-      const incomeTable = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
-      const [{ data, error }, { count: incomeRows, error: incomeError }] = await Promise.all([
-        supabase.from(growsTable).select("total_animals, status, is_harvested"),
-        supabase.from(incomeTable).select("id", { count: "exact", head: true }),
-      ]);
+      const { data, error } = await supabase.from(growsTable).select("total_animals, status, is_harvested");
 
       if (!alive) return;
       if (error) return;
@@ -95,7 +130,6 @@ export default function ReportsMenuPage() {
       if (!alive) return;
       setGrowsCount(nextGrowsCount);
       setHarvestedCount(nextHarvestedCount);
-      if (!incomeError) setIncomeCount(incomeRows ?? 0);
     };
 
     void loadCounts();
@@ -104,6 +138,28 @@ export default function ReportsMenuPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+
+    const loadIncomeCount = async () => {
+      if (!isAdmin) {
+        setIncomeCount(0);
+        return;
+      }
+
+      const incomeTable = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
+      const { count, error } = await supabase.from(incomeTable).select("id", { count: "exact", head: true });
+
+      if (!alive) return;
+      if (!error) setIncomeCount(count ?? 0);
+    };
+
+    void loadIncomeCount();
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin]);
+
   const statByTile = useMemo(
     () => ({
       grows: growsCount,
@@ -111,6 +167,11 @@ export default function ReportsMenuPage() {
       income: incomeCount,
     }),
     [growsCount, harvestedCount, incomeCount]
+  );
+
+  const visibleTiles = useMemo(
+    () => tiles.filter((tile) => tile.key !== "income" || isAdmin),
+    [isAdmin]
   );
 
   return (
@@ -162,12 +223,12 @@ export default function ReportsMenuPage() {
             </div>
             <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Choose a report category</div>
             <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
-              Open Grows, Harvested, or Income reports.
+              {isAdmin ? "Open Grows, Harvested, or Income reports." : "Open Grows or Harvested reports."}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-12 md:gap-4">
-            {tiles.map((tile) => (
+            {visibleTiles.map((tile) => (
               <button
                 key={tile.key}
                 onClick={() => tile.path && navigate(tile.path)}

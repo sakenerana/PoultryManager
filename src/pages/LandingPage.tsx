@@ -17,6 +17,7 @@ type TileKey =
     | "inventory"
     | "harvest"
     | "reports"
+    | "electricity"
     | "userAccess"
     | "settings"
     | "signOut";
@@ -76,6 +77,20 @@ const tiles: Tile[] = [
         ),
         largeText: "Reports",
         link: "/reports",
+    },
+    {
+        key: "electricity",
+        title: "Electricity Consumption",
+        accent: "text-[#008822]",
+        borderColor: "#eab308",
+        icon: (
+            <img
+                src="/img/electricity.svg"
+                alt="Electricity Consumption"
+                className="h-10 w-10"
+            />
+        ),
+        largeText: "Electricity Consumption",
     },
     {
         key: "userAccess",
@@ -181,8 +196,9 @@ export default function LandingPage() {
     }, [user?.id]);
 
     const visibleTiles = useMemo(() => {
-        if (role === "Admin" || role === "Supervisor") return tiles;
-        return tiles.filter((tile) => tile.key !== "userAccess");
+        if (role === "Admin") return tiles;
+        if (role === "Supervisor") return tiles.filter((tile) => tile.key !== "electricity");
+        return tiles.filter((tile) => tile.key !== "userAccess" && tile.key !== "electricity");
     }, [role]);
 
     const isTileDisabled = (tile: Tile): boolean => role === "Staff" && tile.key === "harvest";
@@ -192,6 +208,11 @@ export default function LandingPage() {
         setActive(tile.key);
         if (tile.key === "signOut") {
             void signOutAndRedirect(navigate);
+            return;
+        }
+        if (tile.key === "electricity") {
+            setToastMessage("Electricity Consumption is under construction.");
+            setIsToastOpen(true);
             return;
         }
         if (tile.link) {

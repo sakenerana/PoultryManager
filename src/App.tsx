@@ -24,6 +24,7 @@ import SettingsPage from "./pages/SettingsPage";
 import AccountsPage from "./pages/AccountsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import AdminOnlyRoute from "./components/AdminOnlyRoute";
 import AppUpdateIndicator from "./components/AppUpdateIndicator";
 
 function App() {
@@ -54,8 +55,10 @@ function App() {
             <Route path="/reports" element={<ReportsMenuPage />} />
             <Route path="/reports/grows" element={<GrowsReportPage />} />
             <Route path="/reports/harvested" element={<HarvestedReportPage />} />
-            <Route path="/reports/income" element={<IncomeReportPage />} />
-            <Route path="/reports/income/new" element={<IncomeSummaryFormPage />} />
+            <Route element={<AdminOnlyRoute />}>
+              <Route path="/reports/income" element={<IncomeReportPage />} />
+              <Route path="/reports/income/new" element={<IncomeSummaryFormPage />} />
+            </Route>
             <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
             <Route path="/reports/harvested/grow/:id/history" element={<HarvestedReportHistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
