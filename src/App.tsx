@@ -15,6 +15,8 @@ import HarvestedReportHistoryPage from "./pages/HarvestedReportHistoryPage";
 import ReportsMenuPage from "./pages/ReportsMenuPage";
 import IncomeReportPage from "./pages/IncomeReportPage";
 import IncomeSummaryFormPage from "./pages/IncomeSummaryFormPage";
+import ElectricityConsumptionPage from "./pages/ElectricityConsumptionPage";
+import ElectricityConsumptionFormPage from "./pages/ElectricityConsumptionFormPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
 import HarvestMetricHistoryPage from "./pages/HarvestMetricHistoryPage";
@@ -58,6 +60,8 @@ function App() {
             <Route element={<AdminOnlyRoute />}>
               <Route path="/reports/income" element={<IncomeReportPage />} />
               <Route path="/reports/income/new" element={<IncomeSummaryFormPage />} />
+              <Route path="/electricity-consumption" element={<ElectricityConsumptionPage />} />
+              <Route path="/electricity-consumption/grow/:growId" element={<ElectricityConsumptionFormPage />} />
             </Route>
             <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
             <Route path="/reports/harvested/grow/:id/history" element={<HarvestedReportHistoryPage />} />

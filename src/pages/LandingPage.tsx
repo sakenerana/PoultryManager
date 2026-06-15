@@ -91,6 +91,7 @@ const tiles: Tile[] = [
             />
         ),
         largeText: "Electricity Consumption",
+        link: "/electricity-consumption",
     },
     {
         key: "userAccess",
@@ -208,11 +209,6 @@ export default function LandingPage() {
         setActive(tile.key);
         if (tile.key === "signOut") {
             void signOutAndRedirect(navigate);
-            return;
-        }
-        if (tile.key === "electricity") {
-            setToastMessage("Electricity Consumption is under construction.");
-            setIsToastOpen(true);
             return;
         }
         if (tile.link) {
