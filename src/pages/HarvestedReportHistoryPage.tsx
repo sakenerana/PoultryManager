@@ -166,28 +166,27 @@ export default function HarvestedReportHistoryPage() {
     setExportingSection("summary");
     try {
       const generatedAt = dayjs();
-      const fileName = `grow-${growInfo.growId}-summary_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `harvested-batch-${growInfo.growId}-summary_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
-      doc.text(`Grow #${growInfo.growId} Summary`, 14, 18);
+      doc.text(`Harvested Batch #${growInfo.growId} Summary`, 14, 18);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
       doc.text(`Building: ${growInfo.buildingName}`, 14, 26);
       doc.text(`Status: ${growInfo.status}`, 14, 32);
-      doc.text(`Created: ${dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}`, 14, 38);
+      doc.text(`Harvested: ${dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}`, 14, 38);
 
       autoTable(doc, {
         startY: 46,
         head: [["Metric", "Value"]],
         body: [
-          ["Total Birds", growInfo.totalAnimals.toLocaleString()],
-          ["Grow Logs", summary.growLogs.toLocaleString()],
+          ["Loaded Birds", growInfo.totalAnimals.toLocaleString()],
           ["Harvest Entries", summary.harvestEntries.toLocaleString()],
-          ["Harvested Birds", summary.totalHarvested.toLocaleString()],
-          ["Reduction Transactions", summary.totalReductions.toLocaleString()],
+          ["Birds Harvested", summary.totalHarvested.toLocaleString()],
+          ["Harvest Reductions", summary.totalReductions.toLocaleString()],
         ],
         headStyles: { fillColor: [0, 136, 34] },
       });
@@ -212,12 +211,12 @@ export default function HarvestedReportHistoryPage() {
     setExportingSection("harvest");
     try {
       const generatedAt = dayjs();
-      const fileName = `grow-${growInfo.growId}-harvest-history_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `harvested-batch-${growInfo.growId}-harvest-history_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Grow #${growInfo.growId} - Harvest History`, 14, 16);
+      doc.text(`Harvested Batch #${growInfo.growId} - Harvest Entries`, 14, 16);
 
       autoTable(doc, {
         startY: 22,
@@ -250,12 +249,12 @@ export default function HarvestedReportHistoryPage() {
     setExportingSection("reduction");
     try {
       const generatedAt = dayjs();
-      const fileName = `grow-${growInfo.growId}-reduction-history_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `harvested-batch-${growInfo.growId}-reduction-history_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Grow #${growInfo.growId} - Reduction Transactions`, 14, 16);
+      doc.text(`Harvested Batch #${growInfo.growId} - Harvest Reductions`, 14, 16);
 
       autoTable(doc, {
         startY: 22,
@@ -307,7 +306,7 @@ export default function HarvestedReportHistoryPage() {
           setGrowHistory([]);
           setHarvestHistory([]);
           setHarvestReductionHistory([]);
-          setToastMessage(`Grow #${growId} was not found.`);
+          setToastMessage(`Harvested Batch #${growId} was not found.`);
           setIsToastOpen(true);
           return;
         }
@@ -540,7 +539,7 @@ export default function HarvestedReportHistoryPage() {
           <div className="leading-tight">
             <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Reports</div>
             <Title level={4} className="!m-0 !text-white !text-lg">
-              Grow History Detail
+              Harvested Batch Detail
             </Title>
           </div>
         </div>
@@ -556,21 +555,23 @@ export default function HarvestedReportHistoryPage() {
 
       <Content className={isMobile ? "px-4 py-4" : "px-8 py-6"}>
         {isLoading ? (
-          <ChickenState title="Loading grow report history..." subtitle="Fetching grow and harvest records." />
+          <ChickenState title="Loading harvested batch detail..." subtitle="Fetching harvest entries and reductions." />
         ) : !growInfo ? (
           <ChickenState
-            title="No grow detail found"
-            subtitle="Try going back and opening a different Grow entry."
+            title="No harvested batch detail found"
+            subtitle="Try going back and opening a different Harvested Batch entry."
           />
         ) : (
           <div className="mx-auto w-full max-w-7xl space-y-6 md:space-y-8">
             <Card className="!rounded-sm !border !border-emerald-100 shadow-sm" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Grow Summary</div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">Grow #{growInfo.growId}</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Harvested Batch Summary</div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">
+                    Harvested Batch #{growInfo.growId} - {growInfo.buildingName}
+                  </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    {growInfo.buildingName} | Created {dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}
+                    Harvested {dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -590,26 +591,26 @@ export default function HarvestedReportHistoryPage() {
               <Row gutter={isMobile ? [12, 12] : [16, 16]} className="mt-5">
                 <Col xs={12} md={6}>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Total Birds</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Loaded Birds</div>
                     <div className="text-xl font-bold text-slate-900">{growInfo.totalAnimals.toLocaleString()}</div>
                   </div>
                 </Col>
                 <Col xs={12} md={6}>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Grow Logs</div>
-                    <div className="text-xl font-bold text-slate-900">{summary.growLogs.toLocaleString()}</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Harvest Entries</div>
+                    <div className="text-xl font-bold text-slate-900">{summary.harvestEntries.toLocaleString()}</div>
                   </div>
                 </Col>
                 <Col xs={12} md={6}>
                   <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Harvest Entries</div>
-                    <div className="text-xl font-bold text-emerald-800">{summary.harvestEntries.toLocaleString()}</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Birds Harvested</div>
+                    <div className="text-xl font-bold text-emerald-800">{summary.totalHarvested.toLocaleString()}</div>
                   </div>
                 </Col>
                 <Col xs={12} md={6}>
                   <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Harvested Birds</div>
-                    <div className="text-xl font-bold text-amber-800">{summary.totalHarvested.toLocaleString()}</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Harvest Reductions</div>
+                    <div className="text-xl font-bold text-amber-800">{summary.totalReductions.toLocaleString()}</div>
                   </div>
                 </Col>
               </Row>
@@ -664,8 +665,8 @@ export default function HarvestedReportHistoryPage() {
 
               <div className="mb-4 flex items-end justify-between gap-2">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvest History</div>
-                  <div className="text-lg font-bold text-slate-900">Harvest Batches</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvested Batch History</div>
+                  <div className="text-lg font-bold text-slate-900">Harvest Entries</div>
                 </div>
                 <Button
                   icon={<MdOutlinePictureAsPdf size={18} />}
@@ -678,7 +679,7 @@ export default function HarvestedReportHistoryPage() {
               {isMobile ? (
                 harvestHistory.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
-                    No harvest entries found for this grow.
+                    No harvest entries found for this harvested batch.
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -718,7 +719,7 @@ export default function HarvestedReportHistoryPage() {
                   rowKey="id"
                   pagination={{ pageSize: 8, showSizeChanger: true }}
                   size="middle"
-                  locale={{ emptyText: "No harvest entries found for this grow." }}
+                  locale={{ emptyText: "No harvest entries found for this harvested batch." }}
                 />
               )}
             </Card>
@@ -726,7 +727,7 @@ export default function HarvestedReportHistoryPage() {
             <Card className="!rounded-sm !border !border-slate-200 shadow-sm !mt-4" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
               <div className="mb-4 flex items-end justify-between gap-2">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvest Reduction History</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvested Batch Reduction History</div>
                   <div className="text-lg font-bold text-slate-900">Reduction Transactions</div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -745,7 +746,7 @@ export default function HarvestedReportHistoryPage() {
               {isMobile ? (
                 harvestReductionHistory.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
-                    No harvest reduction transactions found for this grow.
+                    No harvest reduction transactions found for this harvested batch.
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -791,7 +792,7 @@ export default function HarvestedReportHistoryPage() {
                   rowKey={(row) => String(row.id)}
                   pagination={{ pageSize: 8, showSizeChanger: true }}
                   size="middle"
-                  locale={{ emptyText: "No harvest reduction transactions found for this grow." }}
+                  locale={{ emptyText: "No harvest reduction transactions found for this harvested batch." }}
                 />
               )}
             </Card>

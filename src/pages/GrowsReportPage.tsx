@@ -111,7 +111,7 @@ export default function GrowsReportPage() {
 
   const handlePdfClick = () => {
     if (reportRows.length === 0) {
-      setToastMessage(`No ${isHarvestedMode ? "harvested" : "grows"} report data available to export.`);
+      setToastMessage(`No ${isHarvestedMode ? "harvested batches" : "active grows"} report data available to export.`);
       setIsToastOpen(true);
       return;
     }
@@ -130,11 +130,11 @@ export default function GrowsReportPage() {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
-      const fileName = `${fileBuildingName || (isHarvestedMode ? "harvest-report" : "grows-report")}_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `${fileBuildingName || (isHarvestedMode ? "harvested-batches-report" : "active-grows-report")}_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
-      doc.text(isHarvestedMode ? "Harvested Report" : "Grows Report", 14, 18);
+      doc.text(isHarvestedMode ? "Harvested Report" : "Active Grows Report", 14, 18);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
@@ -152,10 +152,10 @@ export default function GrowsReportPage() {
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10.5);
-      doc.text(`${isHarvestedMode ? "Harvested Grows" : "Total Grows"}: ${summary.totalGrows.toLocaleString()}`, 14, 57);
-      doc.text(`${isHarvestedMode ? "Birds Harvested" : "Overall Birds in Grows"}: ${summary.totalBirds.toLocaleString()}`, 72, 57);
-      doc.text(`Average per Grow: ${Math.round(summary.avgBirdsPerGrow).toLocaleString()}`, 14, 63);
-      doc.text(`${isHarvestedMode ? "Latest Harvest" : "Latest Grow"}: ${latestHarvestDate}`, 72, 63);
+      doc.text(`${isHarvestedMode ? "Harvested Grows" : "Active Grows"}: ${summary.totalGrows.toLocaleString()}`, 14, 57);
+      doc.text(`${isHarvestedMode ? "Birds Harvested" : "Birds in Active Grows"}: ${summary.totalBirds.toLocaleString()}`, 72, 57);
+      doc.text(`Average Loaded Birds: ${Math.round(summary.avgBirdsPerGrow).toLocaleString()}`, 14, 63);
+      doc.text(`Latest Active Grow: ${latestHarvestDate}`, 72, 63);
 
       autoTable(doc, {
         startY: 70,
@@ -179,14 +179,14 @@ export default function GrowsReportPage() {
           4: { cellWidth: 30 },
         },
         head: [[
-          "Grow ID",
+          "Active Grow",
           "Building",
-          "Created Date",
-          "Total Birds",
+          "Started Date",
+          "Loaded Birds",
           "Status",
         ]],
         body: reportRows.map((row) => [
-          `#${row.growId}`,
+          `Active Grow #${row.growId}`,
           row.buildingName,
           dayjs(row.createdAt).format("MMM D, YYYY"),
           row.totalBirds.toLocaleString(),
@@ -197,7 +197,7 @@ export default function GrowsReportPage() {
           "Totals",
           "",
           summary.totalBirds.toLocaleString(),
-          `${summary.totalGrows} ${isHarvestedMode ? "harvested grows" : "grows"}`,
+          `${summary.totalGrows} ${isHarvestedMode ? "harvested batches" : "active grows"}`,
         ]],
         footStyles: {
           fillColor: [239, 239, 239],
@@ -261,7 +261,7 @@ export default function GrowsReportPage() {
     void loadBuildings();
   }, []);
 
-  // Load harvested grows report when building or date range changes
+  // Load active grows report when building or date range changes
   useEffect(() => {
     const loadReport = async () => {
       if (!selectedBuildingId) {
@@ -271,13 +271,12 @@ export default function GrowsReportPage() {
 
       setIsLoading(true);
       try {
-        // Build query for harvested grows
+        // Build query for grow records, then split active vs harvested client-side
+        // so null status/is_harvested values do not disappear from Active Grows.
         let query = supabase
           .from(GROWS_TABLE)
           .select("id, building_id, created_at, total_animals, status, is_harvested")
-          .eq("building_id", selectedBuildingId)
-          .eq("status", "Harvested")
-          .eq("is_harvested", true);
+          .eq("building_id", selectedBuildingId);
 
         // Apply date range filter if provided (using created_at only)
         if (dateRange && dateRange[0] && dateRange[1]) {
@@ -290,7 +289,11 @@ export default function GrowsReportPage() {
 
         if (growError) throw growError;
         
-        const harvestedGrows = (growRows ?? []) as HarvestedGrow[];
+        const harvestedGrows = ((growRows ?? []) as HarvestedGrow[]).filter((grow) => {
+          const status = String(grow.status ?? "").trim().toLowerCase();
+          const isHarvested = grow.is_harvested === true || status === "harvested";
+          return isHarvestedMode ? isHarvested : !isHarvested;
+        });
         
         if (harvestedGrows.length === 0) {
           setReportRows([]);
@@ -304,7 +307,7 @@ export default function GrowsReportPage() {
           buildingName: buildingName,
           createdAt: grow.created_at,
           totalBirds: toNonNegativeInt(grow.total_animals),
-          status: "Harvested",
+          status: grow.status || "Growing",
         }));
 
         setReportRows(nextRows);
@@ -360,7 +363,7 @@ export default function GrowsReportPage() {
   );
 
   const dateRangeLabel = useMemo(() => {
-    if (!dateRange || !dateRange[0] || !dateRange[1]) return "All created dates";
+    if (!dateRange || !dateRange[0] || !dateRange[1]) return "All start dates";
     return `${dateRange[0].format("MMM D, YYYY")} - ${dateRange[1].format("MMM D, YYYY")}`;
   }, [dateRange]);
 
@@ -371,7 +374,7 @@ export default function GrowsReportPage() {
 
   const columns = [
     {
-      title: "Grow ID",
+      title: "Active Grow",
       dataIndex: "growId",
       key: "growId",
       render: (id: number) => (
@@ -383,13 +386,13 @@ export default function GrowsReportPage() {
           }}
           className="font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
         >
-          #{id}
+          Active Grow #{id}
         </button>
       ),
       sorter: (a: ReportRow, b: ReportRow) => a.growId - b.growId,
     },
     {
-      title: "Created Date",
+      title: "Started Date",
       dataIndex: "createdAt",
       key: "createdAt",
       render: (date: string) => dayjs(date).format("MMM D, YYYY"),
@@ -397,7 +400,7 @@ export default function GrowsReportPage() {
       defaultSortOrder: "descend" as const,
     },
     {
-      title: "Total Birds",
+      title: "Loaded Birds",
       dataIndex: "totalBirds",
       key: "totalBirds",
       render: (val: number) => val.toLocaleString(),
@@ -408,9 +411,25 @@ export default function GrowsReportPage() {
       dataIndex: "status",
       key: "status",
       render: (status: string) => (
-        <Tag color="orange" className="font-medium">
+        <Tag color="green" className="font-medium">
           {status}
         </Tag>
+      ),
+    },
+    {
+      title: "",
+      key: "action",
+      render: (_: unknown, record: ReportRow) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            openGrowHistory(record.growId);
+          }}
+          className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+        >
+          View active grow history
+        </button>
       ),
     },
   ];
@@ -453,14 +472,14 @@ export default function GrowsReportPage() {
             <>
               <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
               <Title level={4} className="!m-0 !text-base !text-white">
-                {isHarvestedMode ? "Harvested Report" : "Grows Report"}
+                {isHarvestedMode ? "Harvested Report" : "Active Grows Report"}
               </Title>
             </>
           ) : (
             <div className="leading-tight">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Analytics</div>
               <Title level={4} className="!m-0 !text-white !text-lg">
-                {isHarvestedMode ? "Harvested Report" : "Grows Report"}
+                {isHarvestedMode ? "Harvested Report" : "Active Grows Report"}
               </Title>
             </div>
           )}
@@ -498,15 +517,15 @@ export default function GrowsReportPage() {
                 <div className={isMobile ? "space-y-4" : "grid grid-cols-12 gap-6 items-end"}>
                   <div className={isMobile ? "" : "col-span-7"}>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">
-                      {isHarvestedMode ? "Harvest Analytics" : "Grows Analytics"}
+                      {isHarvestedMode ? "Harvest Analytics" : "Active Grow Analytics"}
                     </div>
                     <div className="mt-2 text-2xl font-bold leading-tight md:text-3xl">
-                      {isHarvestedMode ? "Harvested Grows Report" : "Grows Report"}
+                      {isHarvestedMode ? "Harvested Grows Report" : "Active Grows Report"}
                     </div>
                     <div className="mt-2 max-w-2xl text-sm text-emerald-50/90 md:text-base">
                       {isHarvestedMode
                         ? "Review harvested batches by building and date range with a cleaner operational summary."
-                        : "Review grow records by building and date range with a cleaner operational summary."}
+                        : "Review ongoing grow batches by building and date range."}
                     </div>
                   </div>
                   <div className={isMobile ? "grid grid-cols-2 gap-3" : "col-span-5 grid grid-cols-2 gap-3"}>
@@ -540,7 +559,7 @@ export default function GrowsReportPage() {
                       />
                     </div>
                     <div>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Created Date Range</div>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Started Date Range</div>
                       {isMobile ? (
                         <div className="grid grid-cols-2 gap-2">
                           <DatePicker
@@ -634,7 +653,7 @@ export default function GrowsReportPage() {
                   styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
                   <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500" : "text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"}>
-                    {isHarvestedMode ? "Harvested Grows" : "Total Grows"}
+                    {isHarvestedMode ? "Harvested Grows" : "Active Grows"}
                   </div>
                   <Statistic
                     value={summary.totalGrows}
@@ -648,7 +667,7 @@ export default function GrowsReportPage() {
                   styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
                   <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-700" : "text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700"}>
-                    {isHarvestedMode ? "Overall Birds Harvested" : "Overall Birds in Grows"}
+                    {isHarvestedMode ? "Overall Birds Harvested" : "Birds in Active Grows"}
                   </div>
                   <Statistic
                     value={summary.totalBirds}
@@ -663,7 +682,7 @@ export default function GrowsReportPage() {
                   styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
                   <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700" : "text-xs font-semibold uppercase tracking-[0.16em] text-amber-700"}>
-                    Average per Grow
+                    Avg Loaded Birds
                   </div>
                   <Statistic
                     value={summary.avgBirdsPerGrow}
@@ -721,22 +740,22 @@ export default function GrowsReportPage() {
           {isLoading && reportRows.length === 0 ? (
             <ChickenState
               title="Loading report..."
-              subtitle={`Fetching ${isHarvestedMode ? "harvested grows" : "grow records"} from your tables.`}
+              subtitle={`Fetching ${isHarvestedMode ? "harvested batches" : "active grow records"} from your tables.`}
               fullScreen={false}
             />
           ) : reportRows.length === 0 ? (
             <ChickenState
-              title={isHarvestedMode ? "No harvested grows found" : "No grows found"}
+              title={isHarvestedMode ? "No harvested batches found" : "No active grows found"}
               subtitle={
                 selectedBuildingId
                   ? dateRange
                     ? isHarvestedMode
-                      ? "No harvested grows in this building for the selected date range."
-                      : "No grow records in this building for the selected date range."
+                      ? "No harvested batches were saved for this building in the selected date range."
+                      : "No active grow records were saved for this building in the selected date range."
                     : isHarvestedMode
-                      ? "No harvested grows found for this building. Try a different building or check status values."
-                      : "No grow records found for this building. Try a different building or check status values."
-                  : `Select a building to view the ${isHarvestedMode ? "harvested grows" : "grows"} report.`
+                      ? "No harvested batches have been saved for this building yet."
+                      : "No active grow records have been saved for this building yet."
+                  : `Select a building to view the ${isHarvestedMode ? "harvested batches" : "active grows"} report.`
               }
               fullScreen={false}
             />
@@ -754,24 +773,27 @@ export default function GrowsReportPage() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        {isHarvestedMode ? "Harvest Entry" : "Grow Entry"}
+                        Active Grow
                       </div>
-                      <span className="font-semibold text-emerald-700 text-[20px] leading-none">Grow #{row.growId}</span>
+                      <span className="block font-semibold text-emerald-700 text-[18px] leading-tight">Active Grow #{row.growId}</span>
                       <div className="text-[10px] text-slate-500 mt-0.5">{row.buildingName}</div>
                     </div>
                     <Tag color={isHarvestedMode ? "orange" : "green"} className="!rounded-full !px-2 !py-0 !text-[10px] !font-medium">
-                      {isHarvestedMode ? "Harvested" : "Grow"}
+                      Active
                     </Tag>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
                     <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                      <div className="text-slate-500 text-[9px] uppercase tracking-wide">Created Date</div>
+                      <div className="text-slate-500 text-[9px] uppercase tracking-wide">Started Date</div>
                       <div className="font-medium text-[13px] leading-none text-slate-900 mt-1">{dayjs(row.createdAt).format("MMM D, YYYY")}</div>
                     </div>
                     <div className="rounded-lg bg-emerald-50 px-2.5 py-2">
-                      <div className="text-emerald-700 text-[9px] uppercase tracking-wide">Total Birds</div>
+                      <div className="text-emerald-700 text-[9px] uppercase tracking-wide">Loaded Birds</div>
                       <div className="font-bold text-emerald-800 text-[24px] leading-none mt-1">{row.totalBirds.toLocaleString()}</div>
                     </div>
+                  </div>
+                  <div className="mt-2 text-right text-[11px] font-semibold text-emerald-700">
+                    View active grow history
                   </div>
                 </Card>
               ))}
@@ -785,7 +807,7 @@ export default function GrowsReportPage() {
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detailed Records</div>
                   <div className="mt-1 text-xl font-bold text-slate-900">
-                    {isHarvestedMode ? "Harvested Report Table" : "Grows Report Table"}
+                    {isHarvestedMode ? "Harvested Batches Report Table" : "Active Grows Report Table"}
                   </div>
                 </div>
                 <div className="rounded-xl bg-slate-50 px-4 py-3 text-right">
@@ -800,7 +822,7 @@ export default function GrowsReportPage() {
                 pagination={{
                   pageSize: 10,
                   showSizeChanger: true,
-                  showTotal: (total) => `${total} ${isHarvestedMode ? "harvested grows" : "grows"}`,
+                  showTotal: (total) => `${total} ${isHarvestedMode ? "harvested batches" : "active grows"}`,
                 }}
                 className="shadow-none"
                 loading={isLoading}

@@ -15,7 +15,7 @@ const { Title } = Typography;
 type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
 type ReportTile = {
-  key: "grows" | "harvested" | "income";
+  key: "grows" | "harvested" | "income" | "electricity";
   title: string;
   subtitle: string;
   borderColor: string;
@@ -28,22 +28,22 @@ type ReportTile = {
 const tiles: ReportTile[] = [
   {
     key: "grows",
-    title: "Grows",
-    subtitle: "Grow records and status history",
+    title: "Active Grows",
+    subtitle: "Ongoing grow batches only",
     borderColor: "#22c55e",
     titleColor: "#0f172a",
     iconSrc: "/img/chicken-head.svg",
-    statUnit: "grows",
+    statUnit: "active",
     path: "/reports/grows",
   },
   {
     key: "harvested",
-    title: "Harvested",
-    subtitle: "Harvested batch summaries",
+    title: "Harvested Batches",
+    subtitle: "Completed harvest summaries",
     borderColor: "#0ea5e9",
     titleColor: "#475569",
     iconSrc: "/img/chicken-harvest.svg",
-    statUnit: "harvested",
+    statUnit: "batches",
     path: "/reports/harvested",
   },
   {
@@ -56,6 +56,16 @@ const tiles: ReportTile[] = [
     statUnit: "reports",
     path: "/reports/income",
   },
+  {
+    key: "electricity",
+    title: "Electricity",
+    subtitle: "Consumption and kWh history",
+    borderColor: "#f59e0b",
+    titleColor: "#475569",
+    iconSrc: "/img/electricity.svg",
+    statUnit: "kWh",
+    path: "/reports/electricity-consumption",
+  },
 ];
 
 export default function ReportsMenuPage() {
@@ -66,6 +76,7 @@ export default function ReportsMenuPage() {
   const [growsCount, setGrowsCount] = useState(0);
   const [harvestedCount, setHarvestedCount] = useState(0);
   const [incomeCount, setIncomeCount] = useState(0);
+  const [electricityKwh, setElectricityKwh] = useState(0);
   const isAdmin = userRole === "Admin";
 
   useEffect(() => {
@@ -160,17 +171,49 @@ export default function ReportsMenuPage() {
     };
   }, [isAdmin]);
 
+  useEffect(() => {
+    let alive = true;
+
+    const loadElectricityTotal = async () => {
+      if (!isAdmin) {
+        setElectricityKwh(0);
+        return;
+      }
+
+      const electricityTable = import.meta.env.VITE_SUPABASE_ELECTRICITY_CONSUMPTION_TABLE ?? "ElectricityConsumption";
+      const { data, error } = await supabase.from(electricityTable).select("consumption");
+
+      if (!alive) return;
+      if (error) {
+        setElectricityKwh(0);
+        return;
+      }
+
+      const total = ((data ?? []) as Array<{ consumption: number | null }>).reduce((sum, row) => {
+        const value = Number(row.consumption ?? 0);
+        return sum + (Number.isFinite(value) ? value : 0);
+      }, 0);
+      setElectricityKwh(Math.round(total));
+    };
+
+    void loadElectricityTotal();
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin]);
+
   const statByTile = useMemo(
     () => ({
       grows: growsCount,
       harvested: harvestedCount,
       income: incomeCount,
+      electricity: electricityKwh,
     }),
-    [growsCount, harvestedCount, incomeCount]
+    [electricityKwh, growsCount, harvestedCount, incomeCount]
   );
 
   const visibleTiles = useMemo(
-    () => tiles.filter((tile) => tile.key !== "income" || isAdmin),
+    () => tiles.filter((tile) => (tile.key !== "income" && tile.key !== "electricity") || isAdmin),
     [isAdmin]
   );
 
@@ -221,9 +264,11 @@ export default function ReportsMenuPage() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
               Reports Center
             </div>
-            <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Choose a report category</div>
+            <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Choose a report type</div>
             <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
-              {isAdmin ? "Open Grows, Harvested, or Income reports." : "Open Grows or Harvested reports."}
+              {isAdmin
+                ? "Active Grows are ongoing batches. Harvested Batches are completed batches."
+                : "Open active grow or completed harvest reports."}
             </div>
           </div>
 
@@ -234,7 +279,7 @@ export default function ReportsMenuPage() {
                 onClick={() => tile.path && navigate(tile.path)}
                 className={[
                   "w-full rounded-sm border bg-white text-left shadow-sm p-2.5 overflow-hidden md:rounded-lg md:p-4",
-                  tile.key === "income" ? "col-span-2 md:col-span-12" : "md:col-span-6",
+                  tile.key === "income" || tile.key === "electricity" ? "col-span-2 md:col-span-12" : "md:col-span-6",
                   tile.path ? "cursor-pointer hover:shadow-md" : "cursor-default",
                 ].join(" ")}
                 style={{ borderColor: tile.borderColor, borderWidth: 1.5 }}
@@ -242,7 +287,7 @@ export default function ReportsMenuPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="text-[8px] font-medium uppercase tracking-[0.24em] text-slate-500">BLDG</div>
+                    <div className="text-[8px] font-medium uppercase tracking-[0.24em] text-slate-500">REPORT</div>
                     <div className="mt-1 text-[18px] leading-tight font-semibold tracking-tight md:text-[32px]" style={{ color: tile.titleColor }}>
                       {tile.title}
                     </div>

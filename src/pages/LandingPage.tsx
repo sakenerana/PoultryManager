@@ -373,7 +373,8 @@ export default function LandingPage() {
                             <div className="mt-2.5 sm:mt-4 text-center">
                                 <div
                                     className={[
-                                        "text-[20px] sm:text-[34px] font-bold tracking-tight leading-none",
+                                        tile.key === "electricity" ? "text-[16px] leading-tight sm:text-[30px]" : "text-[20px] leading-none sm:text-[34px]",
+                                        "font-bold tracking-tight",
                                         tile.accent,
                                     ].join(" ")}
                                 >

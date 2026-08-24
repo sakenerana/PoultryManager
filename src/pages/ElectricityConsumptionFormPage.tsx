@@ -22,7 +22,7 @@ const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
 type GrowInfo = {
-  id: number;
+  id: number | null;
   buildingId: number | null;
   buildingName: string;
   createdAt: string;
@@ -51,9 +51,19 @@ const getErrorMessage = (error: unknown): string => {
   return "Unknown error";
 };
 
+const formatNumber = (value: number | null | undefined, fractionDigits = 0): string => {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+};
+
+const displayDay = (day: number): number => day + 1;
+
 export default function ElectricityConsumptionFormPage() {
   const navigate = useNavigate();
-  const { growId } = useParams();
+  const { growId, buildingId } = useParams();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -70,13 +80,35 @@ export default function ElectricityConsumptionFormPage() {
     () => entries.reduce((sum, entry) => sum + (entry.consumption ?? 0), 0),
     [entries]
   );
+  const electricitySummary = useMemo(() => {
+    const loggedEntries = entries.filter(
+      (entry) => entry.id != null || entry.meterReading != null || entry.consumption != null || entry.remarks.trim()
+    );
+    const daysLogged = loggedEntries.length;
+    const averageKwh = daysLogged > 0 ? totalConsumption / daysLogged : 0;
+    const latestEntry = [...loggedEntries]
+      .filter((entry) => dayjs(entry.date).isValid())
+      .sort((a, b) => dayjs(b.date).unix() - dayjs(a.date).unix())[0];
+
+    return {
+      daysListed: entries.length,
+      daysLogged,
+      averageKwh,
+      latestReading: latestEntry ? dayjs(latestEntry.date).format("MMM D, YYYY") : "No readings",
+    };
+  }, [entries, totalConsumption]);
+  const hasResolvedGrow = growInfo?.id != null;
 
   useEffect(() => {
     let active = true;
 
     const loadData = async () => {
       const parsedGrowId = Number(growId);
-      if (!Number.isFinite(parsedGrowId)) {
+      const parsedBuildingId = Number(buildingId);
+      const hasGrowParam = Number.isFinite(parsedGrowId);
+      const hasBuildingParam = Number.isFinite(parsedBuildingId);
+
+      if (!hasGrowParam && !hasBuildingParam) {
         setGrowInfo(null);
         setEntries([]);
         return;
@@ -84,41 +116,69 @@ export default function ElectricityConsumptionFormPage() {
 
       try {
         setIsLoading(true);
-        const [{ data: growRow, error: growError }, { data: savedRows, error: savedError }] = await Promise.all([
-          supabase
-            .from(GROWS_TABLE)
-            .select("id, building_id, created_at, status")
-            .eq("id", parsedGrowId)
-            .maybeSingle(),
-          supabase
-            .from(ELECTRICITY_TABLE)
-            .select("id, date, day, remarks, meter_reading, consumption")
-            .eq("grow_id", parsedGrowId)
-            .order("day", { ascending: true }),
-        ]);
+        let growQuery = supabase
+          .from(GROWS_TABLE)
+          .select("id, building_id, created_at, status")
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (hasGrowParam) {
+          growQuery = growQuery.eq("id", parsedGrowId);
+        } else {
+          growQuery = growQuery.eq("building_id", parsedBuildingId);
+        }
+
+        const { data: growRows, error: growError } = await growQuery;
 
         if (!active) return;
         if (growError) throw growError;
-        if (savedError) throw savedError;
-        if (!growRow?.id) {
-          setGrowInfo(null);
-          setEntries([]);
-          return;
-        }
 
-        const buildingId = typeof growRow.building_id === "number" ? growRow.building_id : null;
-        let buildingName = buildingId == null ? "Unassigned" : `Building ${buildingId}`;
-        if (buildingId != null) {
+        const growRow = ((growRows ?? []) as Array<{
+          id: number | null;
+          building_id: number | null;
+          created_at: string | null;
+          status: string | null;
+        }>)[0] ?? null;
+
+        const resolvedBuildingId =
+          typeof growRow?.building_id === "number"
+            ? growRow.building_id
+            : hasBuildingParam
+              ? parsedBuildingId
+              : null;
+        let buildingName = resolvedBuildingId == null ? "Unassigned" : `Building ${resolvedBuildingId}`;
+        if (resolvedBuildingId != null) {
           const { data: buildingRow, error: buildingError } = await supabase
             .from(BUILDINGS_TABLE)
             .select("name")
-            .eq("id", buildingId)
+            .eq("id", resolvedBuildingId)
             .maybeSingle();
           if (buildingError) throw buildingError;
           buildingName = typeof buildingRow?.name === "string" && buildingRow.name.trim() ? buildingRow.name : buildingName;
         }
 
+        if (!growRow?.id) {
+          setGrowInfo({
+            id: null,
+            buildingId: resolvedBuildingId,
+            buildingName,
+            createdAt: "",
+            status: "Ready",
+          });
+          setEntries([]);
+          return;
+        }
+
+        const resolvedGrowId = Number(growRow.id);
+        const { data: savedRows, error: savedError } = await supabase
+          .from(ELECTRICITY_TABLE)
+          .select("id, date, day, remarks, meter_reading, consumption")
+          .eq("grow_id", resolvedGrowId)
+          .order("day", { ascending: true });
+
         if (!active) return;
+        if (savedError) throw savedError;
+
         const createdAt = String(growRow.created_at ?? "");
         const startDate = dayjs(createdAt).startOf("day");
         const today = dayjs().startOf("day");
@@ -145,8 +205,8 @@ export default function ElectricityConsumptionFormPage() {
         });
 
         setGrowInfo({
-          id: Number(growRow.id),
-          buildingId,
+          id: resolvedGrowId,
+          buildingId: resolvedBuildingId,
           buildingName,
           createdAt,
           status: String(growRow.status ?? "Unknown"),
@@ -176,7 +236,7 @@ export default function ElectricityConsumptionFormPage() {
     return () => {
       active = false;
     };
-  }, [growId]);
+  }, [buildingId, growId]);
 
   const updateEntry = (day: number, patch: Partial<ElectricityEntry>) => {
     setEntries((current) =>
@@ -209,13 +269,13 @@ export default function ElectricityConsumptionFormPage() {
   };
 
   const handleSaveEntry = async (entry: ElectricityEntry) => {
-    const parsedGrowId = Number(growId);
-    if (!Number.isFinite(parsedGrowId)) return;
+    const resolvedGrowId = growInfo?.id;
+    if (resolvedGrowId == null || !Number.isFinite(resolvedGrowId)) return;
 
     try {
       setSavingDay(entry.day);
       const payload = {
-        grow_id: parsedGrowId,
+        grow_id: resolvedGrowId,
         date: entry.date,
         day: entry.day,
         meter_reading: entry.meterReading,
@@ -236,7 +296,7 @@ export default function ElectricityConsumptionFormPage() {
         remarks: entry.remarks,
       });
       setActiveEntry(null);
-      setToastMessage(`Saved electricity consumption for Day ${entry.day}.`);
+      setToastMessage(`Saved electricity consumption for Day ${displayDay(entry.day)}.`);
       setIsToastOpen(true);
     } catch (error) {
       setToastMessage(`Save failed: ${getErrorMessage(error)}`);
@@ -248,7 +308,7 @@ export default function ElectricityConsumptionFormPage() {
 
   const handleExportPdf = () => {
     if (!growInfo || entries.length === 0) {
-      setToastMessage("No electricity consumption data available to export.");
+      setToastMessage("No electricity history data available to export.");
       setIsToastOpen(true);
       return;
     }
@@ -260,16 +320,18 @@ export default function ElectricityConsumptionFormPage() {
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text("Electricity Consumption Daily History", 14, 16);
+      doc.text("Electricity History", 14, 16);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       doc.text(`Building: ${growInfo.buildingName}`, 14, 24);
-      doc.text(`Grow: #${growInfo.id} (${growInfo.status})`, 14, 30);
+      doc.text(`Active Grow: ${growInfo.id == null ? "-" : `#${growInfo.id}`} (${growInfo.status})`, 14, 30);
       doc.text(`Started: ${dayjs(growInfo.createdAt).format("MMMM D, YYYY")}`, 14, 36);
       doc.text(`Generated: ${generatedAt.format("MMMM D, YYYY h:mm A")}`, 14, 42);
-      doc.text(`Days Listed: ${entries.length}`, 126, 24);
-      doc.text(`Total kWh: ${totalConsumption.toLocaleString()}`, 126, 30);
+      doc.text(`Days Logged: ${electricitySummary.daysLogged.toLocaleString()}`, 126, 24);
+      doc.text(`Total kWh: ${formatNumber(totalConsumption, 2)}`, 126, 30);
+      doc.text(`Average kWh/Day: ${formatNumber(electricitySummary.averageKwh, 2)}`, 126, 36);
+      doc.text(`Latest Reading: ${electricitySummary.latestReading}`, 126, 42);
 
       doc.setDrawColor(0, 136, 34);
       doc.setLineWidth(0.6);
@@ -280,10 +342,10 @@ export default function ElectricityConsumptionFormPage() {
         theme: "grid",
         head: [["Day", "Date", "Meter Reading", "Consumption", "Remarks"]],
         body: entries.map((entry) => [
-          `Day ${entry.day}`,
+          `Day ${displayDay(entry.day)}`,
           dayjs(entry.date).format("MMM D, YYYY"),
-          entry.meterReading == null ? "-" : entry.meterReading.toLocaleString(),
-          entry.consumption == null ? "-" : entry.consumption.toLocaleString(),
+          formatNumber(entry.meterReading, 2),
+          `${formatNumber(entry.consumption, 2)} kWh`,
           entry.remarks.trim() || "-",
         ]),
         headStyles: {
@@ -344,7 +406,7 @@ export default function ElectricityConsumptionFormPage() {
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
-          <Title level={4} className="!m-0 !text-base !text-white">Electricity Consumption</Title>
+          <Title level={4} className="!m-0 !text-base !text-white">Electricity History</Title>
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -363,33 +425,57 @@ export default function ElectricityConsumptionFormPage() {
       <Content className="px-3 py-3 md:px-6 md:py-5">
         <div className="mx-auto w-full max-w-[420px] md:max-w-5xl">
           <div className="mb-3 rounded-2xl border border-emerald-100 bg-white px-4 py-4 shadow-sm md:mb-5 md:px-6">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
-              {growInfo?.buildingName ?? "Grow"}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                  Electricity History
+                </div>
+                <div className="mt-1 text-xl font-bold text-slate-900 md:text-2xl">
+                  Electricity History - {growInfo?.buildingName ?? "Building"}
+                </div>
+              </div>
+              <Button
+                className="!rounded-lg !border-emerald-200 !bg-emerald-50 !text-emerald-700 hover:!border-emerald-300 hover:!bg-emerald-100"
+                onClick={() => navigate("/reports/electricity-consumption")}
+              >
+                Report
+              </Button>
             </div>
-            <div className="mt-1 text-xl font-bold text-slate-900 md:text-2xl">Electricity Consumption Daily History</div>
             <div className="mt-1 text-xs text-slate-500 md:text-sm">
               {growInfo
-                ? `Showing day 0 to ${dayjs().format("MMMM D, YYYY")}`
+                ? hasResolvedGrow
+                  ? `Active Grow ${growInfo.id == null ? "-" : `#${growInfo.id}`} | Started ${dayjs(growInfo.createdAt).format("MMMM D, YYYY")}`
+                  : "No active grow record found for this building."
                 : isLoading
                   ? "Loading grow details..."
                   : "Grow record not found."}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                Days Listed <span className="ml-1 text-slate-900">{entries.length}</span>
+            <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Total kWh</div>
+                <div className="mt-1 text-lg font-bold leading-none text-slate-900">{formatNumber(totalConsumption, 2)}</div>
               </div>
-              <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                Total kWh <span className="ml-1 text-slate-900">{totalConsumption.toLocaleString()}</span>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Avg kWh / Day</div>
+                <div className="mt-1 text-lg font-bold leading-none text-slate-900">{formatNumber(electricitySummary.averageKwh, 2)}</div>
               </div>
-              {growInfo ? (
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  Grow #{growInfo.id} <span className="ml-1 text-slate-900">{growInfo.status}</span>
-                </div>
-              ) : null}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Latest Reading</div>
+                <div className="mt-1 text-sm font-bold leading-tight text-slate-900">{electricitySummary.latestReading}</div>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-700">Days Logged</div>
+                <div className="mt-1 text-lg font-bold leading-none text-slate-900">{electricitySummary.daysLogged.toLocaleString()}</div>
+              </div>
             </div>
           </div>
 
           <div className="space-y-2.5">
+            {!isLoading && entries.length === 0 ? (
+              <div className="rounded-sm border border-emerald-100 bg-white p-4 text-center text-sm text-slate-500 shadow-sm">
+                {growInfo ? `No readings have been saved yet for ${growInfo.buildingName}.` : "No electricity history is available yet."}
+              </div>
+            ) : null}
             {entries.map((entry) => (
               <button
                 key={entry.day}
@@ -401,20 +487,22 @@ export default function ElectricityConsumptionFormPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-cyan-500" />
-                      <div className="text-sm font-semibold text-slate-900">Day {entry.day}</div>
+                      <div className="text-sm font-semibold text-slate-900">Day {displayDay(entry.day)}</div>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">{dayjs(entry.date).format("MMMM D, YYYY")}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">Started {dayjs(growInfo?.createdAt).format("MMM D")}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">
+                      Active Grow {growInfo?.id == null ? "-" : `#${growInfo.id}`}
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">Consumption</div>
-                    <div className="text-2xl font-bold leading-none text-slate-900">{entry.consumption ?? "-"}</div>
+                    <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(entry.consumption, 2)}</div>
                     <div className="mt-1 text-[10px] text-slate-400">kWh</div>
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                  <span>Meter Reading: {entry.meterReading ?? "-"}</span>
-                  <span className="font-medium text-emerald-700">{entry.id ? "Saved" : "Tap to encode"}</span>
+                  <span>Meter Reading: {formatNumber(entry.meterReading, 2)}</span>
+                  <span className="font-medium text-emerald-700">{entry.id ? "Saved" : "Tap to add reading"}</span>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-slate-500">
                   Remarks: {entry.remarks.trim() || "-"}
@@ -440,11 +528,11 @@ export default function ElectricityConsumptionFormPage() {
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                 {growInfo?.buildingName ?? "Grow"}
               </div>
-              <div className="mt-1 text-lg font-bold text-slate-900">Day {activeEntry.day}</div>
+              <div className="mt-1 text-lg font-bold text-slate-900">Day {displayDay(activeEntry.day)}</div>
               <div className="mt-1 text-xs text-slate-500">{dayjs(activeEntry.date).format("MMMM D, YYYY")}</div>
               <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-right">
                 <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">Consumption</div>
-                <div className="text-2xl font-bold leading-none text-slate-900">{activeEntry.consumption ?? "-"}</div>
+                <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(activeEntry.consumption, 2)}</div>
                 <div className="mt-1 text-[10px] text-slate-400">kWh</div>
               </div>
             </div>

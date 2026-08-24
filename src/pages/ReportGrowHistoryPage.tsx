@@ -166,28 +166,27 @@ export default function ReportGrowHistoryPage() {
     setExportingSection("summary");
     try {
       const generatedAt = dayjs();
-      const fileName = `grow-${growInfo.growId}-summary_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `active-grow-${growInfo.growId}-summary_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
-      doc.text(`Grow #${growInfo.growId} Summary`, 14, 18);
+      doc.text(`Active Grow #${growInfo.growId} Summary`, 14, 18);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
       doc.text(`Building: ${growInfo.buildingName}`, 14, 26);
       doc.text(`Status: ${growInfo.status}`, 14, 32);
-      doc.text(`Created: ${dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}`, 14, 38);
+      doc.text(`Started: ${dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}`, 14, 38);
 
       autoTable(doc, {
         startY: 46,
         head: [["Metric", "Value"]],
         body: [
-          ["Total Birds", growInfo.totalAnimals.toLocaleString()],
-          ["Grow Logs", summary.growLogs.toLocaleString()],
-          ["Harvest Entries", summary.harvestEntries.toLocaleString()],
-          ["Harvested Birds", summary.totalHarvested.toLocaleString()],
-          ["Reduction Transactions", summary.totalReductions.toLocaleString()],
+          ["Loaded Birds", growInfo.totalAnimals.toLocaleString()],
+          ["Current Birds", summary.currentBirds.toLocaleString()],
+          ["Daily Logs", summary.growLogs.toLocaleString()],
+          ["Grow Reductions", summary.growReductions.toLocaleString()],
         ],
         headStyles: { fillColor: [0, 136, 34] },
       });
@@ -216,7 +215,7 @@ export default function ReportGrowHistoryPage() {
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Grow #${growInfo.growId} - Daily Grow Logs`, 14, 16);
+      doc.text(`Active Grow #${growInfo.growId} - Daily Inventory Logs`, 14, 16);
 
       autoTable(doc, {
         startY: 22,
@@ -268,7 +267,7 @@ export default function ReportGrowHistoryPage() {
           setGrowHistory([]);
           setHarvestHistory([]);
           setHarvestReductionHistory([]);
-          setToastMessage(`Grow #${growId} was not found.`);
+          setToastMessage(`Active Grow #${growId} was not found.`);
           setIsToastOpen(true);
           return;
         }
@@ -351,13 +350,21 @@ export default function ReportGrowHistoryPage() {
   const summary = useMemo(() => {
     const totalHarvested = harvestHistory.reduce((sum, row) => sum + getHarvestTotalAnimals(row), 0);
     const totalReductions = harvestReductionHistory.reduce((sum, row) => sum + getHarvestReductionCount(row), 0);
+    const latestGrowLog = growHistory[0] ?? null;
+    const currentBirds = latestGrowLog ? toNonNegativeInt(latestGrowLog.actual_total_animals) : growInfo?.totalAnimals ?? 0;
+    const growReductions = growHistory.reduce(
+      (sum, row) => sum + toNonNegativeInt(row.mortality) + toNonNegativeInt(row.thinning) + toNonNegativeInt(row.take_out),
+      0
+    );
     return {
       growLogs: growHistory.length,
       harvestEntries: harvestHistory.length,
       totalHarvested,
       totalReductions,
+      currentBirds,
+      growReductions,
     };
-  }, [growHistory, harvestHistory, harvestReductionHistory]);
+  }, [growHistory, growInfo?.totalAnimals, harvestHistory, harvestReductionHistory]);
 
   const growLogChartData = useMemo(() => {
     const monthKeys = Array.from(new Set(growHistory.map((row) => dayjs(row.created_at).format("YYYY-MM"))))
@@ -496,7 +503,7 @@ export default function ReportGrowHistoryPage() {
           <div className="leading-tight">
             <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Reports</div>
             <Title level={4} className="!m-0 !text-white !text-lg">
-              Grow History Detail
+              Active Grow Detail
             </Title>
           </div>
         </div>
@@ -512,21 +519,23 @@ export default function ReportGrowHistoryPage() {
 
       <Content className={isMobile ? "px-4 py-4" : "px-8 py-6"}>
         {isLoading ? (
-          <ChickenState title="Loading grow report history..." subtitle="Fetching grow and harvest records." />
+          <ChickenState title="Loading active grow detail..." subtitle="Fetching daily grow records." />
         ) : !growInfo ? (
           <ChickenState
-            title="No grow detail found"
-            subtitle="Try going back and opening a different Grow entry."
+            title="No active grow detail found"
+            subtitle="Try going back and opening a different Active Grow entry."
           />
         ) : (
           <div className="mx-auto w-full max-w-7xl space-y-6 md:space-y-8">
             <Card className="!rounded-sm !border !border-emerald-100 shadow-sm" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Grow Summary</div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">Grow #{growInfo.growId}</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Active Grow Summary</div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">
+                    Active Grow #{growInfo.growId} - {growInfo.buildingName}
+                  </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    {growInfo.buildingName} | Created {dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}
+                    Started {dayjs(growInfo.createdAt).format("MMMM D, YYYY h:mm A")}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -546,26 +555,26 @@ export default function ReportGrowHistoryPage() {
               <Row gutter={isMobile ? [12, 12] : [16, 16]} className="mt-5">
                 <Col xs={12} md={6}>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Total Birds</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Loaded Birds</div>
                     <div className="text-xl font-bold text-slate-900">{growInfo.totalAnimals.toLocaleString()}</div>
                   </div>
                 </Col>
                 <Col xs={12} md={6}>
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Current Birds</div>
+                    <div className="text-xl font-bold text-emerald-800">{summary.currentBirds.toLocaleString()}</div>
+                  </div>
+                </Col>
+                <Col xs={12} md={6}>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Grow Logs</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Daily Logs</div>
                     <div className="text-xl font-bold text-slate-900">{summary.growLogs.toLocaleString()}</div>
                   </div>
                 </Col>
                 <Col xs={12} md={6}>
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Harvest Entries</div>
-                    <div className="text-xl font-bold text-emerald-800">{summary.harvestEntries.toLocaleString()}</div>
-                  </div>
-                </Col>
-                <Col xs={12} md={6}>
                   <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Harvested Birds</div>
-                    <div className="text-xl font-bold text-amber-800">{summary.totalHarvested.toLocaleString()}</div>
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Grow Reductions</div>
+                    <div className="text-xl font-bold text-amber-800">{summary.growReductions.toLocaleString()}</div>
                   </div>
                 </Col>
               </Row>
@@ -574,8 +583,8 @@ export default function ReportGrowHistoryPage() {
             <Card className="!rounded-sm !border !border-slate-200 shadow-sm !mt-6" styles={{ body: { padding: isMobile ? 14 : 20 } }}>
               <div className="mb-4 flex items-end justify-between gap-2">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Grow History</div>
-                  <div className="text-lg font-bold text-slate-900">Daily Grow Logs</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active Grow History</div>
+                  <div className="text-lg font-bold text-slate-900">Daily Inventory Logs</div>
                 </div>
                 <Button
                   icon={<MdOutlinePictureAsPdf size={18} />}

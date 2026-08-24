@@ -111,7 +111,7 @@ export default function HarvestedReportPage() {
 
   const handlePdfClick = () => {
     if (reportRows.length === 0) {
-      setToastMessage(`No ${isHarvestedMode ? "harvested" : "grows"} report data available to export.`);
+      setToastMessage(`No ${isHarvestedMode ? "harvested batches" : "grows"} report data available to export.`);
       setIsToastOpen(true);
       return;
     }
@@ -130,11 +130,11 @@ export default function HarvestedReportPage() {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
-      const fileName = `${fileBuildingName || (isHarvestedMode ? "harvest-report" : "grows-report")}_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
+      const fileName = `${fileBuildingName || (isHarvestedMode ? "harvested-batches-report" : "active-grows-report")}_${generatedAt.format("YYYY-MM-DD_HHmmss")}.pdf`;
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
-      doc.text(isHarvestedMode ? "Harvested Report" : "Grows Report", 14, 18);
+      doc.text(isHarvestedMode ? "Harvested Batches Report" : "Grows Report", 14, 18);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
@@ -152,10 +152,10 @@ export default function HarvestedReportPage() {
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10.5);
-      doc.text(`${isHarvestedMode ? "Harvested Grows" : "Total Grows"}: ${summary.totalGrows.toLocaleString()}`, 14, 57);
-      doc.text(`${isHarvestedMode ? "Birds Harvested" : "Overall Birds in Grows"}: ${summary.totalBirds.toLocaleString()}`, 72, 57);
-      doc.text(`Average per Grow: ${Math.round(summary.avgBirdsPerGrow).toLocaleString()}`, 14, 63);
-      doc.text(`${isHarvestedMode ? "Latest Harvest" : "Latest Grow"}: ${latestHarvestDate}`, 72, 63);
+      doc.text(`${isHarvestedMode ? "Harvested Batches" : "Total Grows"}: ${summary.totalGrows.toLocaleString()}`, 14, 57);
+      doc.text(`${isHarvestedMode ? "Birds in Harvested Batches" : "Birds in Active Grows"}: ${summary.totalBirds.toLocaleString()}`, 72, 57);
+      doc.text(`Average Birds per Batch: ${Math.round(summary.avgBirdsPerGrow).toLocaleString()}`, 14, 63);
+      doc.text(`Latest Harvested Batch: ${latestHarvestDate}`, 72, 63);
 
       autoTable(doc, {
         startY: 70,
@@ -179,14 +179,14 @@ export default function HarvestedReportPage() {
           4: { cellWidth: 30 },
         },
         head: [[
-          "Grow ID",
+          "Harvested Batch",
           "Building",
-          "Created Date",
-          "Total Birds",
+          "Harvested Date",
+          "Birds Harvested",
           "Status",
         ]],
         body: reportRows.map((row) => [
-          `#${row.growId}`,
+          `Harvested Batch #${row.growId}`,
           row.buildingName,
           dayjs(row.createdAt).format("MMM D, YYYY"),
           row.totalBirds.toLocaleString(),
@@ -197,7 +197,7 @@ export default function HarvestedReportPage() {
           "Totals",
           "",
           summary.totalBirds.toLocaleString(),
-          `${summary.totalGrows} ${isHarvestedMode ? "harvested grows" : "grows"}`,
+          `${summary.totalGrows} ${isHarvestedMode ? "harvested batches" : "grows"}`,
         ]],
         footStyles: {
           fillColor: [239, 239, 239],
@@ -261,7 +261,7 @@ export default function HarvestedReportPage() {
     void loadBuildings();
   }, []);
 
-  // Load harvested grows report when building or date range changes
+  // Load harvested batches report when building or date range changes
   useEffect(() => {
     const loadReport = async () => {
       if (!selectedBuildingId) {
@@ -271,7 +271,7 @@ export default function HarvestedReportPage() {
 
       setIsLoading(true);
       try {
-        // Build query for harvested grows
+        // Build query for completed harvested batches
         let query = supabase
           .from(GROWS_TABLE)
           .select("id, building_id, created_at, total_animals, status, is_harvested")
@@ -360,7 +360,7 @@ export default function HarvestedReportPage() {
   );
 
   const dateRangeLabel = useMemo(() => {
-    if (!dateRange || !dateRange[0] || !dateRange[1]) return "All created dates";
+    if (!dateRange || !dateRange[0] || !dateRange[1]) return "All harvested dates";
     return `${dateRange[0].format("MMM D, YYYY")} - ${dateRange[1].format("MMM D, YYYY")}`;
   }, [dateRange]);
 
@@ -371,7 +371,7 @@ export default function HarvestedReportPage() {
 
   const columns = [
     {
-      title: "Grow ID",
+      title: "Harvested Batch",
       dataIndex: "growId",
       key: "growId",
       render: (id: number) => (
@@ -383,13 +383,13 @@ export default function HarvestedReportPage() {
           }}
           className="font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
         >
-          #{id}
+          Harvested Batch #{id}
         </button>
       ),
       sorter: (a: ReportRow, b: ReportRow) => a.growId - b.growId,
     },
     {
-      title: "Created Date",
+      title: "Harvested Date",
       dataIndex: "createdAt",
       key: "createdAt",
       render: (date: string) => dayjs(date).format("MMM D, YYYY"),
@@ -397,7 +397,7 @@ export default function HarvestedReportPage() {
       defaultSortOrder: "descend" as const,
     },
     {
-      title: "Total Birds",
+      title: "Birds Harvested",
       dataIndex: "totalBirds",
       key: "totalBirds",
       render: (val: number) => val.toLocaleString(),
@@ -411,6 +411,22 @@ export default function HarvestedReportPage() {
         <Tag color="orange" className="font-medium">
           {status}
         </Tag>
+      ),
+    },
+    {
+      title: "",
+      key: "action",
+      render: (_: unknown, record: ReportRow) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            openGrowHistory(record.growId);
+          }}
+          className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+        >
+          View harvested batch details
+        </button>
       ),
     },
   ];
@@ -453,14 +469,14 @@ export default function HarvestedReportPage() {
             <>
               <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
               <Title level={4} className="!m-0 !text-base !text-white">
-                {isHarvestedMode ? "Harvested Report" : "Grows Report"}
+                {isHarvestedMode ? "Harvested Batches" : "Grows Report"}
               </Title>
             </>
           ) : (
             <div className="leading-tight">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/75">Analytics</div>
               <Title level={4} className="!m-0 !text-white !text-lg">
-                {isHarvestedMode ? "Harvested Report" : "Grows Report"}
+                {isHarvestedMode ? "Harvested Batches" : "Grows Report"}
               </Title>
             </div>
           )}
@@ -501,11 +517,11 @@ export default function HarvestedReportPage() {
                       {isHarvestedMode ? "Harvest Analytics" : "Grows Analytics"}
                     </div>
                     <div className="mt-2 text-2xl font-bold leading-tight md:text-3xl">
-                      {isHarvestedMode ? "Harvested Grows Report" : "Grows Report"}
+                      {isHarvestedMode ? "Harvested Batches Report" : "Grows Report"}
                     </div>
                     <div className="mt-2 max-w-2xl text-sm text-emerald-50/90 md:text-base">
                       {isHarvestedMode
-                        ? "Review harvested batches by building and date range with a cleaner operational summary."
+                        ? "Review completed harvest batches by building and date range."
                         : "Review grow records by building and date range with a cleaner operational summary."}
                     </div>
                   </div>
@@ -540,7 +556,7 @@ export default function HarvestedReportPage() {
                       />
                     </div>
                     <div>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Created Date Range</div>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Harvested Date Range</div>
                       {isMobile ? (
                         <div className="grid grid-cols-2 gap-2">
                           <DatePicker
@@ -634,7 +650,7 @@ export default function HarvestedReportPage() {
                   styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
                   <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500" : "text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"}>
-                    {isHarvestedMode ? "Harvested Grows" : "Total Grows"}
+                    {isHarvestedMode ? "Harvested Batches" : "Total Grows"}
                   </div>
                   <Statistic
                     value={summary.totalGrows}
@@ -648,7 +664,7 @@ export default function HarvestedReportPage() {
                   styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
                   <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-700" : "text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700"}>
-                    {isHarvestedMode ? "Overall Birds Harvested" : "Overall Birds in Grows"}
+                    {isHarvestedMode ? "Birds in Harvested Batches" : "Birds in Active Grows"}
                   </div>
                   <Statistic
                     value={summary.totalBirds}
@@ -663,7 +679,7 @@ export default function HarvestedReportPage() {
                   styles={{ body: { padding: isMobile ? 8 : 16 } }}
                 >
                   <div className={isMobile ? "text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700" : "text-xs font-semibold uppercase tracking-[0.16em] text-amber-700"}>
-                    Average per Grow
+                    Avg Birds per Batch
                   </div>
                   <Statistic
                     value={summary.avgBirdsPerGrow}
@@ -721,22 +737,22 @@ export default function HarvestedReportPage() {
           {isLoading && reportRows.length === 0 ? (
             <ChickenState
               title="Loading report..."
-              subtitle={`Fetching ${isHarvestedMode ? "harvested grows" : "grow records"} from your tables.`}
+              subtitle={`Fetching ${isHarvestedMode ? "harvested batches" : "grow records"} from your tables.`}
               fullScreen={false}
             />
           ) : reportRows.length === 0 ? (
             <ChickenState
-              title={isHarvestedMode ? "No harvested grows found" : "No grows found"}
+              title={isHarvestedMode ? "No harvested batches found" : "No active grows found"}
               subtitle={
                 selectedBuildingId
                   ? dateRange
                     ? isHarvestedMode
-                      ? "No harvested grows in this building for the selected date range."
-                      : "No grow records in this building for the selected date range."
+                      ? "No harvested batches were saved for this building in the selected date range."
+                      : "No grow records were saved for this building in the selected date range."
                     : isHarvestedMode
-                      ? "No harvested grows found for this building. Try a different building or check status values."
+                      ? "No harvested batches have been saved for this building yet."
                       : "No grow records found for this building. Try a different building or check status values."
-                  : `Select a building to view the ${isHarvestedMode ? "harvested grows" : "grows"} report.`
+                  : `Select a building to view the ${isHarvestedMode ? "harvested batches" : "grows"} report.`
               }
               fullScreen={false}
             />
@@ -754,24 +770,27 @@ export default function HarvestedReportPage() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        {isHarvestedMode ? "Harvest Entry" : "Grow Entry"}
+                        Harvested Batch
                       </div>
-                      <span className="font-semibold text-emerald-700 text-[20px] leading-none">Grow #{row.growId}</span>
+                      <span className="block font-semibold text-emerald-700 text-[18px] leading-tight">Harvested Batch #{row.growId}</span>
                       <div className="text-[10px] text-slate-500 mt-0.5">{row.buildingName}</div>
                     </div>
                     <Tag color={isHarvestedMode ? "orange" : "green"} className="!rounded-full !px-2 !py-0 !text-[10px] !font-medium">
-                      {isHarvestedMode ? "Harvested" : "Grow"}
+                      Harvested
                     </Tag>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
                     <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                      <div className="text-slate-500 text-[9px] uppercase tracking-wide">Created Date</div>
+                      <div className="text-slate-500 text-[9px] uppercase tracking-wide">Harvested Date</div>
                       <div className="font-medium text-[13px] leading-none text-slate-900 mt-1">{dayjs(row.createdAt).format("MMM D, YYYY")}</div>
                     </div>
                     <div className="rounded-lg bg-emerald-50 px-2.5 py-2">
-                      <div className="text-emerald-700 text-[9px] uppercase tracking-wide">Total Birds</div>
+                      <div className="text-emerald-700 text-[9px] uppercase tracking-wide">Birds Harvested</div>
                       <div className="font-bold text-emerald-800 text-[24px] leading-none mt-1">{row.totalBirds.toLocaleString()}</div>
                     </div>
+                  </div>
+                  <div className="mt-2 text-right text-[11px] font-semibold text-emerald-700">
+                    View harvested batch details
                   </div>
                 </Card>
               ))}
@@ -785,7 +804,7 @@ export default function HarvestedReportPage() {
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detailed Records</div>
                   <div className="mt-1 text-xl font-bold text-slate-900">
-                    {isHarvestedMode ? "Harvested Report Table" : "Grows Report Table"}
+                    {isHarvestedMode ? "Harvested Batches Report Table" : "Active Grows Report Table"}
                   </div>
                 </div>
                 <div className="rounded-xl bg-slate-50 px-4 py-3 text-right">
@@ -800,7 +819,7 @@ export default function HarvestedReportPage() {
                 pagination={{
                   pageSize: 10,
                   showSizeChanger: true,
-                  showTotal: (total) => `${total} ${isHarvestedMode ? "harvested grows" : "grows"}`,
+                  showTotal: (total) => `${total} ${isHarvestedMode ? "harvested batches" : "grows"}`,
                 }}
                 className="shadow-none"
                 loading={isLoading}

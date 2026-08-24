@@ -17,9 +17,11 @@ const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
-type GrowStatusRow = {
+type BuildingElectricityRow = {
   key: string;
   id: number;
+  name: string;
+  latestGrowId: number | null;
   buildingName: string;
   createdAt: string;
   totalBirds: number;
@@ -47,20 +49,27 @@ export default function ElectricityConsumptionPage() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
-  const [rows, setRows] = useState<GrowStatusRow[]>([]);
+  const [rows, setRows] = useState<BuildingElectricityRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [mobilePage, setMobilePage] = useState(1);
   const [mobilePageSize, setMobilePageSize] = useState(5);
+  const [summary, setSummary] = useState({ buildings: 0, grows: 0, todayKwh: 0 });
 
   const mobilePagedRows = useMemo(() => {
     const start = (mobilePage - 1) * mobilePageSize;
     return rows.slice(start, start + mobilePageSize);
   }, [mobilePage, mobilePageSize, rows]);
 
-  const columns: ColumnsType<GrowStatusRow> = useMemo(
+  const columns: ColumnsType<BuildingElectricityRow> = useMemo(
     () => [
-      { title: "Grow ID", dataIndex: "id", key: "id", width: 120, render: (id: number) => `#${id}` },
-      { title: "Building", dataIndex: "buildingName", key: "buildingName", width: 180 },
+      { title: "Building", dataIndex: "name", key: "name", width: 180 },
+      {
+        title: "Latest Grow",
+        dataIndex: "latestGrowId",
+        key: "latestGrowId",
+        width: 120,
+        render: (id: number | null) => (id == null ? "-" : `#${id}`),
+      },
       {
         title: "Date Start",
         dataIndex: "createdAt",
@@ -115,7 +124,7 @@ export default function ElectricityConsumptionPage() {
             .select("id, building_id, created_at, total_animals, status, is_harvested")
             .order("created_at", { ascending: false }),
           supabase.from(BUILDINGS_TABLE).select("id, name"),
-          supabase.from(ELECTRICITY_TABLE).select("grow_id, consumption"),
+          supabase.from(ELECTRICITY_TABLE).select("grow_id, date, consumption"),
         ]);
 
         if (!active) return;
@@ -123,19 +132,33 @@ export default function ElectricityConsumptionPage() {
         if (buildingError) throw buildingError;
         if (electricityError) throw electricityError;
 
-        const buildingNameById = new Map<number, string>();
-        ((buildingRows ?? []) as Array<{ id: number | null; name: string | null }>).forEach((building) => {
-          if (building.id == null) return;
-          buildingNameById.set(building.id, building.name ?? `Building ${building.id}`);
-        });
+        const buildings = ((buildingRows ?? []) as Array<{ id: number | null; name: string | null }>)
+          .filter((building): building is { id: number; name: string | null } => building.id != null)
+          .sort((a, b) => {
+            const aName = a.name ?? `Building ${a.id}`;
+            const bName = b.name ?? `Building ${b.id}`;
+            return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: "base" });
+          });
         const totalKwhByGrowId = new Map<number, number>();
-        ((electricityRows ?? []) as Array<{ grow_id: number | null; consumption: number | null }>).forEach((row) => {
+        let todayKwh = 0;
+        const todayKey = dayjs().format("YYYY-MM-DD");
+        ((electricityRows ?? []) as Array<{ grow_id: number | null; date: string | null; consumption: number | null }>).forEach((row) => {
           if (row.grow_id == null) return;
           const value = Number(row.consumption ?? 0);
-          totalKwhByGrowId.set(row.grow_id, (totalKwhByGrowId.get(row.grow_id) ?? 0) + (Number.isFinite(value) ? value : 0));
+          const safeValue = Number.isFinite(value) ? value : 0;
+          totalKwhByGrowId.set(row.grow_id, (totalKwhByGrowId.get(row.grow_id) ?? 0) + safeValue);
+          if (row.date === todayKey) todayKwh += safeValue;
         });
 
-        const mapped = ((growRows ?? []) as Array<{
+        const latestGrowByBuildingId = new Map<number, {
+          id: number;
+          createdAt: string;
+          totalBirds: number;
+          status: string;
+          isHarvested: boolean;
+        }>();
+
+        ((growRows ?? []) as Array<{
           id: number | null;
           building_id: number | null;
           created_at: string | null;
@@ -143,25 +166,41 @@ export default function ElectricityConsumptionPage() {
           status: string | null;
           is_harvested: boolean | null;
         }>)
-          .filter((row) => row.id != null)
-          .map<GrowStatusRow>((row) => ({
-            key: String(row.id),
-            id: Number(row.id),
-            buildingName:
-              row.building_id == null
-                ? "Unassigned"
-                : buildingNameById.get(row.building_id) ?? `Building ${row.building_id}`,
-            createdAt: String(row.created_at ?? ""),
-            totalBirds: Math.max(0, Math.floor(Number(row.total_animals ?? 0))),
-            totalKwh: totalKwhByGrowId.get(Number(row.id)) ?? 0,
-            status: String(row.status ?? "Unknown"),
-            isHarvested: row.is_harvested === true,
-          }));
+          .forEach((row) => {
+            if (row.id == null || row.building_id == null) return;
+            if (latestGrowByBuildingId.has(row.building_id)) return;
+            latestGrowByBuildingId.set(row.building_id, {
+              id: Number(row.id),
+              createdAt: String(row.created_at ?? ""),
+              totalBirds: Math.max(0, Math.floor(Number(row.total_animals ?? 0))),
+              status: String(row.status ?? "Ready"),
+              isHarvested: row.is_harvested === true,
+            });
+          });
+
+        const mapped = buildings.map<BuildingElectricityRow>((building) => {
+          const latestGrow = latestGrowByBuildingId.get(building.id);
+          const name = building.name ?? `Building ${building.id}`;
+          return {
+            key: String(building.id),
+            id: building.id,
+            name,
+            latestGrowId: latestGrow?.id ?? null,
+            buildingName: name,
+            createdAt: latestGrow?.createdAt ?? "",
+            totalBirds: latestGrow?.totalBirds ?? 0,
+            totalKwh: latestGrow ? totalKwhByGrowId.get(latestGrow.id) ?? 0 : 0,
+            status: latestGrow?.status ?? "Ready",
+            isHarvested: latestGrow?.isHarvested ?? false,
+          };
+        });
 
         setRows(mapped);
+        setSummary({ buildings: mapped.length, grows: (growRows ?? []).length, todayKwh });
       } catch (error) {
         console.error("Failed to load grow statuses:", error);
         setRows([]);
+        setSummary({ buildings: 0, grows: 0, todayKwh: 0 });
       } finally {
         if (active) setIsLoading(false);
       }
@@ -217,21 +256,38 @@ export default function ElectricityConsumptionPage() {
       <Content className="px-3 py-3 md:px-6 md:py-5">
         <div className="mx-auto w-full max-w-[420px] md:max-w-6xl">
           <div className="mb-3 rounded-2xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-4 py-4 text-white md:mb-5 md:px-6 md:py-5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
-              Electricity Consumption
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
+                  Electricity Consumption
+                </div>
+                <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a building</div>
+                <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
+                  Tap or click a row below to review electricity consumption records.
+                </div>
+              </div>
+              <Button
+                className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
+                onClick={() => navigate("/reports/electricity-consumption")}
+              >
+                Report
+              </Button>
             </div>
-            <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a grow status</div>
-            <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
-              Tap or click a row below to review grow status records.
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Buildings {summary.buildings.toLocaleString()}</div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grows {summary.grows.toLocaleString()}</div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                Today {summary.todayKwh.toLocaleString(undefined, { maximumFractionDigits: 2 })} kWh
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-slate-700">Grows Status List</div>
+                <div className="text-sm font-semibold text-slate-700">Building List</div>
               </div>
-              <div className="mb-2 text-xs text-slate-500">All grow records currently available in the system.</div>
+              <div className="mb-2 text-xs text-slate-500">All buildings currently available in the system.</div>
               {isMobile ? (
                 <div className="space-y-2">
                   {mobilePagedRows.map((record) => (
@@ -239,19 +295,21 @@ export default function ElectricityConsumptionPage() {
                       key={record.key}
                       type="button"
                       className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40"
-                      onClick={() => navigate(`/electricity-consumption/grow/${record.id}`)}
+                      onClick={() => navigate(`/electricity-consumption/building/${record.id}`)}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="text-xs text-slate-500">Grow ID</div>
-                          <div className="font-semibold text-slate-800">#{record.id}</div>
+                          <div className="text-xs text-slate-500">Building</div>
+                          <div className="font-semibold text-slate-800">{record.name}</div>
+                          <div className="mt-0.5 text-xs text-slate-500">
+                            Latest Grow: {record.latestGrowId == null ? "-" : `#${record.latestGrowId}`}
+                          </div>
                         </div>
                         <Tag color={statusColor(record.status, record.isHarvested)} className="!mr-0">
                           {record.status || "Unknown"}
                         </Tag>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-slate-700">
-                        <div><span className="text-slate-500">Building:</span> {record.buildingName}</div>
                         <div><span className="text-slate-500">Start:</span> {formatDate(record.createdAt)}</div>
                         <div><span className="text-slate-500">Birds:</span> {record.totalBirds.toLocaleString()}</div>
                         <div><span className="text-slate-500">Total kWh:</span> {record.totalKwh.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
@@ -276,7 +334,7 @@ export default function ElectricityConsumptionPage() {
                   </div>
                 </div>
               ) : (
-                <Table<GrowStatusRow>
+                <Table<BuildingElectricityRow>
                   size="small"
                   rowKey="key"
                   columns={columns}
@@ -286,11 +344,11 @@ export default function ElectricityConsumptionPage() {
                     pageSize: 5,
                     showSizeChanger: rows.length > 5,
                     pageSizeOptions: ["5", "10", "20"],
-                    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} grows`,
+                    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} buildings`,
                   }}
                   scroll={{ x: 720 }}
                   onRow={(record) => ({
-                    onClick: () => navigate(`/electricity-consumption/grow/${record.id}`),
+                    onClick: () => navigate(`/electricity-consumption/building/${record.id}`),
                     title: "Click to view electricity consumption",
                     className: "cursor-pointer hover:!bg-emerald-50/60",
                   })}
