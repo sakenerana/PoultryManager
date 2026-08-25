@@ -25,6 +25,7 @@ type TileKey =
 type Tile = {
     key: TileKey;
     title: string;
+    subtitle: string;
     accent: string;
     borderColor: string;
     icon: React.ReactNode;
@@ -36,6 +37,7 @@ const tiles: Tile[] = [
     {
         key: "inventory",
         title: "My Growers",
+        subtitle: "Buildings and active grow batches",
         accent: "text-[#008822]",
         borderColor: "#22c55e",
         icon: (
@@ -51,6 +53,7 @@ const tiles: Tile[] = [
     {
         key: "harvest",
         title: "My Harvest",
+        subtitle: "Harvest records and truck history",
         accent: "text-[#008822]",
         borderColor: "#84cc16",
         icon: (
@@ -66,6 +69,7 @@ const tiles: Tile[] = [
     {
         key: "reports",
         title: "Reports",
+        subtitle: "Operational summaries and PDFs",
         accent: "text-[#008822]",
         borderColor: "#0ea5e9",
         icon: (
@@ -81,6 +85,7 @@ const tiles: Tile[] = [
     {
         key: "electricity",
         title: "Electricity Consumption",
+        subtitle: "Building kWh readings and history",
         accent: "text-[#008822]",
         borderColor: "#eab308",
         icon: (
@@ -96,6 +101,7 @@ const tiles: Tile[] = [
     {
         key: "userAccess",
         title: "Accounts",
+        subtitle: "Users, roles, and access",
         accent: "text-[#008822]",
         borderColor: "#a855f7",
         icon: <img
@@ -109,6 +115,7 @@ const tiles: Tile[] = [
     {
         key: "settings",
         title: "Settings",
+        subtitle: "System preferences",
         accent: "text-[#008822]",
         borderColor: "#f59e0b",
         icon: (
@@ -124,6 +131,7 @@ const tiles: Tile[] = [
     {
         key: "signOut",
         title: "Sign Out",
+        subtitle: "End this session",
         accent: "text-[#d97706]",
         borderColor: "#f97316",
         icon: (
@@ -138,7 +146,18 @@ const tiles: Tile[] = [
 ];
 
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
+const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+const INCOME_SUMMARY_TABLE = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
+const ELECTRICITY_TABLE = import.meta.env.VITE_SUPABASE_ELECTRICITY_CONSUMPTION_TABLE ?? "ElectricityConsumption";
 type AppRole = "Admin" | "Supervisor" | "Staff" | null;
+type DashboardStats = {
+    buildings: number;
+    activeGrows: number;
+    harvestedBatches: number;
+    incomeReports: number;
+    electricityKwh: number;
+};
 
 export default function LandingPage() {
     const [active, setActive] = useState<TileKey | null>(null);
@@ -149,6 +168,13 @@ export default function LandingPage() {
     const [isToastOpen, setIsToastOpen] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
     const [nextBuildingSequence, setNextBuildingSequence] = useState(1);
+    const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
+        buildings: 0,
+        activeGrows: 0,
+        harvestedBatches: 0,
+        incomeReports: 0,
+        electricityKwh: 0,
+    });
     const [addForm] = Form.useForm();
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -196,6 +222,60 @@ export default function LandingPage() {
         };
     }, [user?.id]);
 
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadDashboardStats = async () => {
+            try {
+                const [
+                    buildingsResult,
+                    growsResult,
+                    incomeResult,
+                    electricityResult,
+                ] = await Promise.all([
+                    supabase.from(BUILDINGS_TABLE).select("id", { count: "exact", head: true }),
+                    supabase.from(GROWS_TABLE).select("status, is_harvested"),
+                    supabase.from(INCOME_SUMMARY_TABLE).select("id", { count: "exact", head: true }),
+                    supabase.from(ELECTRICITY_TABLE).select("consumption"),
+                ]);
+
+                if (!isMounted) return;
+
+                const growRows = (growsResult.data ?? []) as Array<{ status: string | null; is_harvested: boolean | null }>;
+                const nextGrowStats = growRows.reduce(
+                    (acc, grow) => {
+                        const status = String(grow.status ?? "").trim().toLowerCase();
+                        const isHarvested = grow.is_harvested === true || status === "harvested";
+                        if (isHarvested) acc.harvestedBatches += 1;
+                        else acc.activeGrows += 1;
+                        return acc;
+                    },
+                    { activeGrows: 0, harvestedBatches: 0 }
+                );
+
+                const electricityKwh = ((electricityResult.data ?? []) as Array<{ consumption: number | null }>).reduce(
+                    (sum, row) => sum + (Number.isFinite(Number(row.consumption)) ? Number(row.consumption) : 0),
+                    0
+                );
+
+                setDashboardStats({
+                    buildings: buildingsResult.count ?? 0,
+                    activeGrows: nextGrowStats.activeGrows,
+                    harvestedBatches: nextGrowStats.harvestedBatches,
+                    incomeReports: incomeResult.count ?? 0,
+                    electricityKwh: Math.round(electricityKwh),
+                });
+            } catch (error) {
+                console.error("Failed to load dashboard stats:", error);
+            }
+        };
+
+        void loadDashboardStats();
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
     const visibleTiles = useMemo(() => {
         if (role === "Admin") return tiles;
         if (role === "Supervisor") return tiles.filter((tile) => tile.key !== "electricity");
@@ -214,8 +294,20 @@ export default function LandingPage() {
         if (tile.link) {
             navigate(tile.link);
         }
-        console.log("clicked:", tile.key);
     };
+
+    const tileStatLabels = useMemo<Record<TileKey, string>>(
+        () => ({
+            inventory: `${dashboardStats.buildings.toLocaleString()} buildings`,
+            harvest: `${dashboardStats.harvestedBatches.toLocaleString()} batches`,
+            reports: `${dashboardStats.activeGrows.toLocaleString()} active / ${dashboardStats.harvestedBatches.toLocaleString()} harvested`,
+            electricity: `${dashboardStats.electricityKwh.toLocaleString()} kWh`,
+            userAccess: role ? role : "Access",
+            settings: "Ready",
+            signOut: "Secure exit",
+        }),
+        [dashboardStats, role]
+    );
 
     const handleSyncUpdate = async () => {
         if (isSyncingUpdate) return;
@@ -336,12 +428,12 @@ export default function LandingPage() {
 
             {/* CONTENT */}
             <main
-                className="px-3 py-3 pb-20 sm:px-4 sm:py-4 sm:pb-24"
+                className="px-3 py-3 pb-24 sm:px-4 sm:py-4 sm:pb-28"
                 style={{
                     minHeight: `calc(100dvh - ${headerHeight} - ${footerHeight})`,
                 }}
             >
-                <div className="grid h-full grid-cols-2 auto-rows-fr gap-2.5 sm:gap-4">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
                     {visibleTiles.map((tile) => (
                         <button
                             key={tile.key}
@@ -351,9 +443,10 @@ export default function LandingPage() {
                             style={{ borderColor: tile.borderColor }}
                             className={[
                                 isTileDisabled(tile) ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-                                "text-left bg-white rounded-sm shadow-sm border-2",
-                                "p-3 sm:p-6",
-                                "h-full min-h-[118px] sm:h-[clamp(180px,24vh,230px)]",
+                                tile.key === "signOut" ? "bg-orange-50/80" : "bg-white",
+                                "flex flex-col items-center justify-center text-center rounded-sm shadow-sm border-2",
+                                "p-3",
+                                "min-h-[142px] sm:h-[224px]",
                                 "transition-all duration-200",
                                 isTileDisabled(tile) ? "" : "hover:shadow-md hover:-translate-y-0.5",
                                 "active:translate-y-0 active:scale-[0.99]",
@@ -363,27 +456,42 @@ export default function LandingPage() {
                                     : "ring-0",
                             ].join(" ")}
                         >
-                            {/* icon card */}
-                            <div className="flex justify-center">
-                                <div className="bg-[#ffa600]/40 p-2.5 sm:p-4 rounded-2xl shadow-inner">
+                            <div
+                                className={[
+                                    "max-w-full truncate rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]",
+                                    tile.key === "signOut"
+                                        ? "border-orange-200 bg-orange-100 text-orange-700"
+                                        : "border-emerald-100 bg-emerald-50 text-emerald-700",
+                                ].join(" ")}
+                            >
+                                {tileStatLabels[tile.key]}
+                            </div>
+
+                            <div className="mt-3 flex justify-center">
+                                <div className="bg-[#ffa600]/40 p-2.5 sm:p-3 rounded-2xl shadow-inner">
                                     {tile.icon}
                                 </div>
                             </div>
 
-                            <div className="mt-2.5 sm:mt-4 text-center">
+                            <div className="mt-2.5">
                                 <div
                                     className={[
-                                        tile.key === "electricity" ? "text-[16px] leading-tight sm:text-[30px]" : "text-[20px] leading-none sm:text-[34px]",
+                                        tile.key === "electricity" || tile.key === "signOut"
+                                            ? "text-[16px] leading-tight sm:text-[26px]"
+                                            : "text-[19px] leading-tight sm:text-[28px]",
                                         "font-bold tracking-tight",
                                         tile.accent,
                                     ].join(" ")}
                                 >
                                     {tile.largeText}
                                 </div>
+                                <div className="mx-auto mt-1 max-w-[280px] text-[10px] leading-tight text-slate-500 sm:text-xs">
+                                    {tile.subtitle}
+                                </div>
                             </div>
 
                             {/* subtle bottom gradient accent */}
-                            <div className="mt-2.5 sm:mt-4 h-1.5 sm:h-2 w-full rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0" />
+                            <div className="mt-2.5 h-1.5 w-full max-w-[280px] rounded-full bg-gradient-to-r from-[#008822]/0 via-[#008822]/10 to-[#008822]/0 sm:h-2" />
                         </button>
                     ))}
                 </div>
