@@ -78,36 +78,75 @@ export default function IncomeReportPage() {
     const start = (mobilePage - 1) * mobilePageSize;
     return reports.slice(start, start + mobilePageSize);
   }, [mobilePage, mobilePageSize, reports]);
+  const summary = useMemo(() => {
+    const farms = new Set(reports.map((report) => report.farmName.trim()).filter(Boolean));
+    const totalHarvest = reports.reduce((sum, report) => sum + (asNumber(report.row.total_harvest) ?? 0), 0);
+    const latestFinish = reports
+      .map((report) => report.dateFinish)
+      .filter((date) => dayjs(date).isValid())
+      .sort((a, b) => dayjs(b).unix() - dayjs(a).unix())[0];
+
+    return {
+      totalReports: reports.length,
+      totalFarms: farms.size,
+      totalHarvest,
+      latestFinish: latestFinish ? dayjs(latestFinish).format("MMM D, YYYY") : "No finish date",
+    };
+  }, [reports]);
 
   const columns: ColumnsType<BroilerSummaryReport> = useMemo(
     () => [
       { title: "Report No", dataIndex: "reportNo", key: "reportNo", width: 160 },
       { title: "Farm Name", dataIndex: "farmName", key: "farmName", width: 160 },
       { title: "Flock", dataIndex: "flock", key: "flock", width: 90 },
-      { title: "Date Start", dataIndex: "dateStart", key: "dateStart", width: 120 },
-      { title: "Date Finish", dataIndex: "dateFinish", key: "dateFinish", width: 120 },
+      {
+        title: "Date Start",
+        dataIndex: "dateStart",
+        key: "dateStart",
+        width: 120,
+        render: (value: string) => formatDate(value),
+      },
+      {
+        title: "Date Finish",
+        dataIndex: "dateFinish",
+        key: "dateFinish",
+        width: 120,
+        render: (value: string) => formatDate(value),
+      },
       {
         title: "PDF",
         key: "pdf",
         width: 90,
         render: (_value, record) => (
           <Tag color={record.pdfUrl ? "green" : "default"} className="!mr-0">
-            {record.pdfUrl ? "Ready" : "Missing"}
+            {record.pdfUrl ? "Ready" : "No URL"}
           </Tag>
         ),
       },
       {
-        title: "Action",
+        title: "",
         key: "action",
-        width: 120,
+        width: 185,
         fixed: "right",
         align: "right",
         render: (_value, record) => (
-          <Button
-            size="small"
-            type="default"
-            icon={<IoCreateOutline size={14} />}
-            className="!rounded-md !border-emerald-200 !bg-emerald-50 !text-emerald-700 hover:!border-emerald-300 hover:!bg-emerald-100 hover:!text-emerald-800"
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedKey(record.key);
+                exportBroilerSummaryPdf(record);
+              }}
+            >
+              View income summary PDF
+            </button>
+            <Button
+              size="small"
+              type="default"
+              icon={<IoCreateOutline size={14} />}
+              className="!rounded-md !border-emerald-200 !bg-emerald-50 !text-emerald-700 hover:!border-emerald-300 hover:!bg-emerald-100 hover:!text-emerald-800"
             onClick={(event) => {
               event.stopPropagation();
               navigate("/reports/income/new", {
@@ -119,13 +158,14 @@ export default function IncomeReportPage() {
                 },
               });
             }}
-          >
-            Edit
-          </Button>
+            >
+              Edit
+            </Button>
+          </div>
         ),
       },
     ],
-    [isMobile, navigate, reports]
+    [navigate, reports]
   );
 
   useEffect(() => {
@@ -509,18 +549,40 @@ export default function IncomeReportPage() {
         <div className="mx-auto w-full max-w-[420px] md:max-w-6xl">
           <div className="mb-3 rounded-2xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-4 py-4 text-white md:mb-5 md:px-6 md:py-5">
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
-              Broiler Summary Report
+              Income Report
             </div>
-            <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a report to preview PDF</div>
+            <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Income Summary Reports</div>
             <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
-              Tap or click a row below to display the selected summary report.
+              Review saved broiler income summaries, open PDF previews, or update report details.
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Reports</div>
+                <div className="mt-1 text-xl font-bold leading-none text-slate-900">{summary.totalReports.toLocaleString()}</div>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3 shadow-sm">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Farms</div>
+                <div className="mt-1 text-xl font-bold leading-none text-emerald-800">{summary.totalFarms.toLocaleString()}</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total Harvest</div>
+                <div className="mt-1 text-xl font-bold leading-none text-slate-900">{formatNumber(summary.totalHarvest)}</div>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-3 shadow-sm">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-700">Latest Finish</div>
+                <div className="mt-1 text-sm font-bold leading-tight text-slate-900">{summary.latestFinish}</div>
+              </div>
+            </div>
+
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-slate-700">Broiler Summary Report List</div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Detailed Records</div>
+                  <div className="text-sm font-semibold text-slate-800">Income Summary Report List</div>
+                </div>
                 <Button
                   type="primary"
                   icon={<IoAdd size={16} />}
@@ -531,16 +593,22 @@ export default function IncomeReportPage() {
                     })
                   }
                 >
-                  Income Summary
+                  Add Income Summary
               </Button>
               </div>
-              <div className="mb-2 text-xs text-slate-500">Tap or click a row to preview the report PDF.</div>
-              {isMobile ? (
+              <div className="mb-2 text-xs text-slate-500">Tap or click a record to view the income summary PDF.</div>
+              {reports.length === 0 ? (
+                <div className="rounded-sm border border-emerald-100 bg-emerald-50/60 p-5 text-center">
+                  <div className="text-sm font-semibold text-slate-800">No income summaries yet</div>
+                  <div className="mt-1 text-xs text-slate-500">Add an income summary to generate broiler summary reports.</div>
+                </div>
+              ) : isMobile ? (
                 <div className="space-y-2">
                   {mobilePagedReports.map((record) => (
-                    <button
+                    <div
                       key={record.key}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       className={`w-full rounded-lg border p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40 ${
                         record.key === selectedKey ? "border-emerald-300 bg-emerald-50/70" : "border-slate-200 bg-white"
                       }`}
@@ -548,23 +616,31 @@ export default function IncomeReportPage() {
                         setSelectedKey(record.key);
                         exportBroilerSummaryPdf(record);
                       }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        setSelectedKey(record.key);
+                        exportBroilerSummaryPdf(record);
+                      }}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="text-xs text-slate-500">Report No</div>
+                          <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Income Summary</div>
                           <div className="font-semibold text-slate-800">{record.reportNo}</div>
+                          <div className="mt-0.5 text-[10px] text-slate-500">{record.farmName || "Unnamed farm"}</div>
                         </div>
                         <Tag color={record.pdfUrl ? "green" : "default"} className="!mr-0">
-                          {record.pdfUrl ? "Ready" : "Missing"}
+                          {record.pdfUrl ? "PDF Ready" : "No PDF URL"}
                         </Tag>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-slate-700">
-                        <div><span className="text-slate-500">Farm:</span> {record.farmName || "-"}</div>
                         <div><span className="text-slate-500">Flock:</span> {record.flock || "-"}</div>
-                        <div><span className="text-slate-500">Start:</span> {record.dateStart || "-"}</div>
-                        <div><span className="text-slate-500">Finish:</span> {record.dateFinish || "-"}</div>
+                        <div><span className="text-slate-500">Harvest:</span> {formatNumber(record.row.total_harvest)}</div>
+                        <div><span className="text-slate-500">Start:</span> {formatDate(record.dateStart)}</div>
+                        <div><span className="text-slate-500">Finish:</span> {formatDate(record.dateFinish)}</div>
                       </div>
-                      <div className="mt-2 flex justify-end">
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-emerald-700">View income summary PDF</span>
                         <Button
                           size="small"
                           icon={<IoCreateOutline size={14} />}
@@ -584,7 +660,7 @@ export default function IncomeReportPage() {
                           Edit
                         </Button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                   <div className="pt-1">
                     <Pagination

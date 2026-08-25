@@ -48,8 +48,8 @@ const tiles: ReportTile[] = [
   },
   {
     key: "income",
-    title: "Income",
-    subtitle: "Revenue and earnings overview",
+    title: "Income Summaries",
+    subtitle: "Broiler summary earnings",
     borderColor: "#f59e0b",
     titleColor: "#475569",
     iconSrc: "/img/report.svg",
