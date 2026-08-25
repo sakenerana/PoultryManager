@@ -15,7 +15,7 @@ const { Title } = Typography;
 type UserRole = "Admin" | "Supervisor" | "Staff" | null;
 
 type ReportTile = {
-  key: "grows" | "harvested" | "income" | "electricity";
+  key: "grows" | "harvested" | "income" | "electricity" | "feeds";
   title: string;
   subtitle: string;
   borderColor: string;
@@ -65,6 +65,16 @@ const tiles: ReportTile[] = [
     iconSrc: "/img/electricity.svg",
     statUnit: "kWh",
     path: "/reports/electricity-consumption",
+  },
+  {
+    key: "feeds",
+    title: "Feeds Consumption",
+    subtitle: "Feed usage and bag history",
+    borderColor: "#f97316",
+    titleColor: "#475569",
+    iconSrc: "/img/feeds.svg",
+    statUnit: "pending",
+    path: "/reports/feeds-consumption",
   },
 ];
 
@@ -208,12 +218,13 @@ export default function ReportsMenuPage() {
       harvested: harvestedCount,
       income: incomeCount,
       electricity: electricityKwh,
+      feeds: "Setup",
     }),
     [electricityKwh, growsCount, harvestedCount, incomeCount]
   );
 
   const visibleTiles = useMemo(
-    () => tiles.filter((tile) => (tile.key !== "income" && tile.key !== "electricity") || isAdmin),
+    () => tiles.filter((tile) => (tile.key !== "income" && tile.key !== "electricity" && tile.key !== "feeds") || isAdmin),
     [isAdmin]
   );
 
@@ -279,7 +290,7 @@ export default function ReportsMenuPage() {
                 onClick={() => tile.path && navigate(tile.path)}
                 className={[
                   "w-full rounded-sm border bg-white text-left shadow-sm p-2.5 overflow-hidden md:rounded-lg md:p-4",
-                  tile.key === "income" || tile.key === "electricity" ? "col-span-2 md:col-span-12" : "md:col-span-6",
+                  tile.key === "income" || tile.key === "electricity" || tile.key === "feeds" ? "col-span-2 md:col-span-12" : "md:col-span-6",
                   tile.path ? "cursor-pointer hover:shadow-md" : "cursor-default",
                 ].join(" ")}
                 style={{ borderColor: tile.borderColor, borderWidth: 1.5 }}

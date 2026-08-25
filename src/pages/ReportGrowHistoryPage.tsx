@@ -584,7 +584,7 @@ export default function ReportGrowHistoryPage() {
               <div className="mb-4 flex items-end justify-between gap-2">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active Grow History</div>
-                  <div className="text-lg font-bold text-slate-900">Daily Inventory Logs</div>
+                  <div className="text-lg font-bold text-slate-900">Daily Inventory Timeline</div>
                 </div>
                 <Button
                   icon={<MdOutlinePictureAsPdf size={18} />}
@@ -656,14 +656,70 @@ export default function ReportGrowHistoryPage() {
                 </div>
               )}
 
-              <Table
-                dataSource={growHistory}
-                columns={growHistoryColumns}
-                rowKey="id"
-                pagination={{ pageSize: 8, showSizeChanger: true }}
-                size="middle"
-                locale={{ emptyText: "No grow logs found for this grow." }}
-              />
+              {isMobile ? (
+                growHistory.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
+                    No daily inventory logs found for this active grow.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {growHistory.map((row) => {
+                      const reductions =
+                        toNonNegativeInt(row.mortality) +
+                        toNonNegativeInt(row.thinning) +
+                        toNonNegativeInt(row.take_out);
+
+                      return (
+                        <div key={row.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Log Date</div>
+                              <div className="text-[13px] font-semibold text-slate-900">
+                                {dayjs(row.created_at).format("MMM D, YYYY h:mm A")}
+                              </div>
+                            </div>
+                            <div className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
+                              {toNonNegativeInt(row.actual_total_animals).toLocaleString()} birds
+                            </div>
+                          </div>
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            <div className="rounded-md bg-slate-50 px-2 py-2">
+                              <div className="text-[9px] uppercase tracking-wide text-slate-500">Mortality</div>
+                              <div className="mt-1 text-sm font-bold text-slate-900">
+                                {toNonNegativeInt(row.mortality).toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="rounded-md bg-slate-50 px-2 py-2">
+                              <div className="text-[9px] uppercase tracking-wide text-slate-500">Thinning</div>
+                              <div className="mt-1 text-sm font-bold text-slate-900">
+                                {toNonNegativeInt(row.thinning).toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="rounded-md bg-amber-50 px-2 py-2">
+                              <div className="text-[9px] uppercase tracking-wide text-amber-700">Take Out</div>
+                              <div className="mt-1 text-sm font-bold text-amber-800">
+                                {toNonNegativeInt(row.take_out).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-2 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 text-right text-[11px] font-semibold text-slate-700">
+                            Total reductions: {reductions.toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : (
+                <Table
+                  dataSource={growHistory}
+                  columns={growHistoryColumns}
+                  rowKey="id"
+                  pagination={{ pageSize: 8, showSizeChanger: true }}
+                  size="middle"
+                  locale={{ emptyText: "No daily inventory logs found for this active grow." }}
+                />
+              )}
             </Card>
 
           </div>

@@ -368,7 +368,7 @@ export default function GrowsReportPage() {
   }, [dateRange]);
 
   const latestHarvestDate = useMemo(() => {
-    if (reportRows.length === 0) return "No harvest records";
+    if (reportRows.length === 0) return "No active grow records";
     return dayjs(reportRows[0].createdAt).format("MMMM D, YYYY");
   }, [reportRows]);
 

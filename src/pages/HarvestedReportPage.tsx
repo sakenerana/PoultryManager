@@ -271,13 +271,11 @@ export default function HarvestedReportPage() {
 
       setIsLoading(true);
       try {
-        // Build query for completed harvested batches
+        // Filter completed batches client-side so this page stays aligned with the Reports menu count.
         let query = supabase
           .from(GROWS_TABLE)
           .select("id, building_id, created_at, total_animals, status, is_harvested")
-          .eq("building_id", selectedBuildingId)
-          .eq("status", "Harvested")
-          .eq("is_harvested", true);
+          .eq("building_id", selectedBuildingId);
 
         // Apply date range filter if provided (using created_at only)
         if (dateRange && dateRange[0] && dateRange[1]) {
@@ -290,7 +288,10 @@ export default function HarvestedReportPage() {
 
         if (growError) throw growError;
         
-        const harvestedGrows = (growRows ?? []) as HarvestedGrow[];
+        const harvestedGrows = ((growRows ?? []) as HarvestedGrow[]).filter((grow) => {
+          const status = String(grow.status ?? "").trim().toLowerCase();
+          return grow.is_harvested === true || status === "harvested";
+        });
         
         if (harvestedGrows.length === 0) {
           setReportRows([]);

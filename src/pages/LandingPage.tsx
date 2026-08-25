@@ -18,6 +18,7 @@ type TileKey =
     | "harvest"
     | "reports"
     | "electricity"
+    | "feeds"
     | "userAccess"
     | "settings"
     | "signOut";
@@ -97,6 +98,22 @@ const tiles: Tile[] = [
         ),
         largeText: "Electricity Consumption",
         link: "/electricity-consumption",
+    },
+    {
+        key: "feeds",
+        title: "Feeds Consumption",
+        subtitle: "Feed usage records and history",
+        accent: "text-[#008822]",
+        borderColor: "#f97316",
+        icon: (
+            <img
+                src="/img/feeds.svg"
+                alt="Feeds Consumption"
+                className="h-10 w-10"
+            />
+        ),
+        largeText: "Feeds Consumption",
+        link: "/reports/feeds-consumption",
     },
     {
         key: "userAccess",
@@ -278,8 +295,8 @@ export default function LandingPage() {
 
     const visibleTiles = useMemo(() => {
         if (role === "Admin") return tiles;
-        if (role === "Supervisor") return tiles.filter((tile) => tile.key !== "electricity");
-        return tiles.filter((tile) => tile.key !== "userAccess" && tile.key !== "electricity");
+        if (role === "Supervisor") return tiles.filter((tile) => tile.key !== "electricity" && tile.key !== "feeds");
+        return tiles.filter((tile) => tile.key !== "userAccess" && tile.key !== "electricity" && tile.key !== "feeds");
     }, [role]);
 
     const isTileDisabled = (tile: Tile): boolean => role === "Staff" && tile.key === "harvest";
@@ -302,6 +319,7 @@ export default function LandingPage() {
             harvest: `${dashboardStats.harvestedBatches.toLocaleString()} batches`,
             reports: `${dashboardStats.activeGrows.toLocaleString()} active / ${dashboardStats.harvestedBatches.toLocaleString()} harvested`,
             electricity: `${dashboardStats.electricityKwh.toLocaleString()} kWh`,
+            feeds: "Setup",
             userAccess: role ? role : "Access",
             settings: "Ready",
             signOut: "Secure exit",
@@ -476,7 +494,7 @@ export default function LandingPage() {
                             <div className="mt-2.5">
                                 <div
                                     className={[
-                                        tile.key === "electricity" || tile.key === "signOut"
+                                        tile.key === "electricity" || tile.key === "feeds" || tile.key === "signOut"
                                             ? "text-[16px] leading-tight sm:text-[26px]"
                                             : "text-[19px] leading-tight sm:text-[28px]",
                                         "font-bold tracking-tight",
