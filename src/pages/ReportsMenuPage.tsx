@@ -10,6 +10,7 @@ import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+const FEEDS_TABLE = import.meta.env.VITE_SUPABASE_FEEDS_CONSUMPTION_TABLE ?? "FeedsConsumption";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 type UserRole = "Admin" | "Supervisor" | "Staff" | null;
@@ -69,14 +70,15 @@ const tiles: ReportTile[] = [
   {
     key: "feeds",
     title: "Feeds Consumption",
-    subtitle: "Feed usage and bag history",
+    subtitle: "Filtered feed usage and PDF export",
     borderColor: "#f97316",
     titleColor: "#475569",
     iconSrc: "/img/feeds.svg",
-    statUnit: "pending",
+    statUnit: "records",
     path: "/reports/feeds-consumption",
   },
 ];
+const hiddenReportKeys = new Set<ReportTile["key"]>(["income"]);
 
 export default function ReportsMenuPage() {
   const navigate = useNavigate();
@@ -87,6 +89,7 @@ export default function ReportsMenuPage() {
   const [harvestedCount, setHarvestedCount] = useState(0);
   const [incomeCount, setIncomeCount] = useState(0);
   const [electricityKwh, setElectricityKwh] = useState(0);
+  const [feedRecordsCount, setFeedRecordsCount] = useState(0);
   const isAdmin = userRole === "Admin";
 
   useEffect(() => {
@@ -212,19 +215,43 @@ export default function ReportsMenuPage() {
     };
   }, [isAdmin]);
 
+  useEffect(() => {
+    let alive = true;
+
+    const loadFeedRecordsCount = async () => {
+      if (!isAdmin) {
+        setFeedRecordsCount(0);
+        return;
+      }
+
+      const { count, error } = await supabase.from(FEEDS_TABLE).select("id", { count: "exact", head: true });
+
+      if (!alive) return;
+      if (!error) setFeedRecordsCount(count ?? 0);
+    };
+
+    void loadFeedRecordsCount();
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin]);
+
   const statByTile = useMemo(
     () => ({
       grows: growsCount,
       harvested: harvestedCount,
       income: incomeCount,
       electricity: electricityKwh,
-      feeds: "Setup",
+      feeds: feedRecordsCount,
     }),
-    [electricityKwh, growsCount, harvestedCount, incomeCount]
+    [electricityKwh, feedRecordsCount, growsCount, harvestedCount, incomeCount]
   );
 
   const visibleTiles = useMemo(
-    () => tiles.filter((tile) => (tile.key !== "income" && tile.key !== "electricity" && tile.key !== "feeds") || isAdmin),
+    () =>
+      tiles.filter(
+        (tile) => !hiddenReportKeys.has(tile.key) && ((tile.key !== "electricity" && tile.key !== "feeds") || isAdmin)
+      ),
     [isAdmin]
   );
 

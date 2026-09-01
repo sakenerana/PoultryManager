@@ -113,7 +113,7 @@ const tiles: Tile[] = [
             />
         ),
         largeText: "Feeds Consumption",
-        link: "/reports/feeds-consumption",
+        link: "/feeds-consumption",
     },
     {
         key: "userAccess",

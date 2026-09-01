@@ -18,6 +18,10 @@ import IncomeSummaryFormPage from "./pages/IncomeSummaryFormPage";
 import ElectricityConsumptionPage from "./pages/ElectricityConsumptionPage";
 import ElectricityConsumptionFormPage from "./pages/ElectricityConsumptionFormPage";
 import ElectricityConsumptionReportPage from "./pages/ElectricityConsumptionReportPage";
+import FeedsConsumptionPage from "./pages/FeedsConsumptionPage";
+import FeedsConsumptionBuildingMenuPage from "./pages/FeedsConsumptionBuildingMenuPage";
+import FeedsConsumptionBuildingPage from "./pages/FeedsConsumptionBuildingPage";
+import FeedsConsumptionMovementPage from "./pages/FeedsConsumptionMovementPage";
 import FeedsConsumptionReportPage from "./pages/FeedsConsumptionReportPage";
 import HarvestBuildingPage from "./pages/HarvestBuildingPage";
 import HarvestTruckPage from "./pages/HarvestTruckPage";
@@ -67,6 +71,10 @@ function App() {
               <Route path="/electricity-consumption" element={<ElectricityConsumptionPage />} />
               <Route path="/electricity-consumption/building/:buildingId" element={<ElectricityConsumptionFormPage />} />
               <Route path="/electricity-consumption/grow/:growId" element={<ElectricityConsumptionFormPage />} />
+              <Route path="/feeds-consumption" element={<FeedsConsumptionPage />} />
+              <Route path="/feeds-consumption/building/:buildingId" element={<FeedsConsumptionBuildingMenuPage />} />
+              <Route path="/feeds-consumption/building/:buildingId/daily" element={<FeedsConsumptionBuildingPage />} />
+              <Route path="/feeds-consumption/building/:buildingId/:section" element={<FeedsConsumptionMovementPage />} />
             </Route>
             <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
             <Route path="/reports/harvested/grow/:id/history" element={<HarvestedReportHistoryPage />} />
