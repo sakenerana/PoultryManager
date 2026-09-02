@@ -1,7 +1,8 @@
-import { Button, DatePicker, Divider, Form, Grid, Input, InputNumber, Layout, Modal, Select, Typography } from "antd";
+import { Button, DatePicker, Divider, Form, Grid, Input, InputNumber, Layout, Modal, Popconfirm, Segmented, Select, Typography } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FaSignOutAlt } from "react-icons/fa";
+import { FiTrash2 } from "react-icons/fi";
 import { IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
@@ -65,6 +66,8 @@ type FeedDayRow = {
   entry: FeedEntryRecord | null;
 };
 
+type FeedStatusFilter = "all" | "recorded" | "pending";
+
 type FeedEntryFormValues = {
   growId: number;
   ageDay: number;
@@ -114,6 +117,8 @@ export default function FeedsConsumptionBuildingPage() {
   const [activeFeedDay, setActiveFeedDay] = useState<FeedDayRow | null>(null);
   const [isFeedModalOpen, setIsFeedModalOpen] = useState(false);
   const [isSavingFeedEntry, setIsSavingFeedEntry] = useState(false);
+  const [deletingFeedEntryId, setDeletingFeedEntryId] = useState<number | null>(null);
+  const [feedStatusFilter, setFeedStatusFilter] = useState<FeedStatusFilter>("all");
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [feedForm] = Form.useForm<FeedEntryFormValues>();
@@ -174,20 +179,41 @@ export default function FeedsConsumptionBuildingPage() {
     });
   }, [feedEntryByDay, selectedGrowForDays?.createdAt]);
 
+  const filteredFeedDayRows = useMemo(() => {
+    if (feedStatusFilter === "recorded") return feedDayRows.filter((row) => row.entry != null);
+    if (feedStatusFilter === "pending") return feedDayRows.filter((row) => row.entry == null);
+    return feedDayRows;
+  }, [feedDayRows, feedStatusFilter]);
+
   const feedDayGroups = useMemo(() => {
     const groups = new Map<number, FeedDayRow[]>();
-    feedDayRows.forEach((row) => {
+    filteredFeedDayRows.forEach((row) => {
       const current = groups.get(row.weekNumber) ?? [];
       current.push(row);
       groups.set(row.weekNumber, current);
     });
-    return Array.from(groups.entries()).map(([weekNumber, days]) => ({ weekNumber, days }));
-  }, [feedDayRows]);
+    return Array.from(groups.entries()).map(([weekNumber, days]) => {
+      const firstDay = days[0]?.ageDay ?? (weekNumber - 1) * 7 + 1;
+      const lastDay = days[days.length - 1]?.ageDay ?? weekNumber * 7;
+      return {
+        weekNumber,
+        days,
+        firstDay,
+        lastDay,
+        recordedDays: days.filter((row) => row.entry != null).length,
+        totalBags: days.reduce((sum, row) => sum + toNumber(row.entry?.feedQuantityBags), 0),
+        totalKg: days.reduce((sum, row) => sum + toNumber(row.entry?.feedQuantityKg), 0),
+        totalDead: days.reduce((sum, row) => sum + toNumber(row.entry?.mortalityDead), 0),
+        totalCulling: days.reduce((sum, row) => sum + toNumber(row.entry?.mortalityCulling), 0),
+      };
+    });
+  }, [filteredFeedDayRows]);
 
   const recordedFeedDays = useMemo(
     () => feedDayRows.filter((row) => row.entry != null).length,
     [feedDayRows]
   );
+  const pendingFeedDays = feedDayRows.length - recordedFeedDays;
 
   const loadRows = useCallback(async (active = true) => {
     try {
@@ -460,6 +486,23 @@ export default function FeedsConsumptionBuildingPage() {
     }
   };
 
+  const handleDeleteFeedEntry = async (entry: FeedEntryRecord) => {
+    try {
+      setDeletingFeedEntryId(entry.id);
+      const { error } = await supabase.from(FEEDS_TABLE).delete().eq("id", entry.id);
+      if (error) throw error;
+
+      setToastMessage(`Day ${entry.ageDay ?? ""} feed entry deleted.`);
+      setIsToastOpen(true);
+      await loadRows();
+    } catch (error) {
+      setToastMessage(`Failed to delete feed entry: ${getErrorMessage(error)}`);
+      setIsToastOpen(true);
+    } finally {
+      setDeletingFeedEntryId(null);
+    }
+  };
+
   return (
     <Layout className="min-h-screen bg-slate-100">
       <Header
@@ -556,31 +599,82 @@ export default function FeedsConsumptionBuildingPage() {
                 </div>
               </div>
 
+              <div className="mt-3 flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 md:flex-row md:items-center md:justify-between">
+                <Segmented
+                  size={isMobile ? "small" : "middle"}
+                  value={feedStatusFilter}
+                  onChange={(value) => setFeedStatusFilter(value as FeedStatusFilter)}
+                  options={[
+                    { label: `All ${feedDayRows.length.toLocaleString()}`, value: "all" },
+                    { label: `Recorded ${recordedFeedDays.toLocaleString()}`, value: "recorded" },
+                    { label: `Pending ${pendingFeedDays.toLocaleString()}`, value: "pending" },
+                  ]}
+                />
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Showing {filteredFeedDayRows.length.toLocaleString()} days
+                </div>
+              </div>
+
               {selectedGrowForDays ? (
                 <div className="mt-3 space-y-4">
-                  {feedDayGroups.map((group) => (
-                    <div key={group.weekNumber}>
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                          Days {(group.weekNumber - 1) * 7 + 1}-{Math.min(group.weekNumber * 7, feedDayRows.length)}
+                  {feedDayGroups.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-8 text-center text-sm text-slate-500">
+                      No {feedStatusFilter === "all" ? "feed usage" : feedStatusFilter} days to show.
+                    </div>
+                  ) : (
+                    feedDayGroups.map((group) => (
+                      <div key={group.weekNumber}>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Days {group.firstDay === group.lastDay ? group.firstDay : `${group.firstDay}-${group.lastDay}`}
+                          </div>
+                          <div className="text-[11px] text-slate-400">Week {group.weekNumber}</div>
                         </div>
-                        <div className="text-[11px] text-slate-400">Week {group.weekNumber}</div>
-                      </div>
-                      <div className="space-y-2">
-                        {group.days.map((dayRow) => {
+                        <div className="mb-2 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs md:grid-cols-5">
+                          <div>
+                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Recorded</div>
+                            <div className="mt-1 font-bold text-slate-900">{group.recordedDays.toLocaleString()} / {group.days.length}</div>
+                          </div>
+                          <div>
+                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Bags</div>
+                            <div className="mt-1 font-bold text-slate-900">{group.totalBags.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                          </div>
+                          <div>
+                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">KG</div>
+                            <div className="mt-1 font-bold text-slate-900">{group.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                          </div>
+                          <div>
+                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Dead</div>
+                            <div className="mt-1 font-bold text-slate-900">{group.totalDead.toLocaleString()}</div>
+                          </div>
+                          <div>
+                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Culling</div>
+                            <div className="mt-1 font-bold text-slate-900">{group.totalCulling.toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {group.days.map((dayRow) => {
                           const entry = dayRow.entry;
                           const hasEntry = entry != null;
                           return (
-                            <button
+                            <div
                               key={dayRow.ageDay}
-                              type="button"
+                              role="button"
+                              tabIndex={0}
                               className={[
+                                "group",
                                 "w-full rounded-lg border p-3 text-left shadow-sm transition",
                                 hasEntry
                                   ? "border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50"
                                   : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30",
                               ].join(" ")}
                               onClick={() => handleOpenFeedModal(dayRow)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  handleOpenFeedModal(dayRow);
+                                }
+                              }}
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -603,12 +697,38 @@ export default function FeedsConsumptionBuildingPage() {
                                   <div className="text-[10px] text-slate-500">remain</div>
                                 </div>
                               </div>
-                            </button>
+                              {entry && (
+                                <div className="mt-3 flex justify-end">
+                                  <Popconfirm
+                                    title={`Delete Day ${dayRow.ageDay} feed entry?`}
+                                    description="This will return the day to Pending."
+                                    okText="Delete"
+                                    okButtonProps={{ danger: true, loading: deletingFeedEntryId === entry.id }}
+                                    onConfirm={(event) => {
+                                      event?.stopPropagation();
+                                      return handleDeleteFeedEntry(entry);
+                                    }}
+                                    onCancel={(event) => event?.stopPropagation()}
+                                  >
+                                    <Button
+                                      size="small"
+                                      danger
+                                      icon={<FiTrash2 size={13} />}
+                                      loading={deletingFeedEntryId === entry.id}
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      Delete
+                                    </Button>
+                                  </Popconfirm>
+                                </div>
+                              )}
+                            </div>
                           );
-                        })}
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               ) : (
                 <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500">
