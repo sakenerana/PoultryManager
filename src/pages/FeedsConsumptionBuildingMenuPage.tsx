@@ -211,6 +211,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
   const netAvailableBags = summary
     ? summary.receivedBags + summary.transferInBags - summary.usedBags - summary.transferOutBags
     : 0;
+  const selectedGrow = growOptions.find((grow) => grow.id === selectedGrowId) ?? null;
 
   const menuCards = [
     {
@@ -332,6 +333,11 @@ export default function FeedsConsumptionBuildingMenuPage() {
                     #{grow.id} {grow.isHarvested ? "Harvested" : grow.status}
                   </Tag>
                 ))}
+              </div>
+            )}
+            {selectedGrow?.isHarvested && (
+              <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+                <span className="font-semibold">Historical grow selected.</span> New entries will be saved to Grow #{selectedGrow.id}, not the current active batch.
               </div>
             )}
           </div>

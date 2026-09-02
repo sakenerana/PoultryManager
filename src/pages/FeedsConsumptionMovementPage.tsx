@@ -113,6 +113,8 @@ export default function FeedsConsumptionMovementPage() {
   const safeBuildingId = Number.isFinite(parsedBuildingId) ? parsedBuildingId : null;
   const [buildingName, setBuildingName] = useState("Building");
   const [growId, setGrowId] = useState<number | null>(null);
+  const [growStatus, setGrowStatus] = useState("Unknown");
+  const [isGrowHarvested, setIsGrowHarvested] = useState(false);
   const [rows, setRows] = useState<MovementRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
@@ -138,7 +140,7 @@ export default function FeedsConsumptionMovementPage() {
           supabase.from(BUILDINGS_TABLE).select("id, name").eq("id", safeBuildingId).maybeSingle(),
           supabase
             .from(GROWS_TABLE)
-            .select("id")
+            .select("id, status, is_harvested")
             .eq("building_id", safeBuildingId)
             .order("created_at", { ascending: false })
             .limit(20),
@@ -155,12 +157,14 @@ export default function FeedsConsumptionMovementPage() {
         if (movementResult.error) throw movementResult.error;
 
         const building = buildingResult.data as { name: string | null } | null;
-        const growRows = (growResult.data ?? []) as Array<{ id: number | null }>;
+        const growRows = (growResult.data ?? []) as Array<{ id: number | null; status: string | null; is_harvested: boolean | null }>;
         const requestedGrowId = Number(searchParams.get("growId"));
         const safeRequestedGrowId = Number.isFinite(requestedGrowId) ? requestedGrowId : null;
         const grow = growRows.find((row) => row.id === safeRequestedGrowId) ?? growRows[0] ?? null;
         setBuildingName(building?.name ?? `Building ${safeBuildingId}`);
         setGrowId(grow?.id ?? null);
+        setGrowStatus(grow?.status ?? "Unknown");
+        setIsGrowHarvested(grow?.is_harvested === true || String(grow?.status ?? "").toLowerCase() === "harvested");
 
         const mapped = ((movementResult.data ?? []) as unknown as Array<{
           id: number | null;
@@ -446,10 +450,17 @@ export default function FeedsConsumptionMovementPage() {
             </div>
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.16em]">
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {growId ? `#${growId}` : "-"}</div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{isGrowHarvested ? "Harvested history" : growStatus}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{rows.length.toLocaleString()} records</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{totalBags.toLocaleString(undefined, { maximumFractionDigits: 2 })} bags</div>
             </div>
           </div>
+
+          {isGrowHarvested && growId != null && (
+            <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900 shadow-sm">
+              <span className="font-semibold">Historical grow selected.</span> Entries on this page will be saved to Grow #{growId}, not the current active batch.
+            </div>
+          )}
 
           <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-3">

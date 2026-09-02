@@ -664,6 +664,12 @@ export default function FeedsConsumptionBuildingPage() {
             </div>
           </div>
 
+          {selectedGrowForDays?.isHarvested && (
+            <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900 shadow-sm">
+              <span className="font-semibold">Historical grow selected.</span> Entries on this page will be saved to Grow #{selectedGrowForDays.id}, not the current active batch.
+            </div>
+          )}
+
           {isLoading ? (
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-8 text-center text-sm text-slate-500 shadow-sm">
               Loading feed usage days...

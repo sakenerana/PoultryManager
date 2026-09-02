@@ -491,6 +491,25 @@ export default function FeedsConsumptionReportPage() {
     usageSummaryRows.length > 0;
   const hasActiveSecondaryFilters = selectedGrowId !== "all" || growStatusFilter !== "all" || dateRange !== null;
 
+  const reportHistorySummary = useMemo(() => {
+    const growIds = [
+      ...feedRows.map((row) => row.grow_id),
+      ...receivedRows.map((row) => row.grow_id),
+      ...transferInRows.map((row) => row.grow_id),
+      ...transferOutRows.map((row) => row.grow_id),
+      ...usageSummaryRows.map((row) => row.grow_id),
+    ];
+
+    return growIds.reduce(
+      (totals, growId) => {
+        if (isGrowHarvested(growById.get(growId))) totals.historical += 1;
+        else totals.active += 1;
+        return totals;
+      },
+      { active: 0, historical: 0 }
+    );
+  }, [feedRows, growById, receivedRows, transferInRows, transferOutRows, usageSummaryRows]);
+
   const feedCodeSummaryRows = useMemo(
     () =>
       Object.entries(summary.byFeedCode)
@@ -736,9 +755,15 @@ export default function FeedsConsumptionReportPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.text(pdfFilterContext, 14, 21);
+      doc.setFontSize(7);
+      doc.text(
+        `Grow status rows: ${formatNumber(reportHistorySummary.active)} active | ${formatNumber(reportHistorySummary.historical)} historical`,
+        14,
+        26
+      );
 
       autoTable(doc, {
-        startY: 28,
+        startY: 32,
         theme: "grid",
         head: [["Grow", "Status", "Age", "Date", "Code", "Bags", "KG", "Cum Feed", "Dead", "Culling", "Remain", "Remarks"]],
         body: feedRows.map((row) => [
@@ -1108,6 +1133,9 @@ export default function FeedsConsumptionReportPage() {
                   <span className="font-semibold">Current filter</span>
                   <span className="mt-1 block md:mt-0">
                     {selectedBuildingName} | {growStatusLabel} | {selectedGrowLabel} | {dateRangeLabel}
+                  </span>
+                  <span className="mt-1 block text-[11px] text-emerald-800">
+                    Rows: {reportHistorySummary.active.toLocaleString()} active | {reportHistorySummary.historical.toLocaleString()} historical
                   </span>
                 </div>
                 <Button

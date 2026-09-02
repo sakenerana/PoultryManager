@@ -25,6 +25,9 @@ type FeedSetupRow = {
   latestGrowId: number | null;
   createdAt: string;
   totalBirds: number;
+  growCount: number;
+  activeGrowCount: number;
+  harvestedGrowCount: number;
   feedRecords: number;
   totalKg: number;
   totalBags: number;
@@ -39,7 +42,7 @@ const formatDate = (value: string): string => {
 
 const statusColor = (status: string, isHarvested: boolean): string => {
   const normalized = status.toLowerCase();
-  if (isHarvested || normalized === "harvested") return "orange";
+  if (isHarvested || normalized === "harvested" || normalized === "history only") return "orange";
   if (normalized === "growing") return "green";
   if (normalized === "loading") return "blue";
   if (normalized === "ready") return "default";
@@ -71,7 +74,7 @@ export default function FeedsConsumptionPage() {
     () => [
       { title: "Building", dataIndex: "name", key: "name", width: 160 },
       {
-        title: "Latest Grow",
+        title: "Current Grow",
         dataIndex: "latestGrowId",
         key: "latestGrowId",
         width: 120,
@@ -85,7 +88,15 @@ export default function FeedsConsumptionPage() {
         render: (value: string) => formatDate(value),
       },
       {
-        title: "Records",
+        title: "Historical Grows",
+        dataIndex: "harvestedGrowCount",
+        key: "harvestedGrowCount",
+        width: 140,
+        align: "right",
+        render: (value: number) => value.toLocaleString(),
+      },
+      {
+        title: "Feed Records",
         dataIndex: "feedRecords",
         key: "feedRecords",
         width: 110,
@@ -166,6 +177,7 @@ export default function FeedsConsumptionPage() {
           number,
           { id: number; createdAt: string; totalBirds: number; status: string; isHarvested: boolean }
         >();
+        const growCountsByBuildingId = new Map<number, { total: number; active: number; harvested: number }>();
 
         ((growRows ?? []) as Array<{
           id: number | null;
@@ -176,13 +188,20 @@ export default function FeedsConsumptionPage() {
           is_harvested: boolean | null;
         }>).forEach((row) => {
           if (row.id == null || row.building_id == null) return;
-          if (latestGrowByBuildingId.has(row.building_id)) return;
+          const currentCounts = growCountsByBuildingId.get(row.building_id) ?? { total: 0, active: 0, harvested: 0 };
+          const isHarvested = row.is_harvested === true || String(row.status ?? "").toLowerCase() === "harvested";
+          currentCounts.total += 1;
+          if (isHarvested) currentCounts.harvested += 1;
+          else currentCounts.active += 1;
+          growCountsByBuildingId.set(row.building_id, currentCounts);
+
+          if (isHarvested || latestGrowByBuildingId.has(row.building_id)) return;
           latestGrowByBuildingId.set(row.building_id, {
             id: row.id,
             createdAt: row.created_at ?? "",
             totalBirds: Math.max(0, Math.floor(toNumber(row.total_animals))),
             status: row.status ?? "Ready",
-            isHarvested: row.is_harvested === true,
+            isHarvested,
           });
         });
 
@@ -202,6 +221,7 @@ export default function FeedsConsumptionPage() {
 
         const mapped = buildings.map<FeedSetupRow>((building) => {
           const latestGrow = latestGrowByBuildingId.get(building.id);
+          const growCounts = growCountsByBuildingId.get(building.id) ?? { total: 0, active: 0, harvested: 0 };
           const feedTotals = feedTotalsByBuildingId.get(building.id) ?? { records: 0, bags: 0, kg: 0 };
           const name = building.name ?? `Building ${building.id}`;
           return {
@@ -211,11 +231,14 @@ export default function FeedsConsumptionPage() {
             latestGrowId: latestGrow?.id ?? null,
             createdAt: latestGrow?.createdAt ?? "",
             totalBirds: latestGrow?.totalBirds ?? 0,
+            growCount: growCounts.total,
+            activeGrowCount: growCounts.active,
+            harvestedGrowCount: growCounts.harvested,
             feedRecords: feedTotals.records,
             totalKg: feedTotals.kg,
             totalBags: feedTotals.bags,
-            status: latestGrow?.status ?? "Ready",
-            isHarvested: latestGrow?.isHarvested ?? false,
+            status: latestGrow?.status ?? (growCounts.harvested > 0 ? "History only" : "Ready"),
+            isHarvested: latestGrow?.isHarvested ?? growCounts.harvested > 0,
           };
         });
 
@@ -275,7 +298,7 @@ export default function FeedsConsumptionPage() {
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">Feeds Setup</div>
                 <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a building</div>
-                <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">Click a building to choose daily usage, received feed, transfer in, or transfer out.</div>
+                <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">Click a building to choose current or historical feed records.</div>
               </div>
               <Button icon={<MdOutlinePictureAsPdf size={17} />} className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20" onClick={() => navigate("/reports/feeds-consumption")}>
                 Open Report
@@ -291,7 +314,7 @@ export default function FeedsConsumptionPage() {
 
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-2 text-sm font-semibold text-slate-700">Buildings</div>
-            <div className="mb-2 text-xs text-slate-500">Select a building to encode daily usage, received feed, transfer in, or transfer out.</div>
+            <div className="mb-2 text-xs text-slate-500">Select a building, then choose the active or harvested grow batch to encode.</div>
             {isMobile ? (
               <div className="space-y-2">
                 {mobilePagedRows.map((record) => (
@@ -300,7 +323,7 @@ export default function FeedsConsumptionPage() {
                       <div>
                         <div className="text-xs text-slate-500">Building</div>
                         <div className="font-semibold text-slate-800">{record.name}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">Latest Grow: {record.latestGrowId == null ? "-" : `#${record.latestGrowId}`}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">Current Grow: {record.latestGrowId == null ? "-" : `#${record.latestGrowId}`}</div>
                       </div>
                       <Tag color={statusColor(record.status, record.isHarvested)} className="!mr-0">
                         {record.status || "Unknown"}
@@ -309,6 +332,8 @@ export default function FeedsConsumptionPage() {
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-slate-700">
                       <div><span className="text-slate-500">Start:</span> {formatDate(record.createdAt)}</div>
                       <div><span className="text-slate-500">Birds:</span> {record.totalBirds.toLocaleString()}</div>
+                      <div><span className="text-slate-500">Active:</span> {record.activeGrowCount.toLocaleString()}</div>
+                      <div><span className="text-slate-500">History:</span> {record.harvestedGrowCount.toLocaleString()}</div>
                       <div><span className="text-slate-500">Records:</span> {record.feedRecords.toLocaleString()}</div>
                       <div><span className="text-slate-500">KG:</span> {record.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                     </div>
@@ -342,7 +367,7 @@ export default function FeedsConsumptionPage() {
                   pageSizeOptions: ["5", "10", "20"],
                   showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} buildings`,
                 }}
-                scroll={{ x: 900 }}
+                scroll={{ x: 1040 }}
                 onRow={(record) => ({
                   onClick: () => openBuilding(record.id),
                   title: "Open feeds setup",
