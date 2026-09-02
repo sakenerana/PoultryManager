@@ -278,7 +278,7 @@ export default function FeedsConsumptionPage() {
                 <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">Click a building to choose daily usage, received feed, transfer in, or transfer out.</div>
               </div>
               <Button icon={<MdOutlinePictureAsPdf size={17} />} className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20" onClick={() => navigate("/reports/feeds-consumption")}>
-                Report
+                Open Report
               </Button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">

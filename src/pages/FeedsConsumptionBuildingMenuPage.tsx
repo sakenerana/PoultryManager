@@ -240,7 +240,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
                 className="!border-white/30 !text-white hover:!border-white hover:!text-white"
                 onClick={() => navigate("/reports/feeds-consumption")}
               >
-                Report
+                Open Report
               </Button>
             </div>
           </div>

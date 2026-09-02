@@ -8,6 +8,7 @@ import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
@@ -15,9 +16,12 @@ const BRAND = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const FEEDS_TABLE = import.meta.env.VITE_SUPABASE_FEEDS_CONSUMPTION_TABLE ?? "FeedsConsumption";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
+
+type AppRole = "Admin" | "Supervisor" | "Staff" | null;
 
 type FeedSetupRow = {
   key: string;
@@ -103,6 +107,7 @@ const getErrorMessage = (error: unknown): string => {
 export default function FeedsConsumptionBuildingPage() {
   const navigate = useNavigate();
   const { buildingId } = useParams();
+  const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -119,9 +124,11 @@ export default function FeedsConsumptionBuildingPage() {
   const [isSavingFeedEntry, setIsSavingFeedEntry] = useState(false);
   const [deletingFeedEntryId, setDeletingFeedEntryId] = useState<number | null>(null);
   const [feedStatusFilter, setFeedStatusFilter] = useState<FeedStatusFilter>("all");
+  const [userRole, setUserRole] = useState<AppRole>(null);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [feedForm] = Form.useForm<FeedEntryFormValues>();
+  const canDeleteFeedEntries = userRole === "Admin";
 
   const selectedSetupRow = useMemo(
     () => rows.find((row) => row.id === selectedBuildingId) ?? null,
@@ -372,6 +379,40 @@ export default function FeedsConsumptionBuildingPage() {
   useEffect(() => {
     let active = true;
 
+    const loadUserRole = async () => {
+      if (!user?.id) {
+        setUserRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select("role, status")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error) {
+        console.error("Failed to load feed delete access:", error.message);
+        setUserRole(null);
+        return;
+      }
+
+      const role = data?.role === "Admin" || data?.role === "Supervisor" || data?.role === "Staff" ? data.role : null;
+      setUserRole(data?.status === "Inactive" ? null : role);
+    };
+
+    void loadUserRole();
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let active = true;
+
     void loadRows(active);
     return () => {
       active = false;
@@ -487,6 +528,12 @@ export default function FeedsConsumptionBuildingPage() {
   };
 
   const handleDeleteFeedEntry = async (entry: FeedEntryRecord) => {
+    if (!canDeleteFeedEntries) {
+      setToastMessage("Only Admin users can delete feed entries.");
+      setIsToastOpen(true);
+      return;
+    }
+
     try {
       setDeletingFeedEntryId(entry.id);
       const { error } = await supabase.from(FEEDS_TABLE).delete().eq("id", entry.id);
@@ -572,7 +619,7 @@ export default function FeedsConsumptionBuildingPage() {
                   className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
                   onClick={() => navigate("/reports/feeds-consumption")}
                 >
-                  Report
+                  Open Report
                 </Button>
               </div>
             </div>
@@ -706,7 +753,7 @@ export default function FeedsConsumptionBuildingPage() {
                                   <div className="text-[10px] text-slate-500">remain</div>
                                 </div>
                               </div>
-                              {entry && (
+                              {entry && canDeleteFeedEntries && (
                                 <div className="mt-3 flex justify-end">
                                   <Popconfirm
                                     title={`Delete Day ${dayRow.ageDay} feed entry?`}

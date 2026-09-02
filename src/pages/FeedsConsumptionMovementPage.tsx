@@ -9,6 +9,7 @@ import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
@@ -18,11 +19,13 @@ const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const FEED_RECEIVED_TABLE = import.meta.env.VITE_SUPABASE_FEED_RECEIVED_TABLE ?? "FeedReceived";
 const FEED_TRANSFER_IN_TABLE = import.meta.env.VITE_SUPABASE_FEED_TRANSFER_IN_TABLE ?? "FeedTransferIn";
 const FEED_TRANSFER_OUT_TABLE = import.meta.env.VITE_SUPABASE_FEED_TRANSFER_OUT_TABLE ?? "FeedTransferOut";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
 type SectionKey = "received" | "transfer-in" | "transfer-out";
+type AppRole = "Admin" | "Supervisor" | "Staff" | null;
 
 type MovementRow = {
   key: string;
@@ -99,6 +102,7 @@ const getErrorMessage = (error: unknown): string => {
 export default function FeedsConsumptionMovementPage() {
   const navigate = useNavigate();
   const { buildingId, section } = useParams();
+  const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -114,9 +118,11 @@ export default function FeedsConsumptionMovementPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [editingRow, setEditingRow] = useState<MovementRow | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<number | null>(null);
+  const [userRole, setUserRole] = useState<AppRole>(null);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [form] = Form.useForm<MovementFormValues>();
+  const canDeleteFeedEntries = userRole === "Admin";
 
   const loadRows = useCallback(
     async (active = true) => {
@@ -184,6 +190,40 @@ export default function FeedsConsumptionMovementPage() {
     },
     [meta.dateColumn, meta.select, meta.tableName, meta.title, safeBuildingId]
   );
+
+  useEffect(() => {
+    let active = true;
+
+    const loadUserRole = async () => {
+      if (!user?.id) {
+        setUserRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select("role, status")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error) {
+        console.error("Failed to load feed delete access:", error.message);
+        setUserRole(null);
+        return;
+      }
+
+      const role = data?.role === "Admin" || data?.role === "Supervisor" || data?.role === "Staff" ? data.role : null;
+      setUserRole(data?.status === "Inactive" ? null : role);
+    };
+
+    void loadUserRole();
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -263,6 +303,12 @@ export default function FeedsConsumptionMovementPage() {
   };
 
   const deleteEntry = async (row: MovementRow) => {
+    if (!canDeleteFeedEntries) {
+      setToastMessage("Only Admin users can delete feed entries.");
+      setIsToastOpen(true);
+      return;
+    }
+
     try {
       setDeletingRowId(row.id);
       const { error } = await supabase.from(meta.tableName).delete().eq("id", row.id);
@@ -307,17 +353,19 @@ export default function FeedsConsumptionMovementPage() {
           <Button size="small" icon={<FiEdit2 size={13} />} onClick={() => openEntryModal(record)}>
             Edit
           </Button>
-          <Popconfirm
-            title={`Delete ${meta.title} entry?`}
-            description="This cannot be undone."
-            okText="Delete"
-            okButtonProps={{ danger: true, loading: deletingRowId === record.id }}
-            onConfirm={() => deleteEntry(record)}
-          >
-            <Button size="small" danger icon={<FiTrash2 size={13} />} loading={deletingRowId === record.id}>
-              Delete
-            </Button>
-          </Popconfirm>
+          {canDeleteFeedEntries && (
+            <Popconfirm
+              title={`Delete ${meta.title} entry?`}
+              description="This cannot be undone."
+              okText="Delete"
+              okButtonProps={{ danger: true, loading: deletingRowId === record.id }}
+              onConfirm={() => deleteEntry(record)}
+            >
+              <Button size="small" danger icon={<FiTrash2 size={13} />} loading={deletingRowId === record.id}>
+                Delete
+              </Button>
+            </Popconfirm>
+          )}
         </div>
       ),
     },
@@ -370,7 +418,7 @@ export default function FeedsConsumptionMovementPage() {
                   className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
                   onClick={() => navigate("/reports/feeds-consumption")}
                 >
-                  Report
+                  Open Report
                 </Button>
               </div>
             </div>
@@ -418,17 +466,19 @@ export default function FeedsConsumptionMovementPage() {
                       <Button size="small" icon={<FiEdit2 size={13} />} onClick={() => openEntryModal(row)}>
                         Edit
                       </Button>
-                      <Popconfirm
-                        title={`Delete ${meta.title} entry?`}
-                        description="This cannot be undone."
-                        okText="Delete"
-                        okButtonProps={{ danger: true, loading: deletingRowId === row.id }}
-                        onConfirm={() => deleteEntry(row)}
-                      >
-                        <Button size="small" danger icon={<FiTrash2 size={13} />} loading={deletingRowId === row.id}>
-                          Delete
-                        </Button>
-                      </Popconfirm>
+                      {canDeleteFeedEntries && (
+                        <Popconfirm
+                          title={`Delete ${meta.title} entry?`}
+                          description="This cannot be undone."
+                          okText="Delete"
+                          okButtonProps={{ danger: true, loading: deletingRowId === row.id }}
+                          onConfirm={() => deleteEntry(row)}
+                        >
+                          <Button size="small" danger icon={<FiTrash2 size={13} />} loading={deletingRowId === row.id}>
+                            Delete
+                          </Button>
+                        </Popconfirm>
+                      )}
                     </div>
                   </div>
                 ))}
