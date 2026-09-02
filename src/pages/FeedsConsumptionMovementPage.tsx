@@ -6,6 +6,7 @@ import { FaSignOutAlt } from "react-icons/fa";
 import { FiEdit2, FiTrash2 } from "react-icons/fi";
 import { IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
+import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
@@ -45,10 +46,13 @@ type MovementFormValues = {
   remarks?: string;
 };
 
-const SECTION_META: Record<SectionKey, { title: string; subtitle: string; tableName: string; dateColumn: string; select: string }> = {
+const SECTION_META: Record<SectionKey, { title: string; subtitle: string; addLabel: string; emptyTitle: string; emptyDescription: string; tableName: string; dateColumn: string; select: string }> = {
   received: {
     title: "Feed Received",
     subtitle: "Feed deliveries and document numbers.",
+    addLabel: "Add Feed Received",
+    emptyTitle: "No received feed yet.",
+    emptyDescription: "Add delivery records with document number, feed code, bags, and remarks.",
     tableName: FEED_RECEIVED_TABLE,
     dateColumn: "received_date",
     select: "id, received_date, document_no, feed_code, qty_bags, remarks",
@@ -56,6 +60,9 @@ const SECTION_META: Record<SectionKey, { title: string; subtitle: string; tableN
   "transfer-in": {
     title: "Feed Transfer In",
     subtitle: "Feed moved into this building.",
+    addLabel: "Add Transfer In",
+    emptyTitle: "No transfer in records yet.",
+    emptyDescription: "Add feed moved into this building with issue number, feed code, bags, and farm name.",
     tableName: FEED_TRANSFER_IN_TABLE,
     dateColumn: "transfer_date",
     select: "id, transfer_date, issue_no, feed_code, qty_bags, farm_name",
@@ -63,6 +70,9 @@ const SECTION_META: Record<SectionKey, { title: string; subtitle: string; tableN
   "transfer-out": {
     title: "Feed Transfer Out",
     subtitle: "Feed moved out of this building.",
+    addLabel: "Add Transfer Out",
+    emptyTitle: "No transfer out records yet.",
+    emptyDescription: "Add feed moved out of this building with issue number, feed code, bags, and farm name.",
     tableName: FEED_TRANSFER_OUT_TABLE,
     dateColumn: "transfer_date",
     select: "id, transfer_date, issue_no, feed_code, qty_bags, farm_name",
@@ -339,11 +349,31 @@ export default function FeedsConsumptionMovementPage() {
       <Content className="px-4 py-5 md:px-6">
         <div className="mx-auto w-full max-w-6xl">
           <div className="mb-5 rounded-xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-lime-700 px-5 py-6 text-white shadow-sm md:px-7">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">{buildingName}</div>
-            <Title level={isMobile ? 3 : 2} className="!m-0 !mt-2 !text-white">
-              {meta.title}
-            </Title>
-            <p className="mt-2 max-w-2xl text-sm text-white/90 md:text-base">{meta.subtitle}</p>
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">{buildingName}</div>
+                <Title level={isMobile ? 3 : 2} className="!m-0 !mt-2 !text-white">
+                  {meta.title}
+                </Title>
+                <p className="mt-2 max-w-2xl text-sm text-white/90 md:text-base">{meta.subtitle}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
+                  disabled={safeBuildingId == null}
+                  onClick={() => safeBuildingId != null && navigate(`/feeds-consumption/building/${safeBuildingId}`)}
+                >
+                  Record Types
+                </Button>
+                <Button
+                  icon={<MdOutlinePictureAsPdf size={17} />}
+                  className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
+                  onClick={() => navigate("/reports/feeds-consumption")}
+                >
+                  Report
+                </Button>
+              </div>
+            </div>
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.16em]">
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {growId ? `#${growId}` : "-"}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{rows.length.toLocaleString()} records</div>
@@ -355,15 +385,20 @@ export default function FeedsConsumptionMovementPage() {
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <div className="text-base font-semibold text-slate-900">{meta.title} List</div>
-                <div className="mt-1 text-sm text-slate-500">Records for {buildingName}.</div>
+                <div className="mt-1 text-sm text-slate-500">{buildingName} | Grow {growId ? `#${growId}` : "-"}</div>
               </div>
               <Button type="primary" disabled={growId == null} onClick={() => openEntryModal()}>
-                Add Entry
+                {meta.addLabel}
               </Button>
             </div>
             {isMobile ? (
               <div className="space-y-3">
-                {rows.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 px-3 py-8 text-center text-sm text-slate-500">No records yet.</div>}
+                {rows.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-8 text-center text-sm text-slate-500">
+                    <div className="font-semibold text-slate-700">{meta.emptyTitle}</div>
+                    <div className="mt-1">{meta.emptyDescription}</div>
+                  </div>
+                )}
                 {rows.map((row) => (
                   <div key={row.key} className="rounded-lg border border-slate-200 p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -399,7 +434,20 @@ export default function FeedsConsumptionMovementPage() {
                 ))}
               </div>
             ) : (
-              <Table<MovementRow> columns={columns} dataSource={rows} loading={isLoading} pagination={{ pageSize: 8 }} />
+              <Table<MovementRow>
+                columns={columns}
+                dataSource={rows}
+                loading={isLoading}
+                pagination={{ pageSize: 8 }}
+                locale={{
+                  emptyText: (
+                    <div className="px-3 py-8 text-center text-sm text-slate-500">
+                      <div className="font-semibold text-slate-700">{meta.emptyTitle}</div>
+                      <div className="mt-1">{meta.emptyDescription}</div>
+                    </div>
+                  ),
+                }}
+              />
             )}
           </div>
         </div>

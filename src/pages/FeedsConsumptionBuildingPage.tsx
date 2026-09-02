@@ -559,13 +559,22 @@ export default function FeedsConsumptionBuildingPage() {
                   Record daily feed usage by age day, grouped every 7 days.
                 </div>
               </div>
-              <Button
-                icon={<MdOutlinePictureAsPdf size={17} />}
-                className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
-                onClick={() => navigate("/reports/feeds-consumption")}
-              >
-                Report
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
+                  disabled={!selectedBuildingId}
+                  onClick={() => selectedBuildingId && navigate(`/feeds-consumption/building/${selectedBuildingId}`)}
+                >
+                  Record Types
+                </Button>
+                <Button
+                  icon={<MdOutlinePictureAsPdf size={17} />}
+                  className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
+                  onClick={() => navigate("/reports/feeds-consumption")}
+                >
+                  Report
+                </Button>
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {selectedGrowForDays ? `#${selectedGrowForDays.id}` : "-"}</div>
