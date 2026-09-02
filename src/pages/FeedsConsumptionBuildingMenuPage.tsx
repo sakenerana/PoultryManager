@@ -154,7 +154,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
   const menuCards = [
     {
       title: "Daily Feed Usage",
-      description: "Record feed consumption by age day.",
+      description: "Daily age-day consumption and mortality.",
       total: summary?.usedBags ?? 0,
       unit: "bags used",
       secondary: `${(summary?.usedKg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} kg | ${(summary?.feedRecords ?? 0).toLocaleString()} records`,
@@ -163,7 +163,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
     },
     {
       title: "Feed Received",
-      description: "Feed deliveries and document numbers.",
+      description: "Deliveries and document numbers.",
       total: summary?.receivedBags ?? 0,
       unit: "bags received",
       secondary: `${(summary?.receivedRecords ?? 0).toLocaleString()} records`,
@@ -220,10 +220,10 @@ export default function FeedsConsumptionBuildingMenuPage() {
               <div>
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">Feeds Setup</div>
                 <Title level={isMobile ? 3 : 2} className="!m-0 !text-white">
-                  {summary?.name ?? (isLoading ? "Loading building" : "Building not found")}
+                  Choose feed record type
                 </Title>
                 <p className="mt-2 max-w-2xl text-sm text-white/90 md:text-base">
-                  Choose which feed record section to encode for this building.
+                  {summary?.name ?? (isLoading ? "Loading building" : "Building not found")} | Select the record section to encode for this building.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.16em]">
                   <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {summary?.latestGrowId ? `#${summary.latestGrowId}` : "-"}</div>
@@ -274,6 +274,9 @@ export default function FeedsConsumptionBuildingMenuPage() {
                     <div className="text-xs text-slate-500">{card.unit}</div>
                   </div>
                   <div className="mt-2 text-xs font-medium text-slate-500">{card.secondary}</div>
+                </div>
+                <div className="mt-3 text-right text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: card.accent }}>
+                  Open
                 </div>
               </button>
             ))}
