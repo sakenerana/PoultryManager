@@ -1,4 +1,4 @@
-import { Button, Card, Col, DatePicker, Divider, Grid, Layout, Row, Segmented, Select, Statistic, Table, Tabs, Typography } from "antd";
+import { Button, Card, Col, DatePicker, Divider, Grid, Layout, Row, Segmented, Select, Statistic, Table, Tabs, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { jsPDF } from "jspdf";
@@ -37,6 +37,7 @@ type GrowOption = {
   created_at: string;
   total_animals: number;
   status: string;
+  is_harvested: boolean;
 };
 
 type FeedRow = {
@@ -88,6 +89,7 @@ type FeedUsageSummaryRow = {
 };
 
 type ReportTabKey = "usage" | "received" | "transferIn" | "transferOut" | "summary";
+type GrowStatusFilter = "all" | "growing" | "harvested";
 
 function getErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
@@ -121,6 +123,15 @@ function sanitizeFilenamePart(value: string): string {
     .trim();
 }
 
+function isGrowHarvested(grow: Pick<GrowOption, "status" | "is_harvested"> | null | undefined): boolean {
+  return grow?.is_harvested === true || String(grow?.status ?? "").toLowerCase() === "harvested";
+}
+
+function getGrowStatusLabel(grow: Pick<GrowOption, "status" | "is_harvested"> | null | undefined): string {
+  if (!grow) return "Unknown";
+  return isGrowHarvested(grow) ? "Harvested" : grow.status || "Unknown";
+}
+
 export default function FeedsConsumptionReportPage() {
   const navigate = useNavigate();
   const screens = useBreakpoint();
@@ -137,6 +148,7 @@ export default function FeedsConsumptionReportPage() {
   const [transferOutRows, setTransferOutRows] = useState<FeedTransferRow[]>([]);
   const [usageSummaryRows, setUsageSummaryRows] = useState<FeedUsageSummaryRow[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
+  const [growStatusFilter, setGrowStatusFilter] = useState<GrowStatusFilter>("all");
   const [selectedGrowId, setSelectedGrowId] = useState<number | "all">("all");
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [activeReportTab, setActiveReportTab] = useState<ReportTabKey>("usage");
@@ -184,6 +196,7 @@ export default function FeedsConsumptionReportPage() {
       if (!selectedBuildingId) {
         setGrows([]);
         setSelectedGrowId("all");
+        setGrowStatusFilter("all");
         return;
       }
 
@@ -191,7 +204,7 @@ export default function FeedsConsumptionReportPage() {
         setIsLoading(true);
         const { data, error } = await supabase
           .from(GROWS_TABLE)
-          .select("id, building_id, created_at, total_animals, status")
+          .select("id, building_id, created_at, total_animals, status, is_harvested")
           .eq("building_id", selectedBuildingId)
           .order("created_at", { ascending: false });
 
@@ -204,8 +217,9 @@ export default function FeedsConsumptionReportPage() {
           created_at: string | null;
           total_animals: number | null;
           status: string | null;
+          is_harvested: boolean | null;
         }>)
-          .filter((row): row is { id: number; building_id: number; created_at: string | null; total_animals: number | null; status: string | null } =>
+          .filter((row): row is { id: number; building_id: number; created_at: string | null; total_animals: number | null; status: string | null; is_harvested: boolean | null } =>
             row.id != null && row.building_id != null
           )
           .map((row) => ({
@@ -214,6 +228,7 @@ export default function FeedsConsumptionReportPage() {
             created_at: row.created_at ?? "",
             total_animals: Math.max(0, Math.floor(toNumber(row.total_animals))),
             status: row.status ?? "Unknown",
+            is_harvested: row.is_harvested === true,
           }));
 
         setGrows(nextGrows);
@@ -231,6 +246,18 @@ export default function FeedsConsumptionReportPage() {
       alive = false;
     };
   }, [selectedBuildingId]);
+
+  useEffect(() => {
+    if (selectedGrowId === "all") return;
+    const selected = grows.find((grow) => grow.id === selectedGrowId);
+    if (!selected) {
+      setSelectedGrowId("all");
+      return;
+    }
+
+    if (growStatusFilter === "harvested" && !isGrowHarvested(selected)) setSelectedGrowId("all");
+    if (growStatusFilter === "growing" && isGrowHarvested(selected)) setSelectedGrowId("all");
+  }, [growStatusFilter, grows, selectedGrowId]);
 
   useEffect(() => {
     let alive = true;
@@ -325,11 +352,18 @@ export default function FeedsConsumptionReportPage() {
         if (transferOutResult.error) throw transferOutResult.error;
         if (usageSummaryResult.error) throw usageSummaryResult.error;
 
-        setFeedRows((feedResult.data ?? []) as FeedRow[]);
-        setReceivedRows((receivedResult.data ?? []) as FeedReceivedRow[]);
-        setTransferInRows((transferInResult.data ?? []) as FeedTransferRow[]);
-        setTransferOutRows((transferOutResult.data ?? []) as FeedTransferRow[]);
-        setUsageSummaryRows((usageSummaryResult.data ?? []) as FeedUsageSummaryRow[]);
+        const matchesGrowStatus = (growId: number) => {
+          if (growStatusFilter === "all") return true;
+          const grow = grows.find((row) => row.id === growId);
+          if (!grow) return false;
+          return growStatusFilter === "harvested" ? isGrowHarvested(grow) : !isGrowHarvested(grow);
+        };
+
+        setFeedRows(((feedResult.data ?? []) as FeedRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
+        setReceivedRows(((receivedResult.data ?? []) as FeedReceivedRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
+        setTransferInRows(((transferInResult.data ?? []) as FeedTransferRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
+        setTransferOutRows(((transferOutResult.data ?? []) as FeedTransferRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
+        setUsageSummaryRows(((usageSummaryResult.data ?? []) as FeedUsageSummaryRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
       } catch (error) {
         setFeedRows([]);
         setReceivedRows([]);
@@ -347,7 +381,7 @@ export default function FeedsConsumptionReportPage() {
     return () => {
       alive = false;
     };
-  }, [dateRange, selectedBuildingId, selectedGrowId]);
+  }, [dateRange, growStatusFilter, grows, selectedBuildingId, selectedGrowId]);
 
   const selectedBuildingName = useMemo(
     () =>
@@ -361,20 +395,43 @@ export default function FeedsConsumptionReportPage() {
     [grows, selectedGrowId]
   );
 
+  const growById = useMemo(() => {
+    const map = new Map<number, GrowOption>();
+    grows.forEach((grow) => map.set(grow.id, grow));
+    return map;
+  }, [grows]);
+
   const buildingOptions = useMemo(
     () => buildings.map((building) => ({ value: building.id, label: building.name })),
     [buildings]
   );
 
+  const visibleGrows = useMemo(
+    () =>
+      grows.filter((grow) => {
+        if (growStatusFilter === "all") return true;
+        return growStatusFilter === "harvested" ? isGrowHarvested(grow) : !isGrowHarvested(grow);
+      }),
+    [growStatusFilter, grows]
+  );
+
   const growOptions = useMemo(
     () => [
-      { value: "all" as const, label: "All grow batches" },
-      ...grows.map((grow) => ({
+      {
+        value: "all" as const,
+        label:
+          growStatusFilter === "harvested"
+            ? "All harvested batches"
+            : growStatusFilter === "growing"
+              ? "All active batches"
+              : "All grow batches",
+      },
+      ...visibleGrows.map((grow) => ({
         value: grow.id,
-        label: `Grow #${grow.id} | ${grow.status} | ${grow.total_animals.toLocaleString()} birds`,
+        label: `Grow #${grow.id} | ${getGrowStatusLabel(grow)} | ${formatDate(grow.created_at)} | ${grow.total_animals.toLocaleString()} birds`,
       })),
     ],
-    [grows]
+    [growStatusFilter, visibleGrows]
   );
 
   const dateRangeLabel = useMemo(() => {
@@ -383,9 +440,11 @@ export default function FeedsConsumptionReportPage() {
   }, [dateRange]);
 
   const selectedGrowLabel = useMemo(
-    () => (selectedGrowId === "all" ? "All grow batches" : `Grow #${selectedGrowId}`),
-    [selectedGrowId]
+    () => (selectedGrowId === "all" ? growOptions[0]?.label ?? "All grow batches" : `Grow #${selectedGrowId} | ${getGrowStatusLabel(selectedGrow)}`),
+    [growOptions, selectedGrow, selectedGrowId]
   );
+  const growStatusLabel =
+    growStatusFilter === "harvested" ? "Harvested" : growStatusFilter === "growing" ? "Growing" : "All statuses";
 
   const summary = useMemo(() => {
     const totalBags = feedRows.reduce((sum, row) => sum + toNumber(row.feed_quantity_bags), 0);
@@ -430,7 +489,7 @@ export default function FeedsConsumptionReportPage() {
     transferInRows.length > 0 ||
     transferOutRows.length > 0 ||
     usageSummaryRows.length > 0;
-  const hasActiveSecondaryFilters = selectedGrowId !== "all" || dateRange !== null;
+  const hasActiveSecondaryFilters = selectedGrowId !== "all" || growStatusFilter !== "all" || dateRange !== null;
 
   const feedCodeSummaryRows = useMemo(
     () =>
@@ -510,6 +569,10 @@ export default function FeedsConsumptionReportPage() {
         footStyles: { fillColor: [246, 246, 246] as [number, number, number], textColor: [25, 25, 25] as [number, number, number], fontStyle: "bold" as const },
       };
       const growStartDate = selectedGrow?.created_at ? formatDate(selectedGrow.created_at) : "-";
+      const pdfGrowContext = selectedGrow
+        ? `Grow #${selectedGrow.id} (${getGrowStatusLabel(selectedGrow)})`
+        : selectedGrowLabel;
+      const pdfFilterContext = `${selectedBuildingName} | ${pdfGrowContext} | ${dateRangeLabel}`;
       const dailyRowsByAge = new Map<number, FeedRow>();
 
       for (const row of feedRows) {
@@ -598,7 +661,7 @@ export default function FeedsConsumptionReportPage() {
       drawLabelValue("CF No.", "-", 14, 25);
       drawLabelValue("Farm Name:", "GGDC", 14, 31);
       drawLabelValue("House:", selectedBuildingName, 14, 37);
-      drawLabelValue("Flock:", selectedGrowLabel, 14, 43);
+      drawLabelValue("Flock:", pdfGrowContext, 14, 43);
       drawLabelValue("DOA @ Truck:", "-", 78, 25);
       drawLabelValue("DOA @ Farm:", "-", 78, 31);
       drawLabelValue("TOTAL:", "-", 78, 37);
@@ -664,7 +727,7 @@ export default function FeedsConsumptionReportPage() {
       });
 
       doc.setFontSize(6);
-      doc.text(`Generated: ${generatedAt.format("MMM D, YYYY h:mm A")} | Filters: ${selectedBuildingName} | ${selectedGrowLabel} | ${dateRangeLabel}`, 14, 291);
+      doc.text(`Generated: ${generatedAt.format("MMM D, YYYY h:mm A")} | Filters: ${pdfFilterContext}`, 14, 291);
 
       doc.addPage();
       doc.setFont("helvetica", "bold");
@@ -672,14 +735,15 @@ export default function FeedsConsumptionReportPage() {
       doc.text("FILTERED FEED CONSUMPTION DETAIL", 14, 15);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
-      doc.text(`${selectedBuildingName} | ${selectedGrowLabel} | ${dateRangeLabel}`, 14, 21);
+      doc.text(pdfFilterContext, 14, 21);
 
       autoTable(doc, {
         startY: 28,
         theme: "grid",
-        head: [["Grow", "Age", "Date", "Code", "Bags", "KG", "Cum Feed", "Dead", "Culling", "Remain", "Remarks"]],
+        head: [["Grow", "Status", "Age", "Date", "Code", "Bags", "KG", "Cum Feed", "Dead", "Culling", "Remain", "Remarks"]],
         body: feedRows.map((row) => [
           `#${row.grow_id}`,
+          getGrowStatusLabel(growById.get(row.grow_id)),
           row.age_day == null ? "-" : String(row.age_day),
           formatDate(row.record_date),
           row.feed_code || "-",
@@ -691,7 +755,7 @@ export default function FeedsConsumptionReportPage() {
           formatNumber(row.remaining_birds),
           row.remarks || "-",
         ]),
-        foot: [["Total", "", "", "", formatNumber(summary.totalBags, 2), formatNumber(summary.totalKg, 2), "", formatNumber(summary.totalMortality), "", formatNumber(summary.latestRemain), ""]],
+        foot: [["Total", "", "", "", "", formatNumber(summary.totalBags, 2), formatNumber(summary.totalKg, 2), "", formatNumber(summary.totalMortality), "", formatNumber(summary.latestRemain), ""]],
         styles: { fontSize: 6.2, cellPadding: 1, lineWidth: 0.1, lineColor: [120, 120, 120] },
         headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
         footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
@@ -701,7 +765,7 @@ export default function FeedsConsumptionReportPage() {
       const pdfFilename = [
         "Filtered Feed Report",
         sanitizeFilenamePart(selectedBuildingName),
-        sanitizeFilenamePart(growFilenamePart),
+        sanitizeFilenamePart(`${growFilenamePart} ${growStatusLabel}`),
         generatedAt.format("MMM D YYYY"),
       ].join(" - ");
 
@@ -716,8 +780,20 @@ export default function FeedsConsumptionReportPage() {
     }
   };
 
+  const renderGrowLabel = (growId: number) => {
+    const grow = growById.get(growId);
+    return (
+      <div>
+        <div className="font-semibold text-slate-900">#{growId}</div>
+        <Tag color={isGrowHarvested(grow) ? "orange" : "green"} className="!mr-0 !mt-1">
+          {getGrowStatusLabel(grow)}
+        </Tag>
+      </div>
+    );
+  };
+
   const dailyColumns: ColumnsType<FeedRow> = [
-    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 90, render: (value: number) => `#${value}` },
+    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 115, render: renderGrowLabel },
     { title: "Age", dataIndex: "age_day", key: "age_day", width: 80, render: (value: number | null) => (value == null ? "-" : `Day ${value}`), sorter: (a, b) => toNumber(a.age_day) - toNumber(b.age_day) },
     { title: "Date", dataIndex: "record_date", key: "record_date", width: 130, render: formatDate },
     { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", width: 110, render: (value: string | null) => value || "-" },
@@ -731,7 +807,7 @@ export default function FeedsConsumptionReportPage() {
   ];
 
   const receivedColumns: ColumnsType<FeedReceivedRow> = [
-    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 90, render: (value: number) => `#${value}` },
+    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 115, render: renderGrowLabel },
     { title: "Date", dataIndex: "received_date", key: "received_date", width: 130, render: formatDate },
     { title: "Document No.", dataIndex: "document_no", key: "document_no", render: (value: string | null) => value || "-" },
     { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", width: 110, render: (value: string | null) => value || "-" },
@@ -740,7 +816,7 @@ export default function FeedsConsumptionReportPage() {
   ];
 
   const transferColumns: ColumnsType<FeedTransferRow> = [
-    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 90, render: (value: number) => `#${value}` },
+    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 115, render: renderGrowLabel },
     { title: "Date", dataIndex: "transfer_date", key: "transfer_date", width: 130, render: formatDate },
     { title: "Issue No.", dataIndex: "issue_no", key: "issue_no", render: (value: string | null) => value || "-" },
     { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", width: 110, render: (value: string | null) => value || "-" },
@@ -749,7 +825,7 @@ export default function FeedsConsumptionReportPage() {
   ];
 
   const usageSummaryColumns: ColumnsType<FeedUsageSummaryRow> = [
-    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 90, render: (value: number) => `#${value}` },
+    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 115, render: renderGrowLabel },
     { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", render: (value: string | null) => value || "-" },
     { title: "Bags", dataIndex: "bags", key: "bags", align: "right", render: (value: number | null) => formatNumber(value, 2) },
     { title: "KG", dataIndex: "kg", key: "kg", align: "right", render: (value: number | null) => formatNumber(value, 2) },
@@ -764,6 +840,9 @@ export default function FeedsConsumptionReportPage() {
               <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Feed Usage</div>
               <div className="text-lg font-bold text-emerald-700">Grow #{row.grow_id} | Day {row.age_day ?? "-"}</div>
               <div className="text-[11px] text-slate-500">{formatDate(row.record_date)}</div>
+              <Tag color={isGrowHarvested(growById.get(row.grow_id)) ? "orange" : "green"} className="!mr-0 !mt-1">
+                {getGrowStatusLabel(growById.get(row.grow_id))}
+              </Tag>
             </div>
             <div className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{row.feed_code || "No code"}</div>
           </div>
@@ -820,6 +899,9 @@ export default function FeedsConsumptionReportPage() {
               <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Feed Received</div>
               <div className="text-lg font-bold text-emerald-700">Grow #{row.grow_id}</div>
               <div className="text-[11px] text-slate-500">{formatDate(row.received_date)}</div>
+              <Tag color={isGrowHarvested(growById.get(row.grow_id)) ? "orange" : "green"} className="!mr-0 !mt-1">
+                {getGrowStatusLabel(growById.get(row.grow_id))}
+              </Tag>
             </div>
             <div className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{row.feed_code || "No code"}</div>
           </div>
@@ -856,6 +938,9 @@ export default function FeedsConsumptionReportPage() {
               <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</div>
               <div className="text-lg font-bold text-emerald-700">Grow #{row.grow_id}</div>
               <div className="text-[11px] text-slate-500">{formatDate(row.transfer_date)}</div>
+              <Tag color={isGrowHarvested(growById.get(row.grow_id)) ? "orange" : "green"} className="!mr-0 !mt-1">
+                {getGrowStatusLabel(growById.get(row.grow_id))}
+              </Tag>
             </div>
             <div className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{row.feed_code || "No code"}</div>
           </div>
@@ -949,8 +1034,8 @@ export default function FeedsConsumptionReportPage() {
                     <div className="mt-1 text-sm font-semibold text-white md:text-base">{selectedBuildingName}</div>
                   </div>
                   <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-white/70">Coverage</div>
-                    <div className="mt-1 text-sm font-semibold text-white md:text-base">{dateRangeLabel}</div>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-white/70">Grow Status</div>
+                    <div className="mt-1 text-sm font-semibold text-white md:text-base">{growStatusLabel}</div>
                   </div>
                 </div>
               </div>
@@ -958,15 +1043,29 @@ export default function FeedsConsumptionReportPage() {
 
             <div className="bg-white px-4 py-4 md:px-6 md:py-5">
               <div className={isMobile ? "space-y-3" : "grid grid-cols-12 gap-4 items-end"}>
-                <div className={isMobile ? "" : "col-span-4"}>
+                <div className={isMobile ? "" : "col-span-3"}>
                   <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Building</div>
                   <Select className="!w-full" size="large" value={selectedBuildingId ?? undefined} options={buildingOptions} onChange={(value) => setSelectedBuildingId(Number(value))} loading={isLoading && buildings.length === 0} />
                 </div>
-                <div className={isMobile ? "" : "col-span-4"}>
+                <div className={isMobile ? "" : "col-span-3"}>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Grow Status</div>
+                  <Segmented
+                    block
+                    size={isMobile ? "middle" : "large"}
+                    value={growStatusFilter}
+                    onChange={(value) => setGrowStatusFilter(value as GrowStatusFilter)}
+                    options={[
+                      { label: "All", value: "all" },
+                      { label: "Growing", value: "growing" },
+                      { label: "Harvested", value: "harvested" },
+                    ]}
+                  />
+                </div>
+                <div className={isMobile ? "" : "col-span-3"}>
                   <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Grow Batch</div>
                   <Select className="!w-full" size="large" value={selectedGrowId} options={growOptions} onChange={(value) => setSelectedGrowId(value)} placeholder="Select grow" loading={isLoading} />
                 </div>
-                <div className={isMobile ? "" : "col-span-4"}>
+                <div className={isMobile ? "" : "col-span-3"}>
                   <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Date Range</div>
                   {isMobile ? (
                     <div className="grid grid-cols-2 gap-2">
@@ -1008,7 +1107,7 @@ export default function FeedsConsumptionReportPage() {
                 <div className="min-w-0">
                   <span className="font-semibold">Current filter</span>
                   <span className="mt-1 block md:mt-0">
-                    {selectedBuildingName} | {selectedGrowLabel} | {dateRangeLabel}
+                    {selectedBuildingName} | {growStatusLabel} | {selectedGrowLabel} | {dateRangeLabel}
                   </span>
                 </div>
                 <Button
@@ -1016,6 +1115,7 @@ export default function FeedsConsumptionReportPage() {
                   size="small"
                   disabled={!hasActiveSecondaryFilters}
                   onClick={() => {
+                    setGrowStatusFilter("all");
                     setSelectedGrowId("all");
                     setDateRange(null);
                   }}
