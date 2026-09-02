@@ -206,7 +206,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className="!m-0 !text-base !text-white">
-            Feed Records
+            Feeds Setup
           </Title>
         </div>
         <Button type="text" icon={<FaSignOutAlt size={18} />} className="!text-white hover:!text-white/90" onClick={() => void signOutAndRedirect(navigate)} aria-label="Sign out" />
@@ -218,7 +218,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
           <div className="mb-5 rounded-xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-lime-700 px-5 py-6 text-white shadow-sm md:px-7">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">Feeds Consumption Setup</div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">Feeds Setup</div>
                 <Title level={isMobile ? 3 : 2} className="!m-0 !text-white">
                   {summary?.name ?? (isLoading ? "Loading building" : "Building not found")}
                 </Title>

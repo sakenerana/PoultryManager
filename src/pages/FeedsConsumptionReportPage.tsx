@@ -912,7 +912,7 @@ export default function FeedsConsumptionReportPage() {
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Title level={4} className="!m-0 !text-base !text-white md:!text-lg">
-            Feeds Consumption
+            Feeds Report
           </Title>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
@@ -937,8 +937,8 @@ export default function FeedsConsumptionReportPage() {
             <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-5 py-5 text-white md:px-7 md:py-6">
               <div className={isMobile ? "space-y-4" : "grid grid-cols-12 gap-6 items-end"}>
                 <div className={isMobile ? "" : "col-span-7"}>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">Feed Analytics</div>
-                  <div className="mt-2 text-2xl font-bold leading-tight md:text-3xl">Feeds Consumption Report</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">Reports Center</div>
+                  <div className="mt-2 text-2xl font-bold leading-tight md:text-3xl">Feeds Report</div>
                   <div className="mt-2 max-w-2xl text-sm text-emerald-50/90 md:text-base">
                     Filter feed usage by building, grow, and date range, then export the visible report to PDF.
                   </div>

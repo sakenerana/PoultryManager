@@ -119,6 +119,13 @@ export default function FeedsConsumptionPage() {
           </Tag>
         ),
       },
+      {
+        title: "",
+        key: "actionHint",
+        width: 120,
+        align: "right",
+        render: () => <span className="text-xs font-semibold text-orange-700">Open setup</span>,
+      },
     ],
     []
   );
@@ -254,7 +261,7 @@ export default function FeedsConsumptionPage() {
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className="!m-0 !text-base !text-white">
-            Feeds Consumption
+            Feeds Setup
           </Title>
         </div>
         <Button type="text" icon={<FaSignOutAlt size={18} />} className="!text-white hover:!text-white/90" onClick={() => void signOutAndRedirect(navigate)} aria-label="Sign out" />
@@ -266,7 +273,7 @@ export default function FeedsConsumptionPage() {
           <div className="mb-3 rounded-2xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-4 py-4 text-white md:mb-5 md:px-6 md:py-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">Feeds Consumption Setup</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">Feeds Setup</div>
                 <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a building</div>
                 <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">Click a building to choose daily usage, received feed, transfer in, or transfer out.</div>
               </div>
@@ -283,8 +290,8 @@ export default function FeedsConsumptionPage() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="mb-2 text-sm font-semibold text-slate-700">Building Feed Records</div>
-            <div className="mb-2 text-xs text-slate-500">All buildings with latest grow and feed record totals.</div>
+            <div className="mb-2 text-sm font-semibold text-slate-700">Buildings</div>
+            <div className="mb-2 text-xs text-slate-500">Select a building to encode daily usage, received feed, transfer in, or transfer out.</div>
             {isMobile ? (
               <div className="space-y-2">
                 {mobilePagedRows.map((record) => (
@@ -305,7 +312,7 @@ export default function FeedsConsumptionPage() {
                       <div><span className="text-slate-500">Records:</span> {record.feedRecords.toLocaleString()}</div>
                       <div><span className="text-slate-500">KG:</span> {record.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="mt-2 text-right text-[11px] font-medium text-orange-700">Tap to choose records</div>
+                    <div className="mt-2 text-right text-[11px] font-semibold text-orange-700">Open setup</div>
                   </button>
                 ))}
                 <Pagination
@@ -338,7 +345,7 @@ export default function FeedsConsumptionPage() {
                 scroll={{ x: 900 }}
                 onRow={(record) => ({
                   onClick: () => openBuilding(record.id),
-                  title: "Click to view feed usage days",
+                  title: "Open feeds setup",
                   className: "cursor-pointer hover:!bg-orange-50/60",
                 })}
               />

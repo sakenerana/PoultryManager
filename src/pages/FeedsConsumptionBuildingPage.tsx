@@ -531,7 +531,7 @@ export default function FeedsConsumptionBuildingPage() {
           />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className="!m-0 !text-base !text-white">
-            Feeds Consumption
+            Feeds Setup
           </Title>
         </div>
         <Button
@@ -550,7 +550,7 @@ export default function FeedsConsumptionBuildingPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
-                  Feeds Consumption
+                  Feeds Setup
                 </div>
                 <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">
                   {selectedSetupRow ? selectedSetupRow.name : "Daily feed usage"}
