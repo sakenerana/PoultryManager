@@ -1,4 +1,4 @@
-import { Button, Divider, Grid, Layout, Select, Tag, Typography } from "antd";
+import { Button, Divider, Empty, Grid, Layout, Select, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { FaSignOutAlt } from "react-icons/fa";
@@ -212,6 +212,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
     ? summary.receivedBags + summary.transferInBags - summary.usedBags - summary.transferOutBags
     : 0;
   const selectedGrow = growOptions.find((grow) => grow.id === selectedGrowId) ?? null;
+  const canOpenRecordSections = summary != null && selectedGrowId != null;
 
   const menuCards = [
     {
@@ -335,6 +336,19 @@ export default function FeedsConsumptionBuildingMenuPage() {
                 ))}
               </div>
             )}
+            {!isLoading && summary && growOptions.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="No grow batch is available for this building yet."
+                />
+              </div>
+            ) : null}
+            {!isLoading && !summary ? (
+              <div className="mt-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 py-4 text-sm text-amber-900">
+                Building feed setup could not be loaded.
+              </div>
+            ) : null}
             {selectedGrow?.isHarvested && (
               <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
                 <span className="font-semibold">Historical grow selected.</span> New entries will be saved to Grow #{selectedGrow.id}, not the current active batch.
@@ -349,7 +363,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
                 type="button"
                 className="rounded-lg border bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ borderColor: card.accent }}
-                disabled={!summary}
+                disabled={!canOpenRecordSections}
                 onClick={() => navigate(card.path)}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -370,7 +384,9 @@ export default function FeedsConsumptionBuildingMenuPage() {
                     <div className="text-3xl font-bold text-slate-950">{card.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                     <div className="text-xs text-slate-500">{card.unit}</div>
                   </div>
-                  <div className="mt-2 text-xs font-medium text-slate-500">{card.secondary}</div>
+                  <div className="mt-2 text-xs font-medium text-slate-500">
+                    {canOpenRecordSections ? card.secondary : "Add a grow batch before encoding feed records."}
+                  </div>
                 </div>
                 <div className="mt-3 text-right text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: card.accent }}>
                   Open {card.title}

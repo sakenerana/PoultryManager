@@ -1,4 +1,4 @@
-import { Button, Divider, Grid, Layout, Pagination, Table, Tag, Typography } from "antd";
+import { Button, Divider, Empty, Grid, Layout, Pagination, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -317,6 +317,14 @@ export default function FeedsConsumptionPage() {
             <div className="mb-2 text-xs text-slate-500">Select a building, then choose the active or harvested grow batch to encode.</div>
             {isMobile ? (
               <div className="space-y-2">
+                {rows.length === 0 && !isLoading ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6">
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No buildings are ready for feed setup yet."
+                    />
+                  </div>
+                ) : null}
                 {mobilePagedRows.map((record) => (
                   <button key={record.key} type="button" className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-orange-200 hover:bg-orange-50/40" onClick={() => openBuilding(record.id)}>
                     <div className="flex items-start justify-between gap-2">
@@ -368,6 +376,7 @@ export default function FeedsConsumptionPage() {
                   showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} buildings`,
                 }}
                 scroll={{ x: 1040 }}
+                locale={{ emptyText: "No buildings are ready for feed setup yet." }}
                 onRow={(record) => ({
                   onClick: () => openBuilding(record.id),
                   title: "Open feeds setup",
