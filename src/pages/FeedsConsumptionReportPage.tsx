@@ -786,6 +786,115 @@ export default function FeedsConsumptionReportPage() {
         footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
       });
 
+      if (receivedRows.length > 0) {
+        doc.addPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text("FILTERED FEED RECEIVED DETAIL", 14, 15);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text(pdfFilterContext, 14, 21);
+
+        autoTable(doc, {
+          startY: 28,
+          theme: "grid",
+          head: [["Grow", "Status", "Date", "Document No.", "Feed Code", "Qty Bags", "Remarks"]],
+          body: receivedRows.map((row) => [
+            `#${row.grow_id}`,
+            getGrowStatusLabel(growById.get(row.grow_id)),
+            formatDate(row.received_date),
+            row.document_no || "-",
+            row.feed_code || "-",
+            formatNumber(row.qty_bags, 2),
+            row.remarks || "-",
+          ]),
+          foot: [["Feed Received Total", "", "", "", "", formatNumber(summary.receivedBags, 2), ""]],
+          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
+          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
+          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
+        });
+      }
+
+      if (transferInRows.length > 0) {
+        doc.addPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text("FILTERED FEED TRANSFER IN DETAIL", 14, 15);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text(pdfFilterContext, 14, 21);
+        autoTable(doc, {
+          startY: 28,
+          theme: "grid",
+          head: [["Grow", "Status", "Date", "Issue No.", "Feed Code", "Qty Bags", "Farm Name"]],
+          body: transferInRows.map((row) => [
+            `#${row.grow_id}`,
+            getGrowStatusLabel(growById.get(row.grow_id)),
+            formatDate(row.transfer_date),
+            row.issue_no || "-",
+            row.feed_code || "-",
+            formatNumber(row.qty_bags, 2),
+            row.farm_name || "-",
+          ]),
+          foot: [["Transfer In Total", "", "", "", "", formatNumber(summary.transferInBags, 2), ""]],
+          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
+          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
+          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
+        });
+      }
+
+      if (transferOutRows.length > 0) {
+        doc.addPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text("FILTERED FEED TRANSFER OUT DETAIL", 14, 15);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text(pdfFilterContext, 14, 21);
+        autoTable(doc, {
+          startY: 28,
+          theme: "grid",
+          head: [["Grow", "Status", "Date", "Issue No.", "Feed Code", "Qty Bags", "Farm Name"]],
+          body: transferOutRows.map((row) => [
+            `#${row.grow_id}`,
+            getGrowStatusLabel(growById.get(row.grow_id)),
+            formatDate(row.transfer_date),
+            row.issue_no || "-",
+            row.feed_code || "-",
+            formatNumber(row.qty_bags, 2),
+            row.farm_name || "-",
+          ]),
+          foot: [["Transfer Out Total", "", "", "", "", formatNumber(summary.transferOutBags, 2), ""]],
+          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
+          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
+          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
+        });
+      }
+
+      if (feedCodeSummaryRows.length > 0) {
+        doc.addPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text("FILTERED FEED CODE SUMMARY DETAIL", 14, 15);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text(pdfFilterContext, 14, 21);
+        autoTable(doc, {
+          startY: 28,
+          theme: "grid",
+          head: [["Feed Code", "Bags", "KG"]],
+          body: feedCodeSummaryRows.map((row) => [
+            row.feedCode,
+            formatNumber(row.bags, 2),
+            formatNumber(row.kg, 2),
+          ]),
+          foot: [["Feed Code Total", formatNumber(summary.totalBags, 2), formatNumber(summary.totalKg, 2)]],
+          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
+          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
+          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
+        });
+      }
+
       const growFilenamePart = selectedGrowId === "all" ? "All Grows" : `Grow ${selectedGrowId}`;
       const pdfFilename = [
         "Filtered Feed Report",
