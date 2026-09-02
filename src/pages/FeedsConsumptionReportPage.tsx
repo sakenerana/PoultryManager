@@ -1,4 +1,4 @@
-import { Button, Card, Col, DatePicker, Divider, Grid, Layout, Row, Select, Statistic, Table, Tabs, Typography } from "antd";
+import { Button, Card, Col, DatePicker, Divider, Grid, Layout, Row, Segmented, Select, Statistic, Table, Tabs, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { jsPDF } from "jspdf";
@@ -87,6 +87,8 @@ type FeedUsageSummaryRow = {
   kg: number | null;
 };
 
+type ReportTabKey = "usage" | "received" | "transferIn" | "transferOut" | "summary";
+
 function getErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
     return error.message;
@@ -137,6 +139,7 @@ export default function FeedsConsumptionReportPage() {
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [selectedGrowId, setSelectedGrowId] = useState<number | "all">("all");
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [activeReportTab, setActiveReportTab] = useState<ReportTabKey>("usage");
   const [toastMessage, setToastMessage] = useState("");
   const [isToastOpen, setIsToastOpen] = useState(false);
 
@@ -441,6 +444,49 @@ export default function FeedsConsumptionReportPage() {
     [summary.byFeedCode]
   );
 
+  const reportSections = useMemo(
+    () => [
+      {
+        key: "usage" as const,
+        shortLabel: "Daily Usage",
+        title: "Daily Feed Usage",
+        count: feedRows.length,
+        description: "Age-day feed consumption, mortality, and remaining birds.",
+      },
+      {
+        key: "received" as const,
+        shortLabel: "Received",
+        title: "Feed Received",
+        count: receivedRows.length,
+        description: "Feed deliveries received for the selected building and grow.",
+      },
+      {
+        key: "transferIn" as const,
+        shortLabel: "Transfer In",
+        title: "Feed Transfer In",
+        count: transferInRows.length,
+        description: "Feed moved into this building or grow batch.",
+      },
+      {
+        key: "transferOut" as const,
+        shortLabel: "Transfer Out",
+        title: "Feed Transfer Out",
+        count: transferOutRows.length,
+        description: "Feed moved out from this building or grow batch.",
+      },
+      {
+        key: "summary" as const,
+        shortLabel: "Summary",
+        title: "Feed Code Summary",
+        count: feedCodeSummaryRows.length,
+        description: "Bag and kilogram totals grouped by feed code.",
+      },
+    ],
+    [feedCodeSummaryRows.length, feedRows.length, receivedRows.length, transferInRows.length, transferOutRows.length]
+  );
+
+  const activeReportSection = reportSections.find((section) => section.key === activeReportTab) ?? reportSections[0];
+
   const handlePdfClick = () => {
     if (!selectedBuildingId) {
       setToastMessage("Select a building before exporting the feed report.");
@@ -653,14 +699,14 @@ export default function FeedsConsumptionReportPage() {
 
       const growFilenamePart = selectedGrowId === "all" ? "All Grows" : `Grow ${selectedGrowId}`;
       const pdfFilename = [
-        "Feed Consumption",
+        "Filtered Feed Report",
         sanitizeFilenamePart(selectedBuildingName),
         sanitizeFilenamePart(growFilenamePart),
         generatedAt.format("MMM D YYYY"),
       ].join(" - ");
 
       doc.save(`${pdfFilename}.pdf`);
-      setToastMessage("Feed report PDF downloaded.");
+      setToastMessage("Filtered feed report PDF downloaded.");
       setIsToastOpen(true);
     } catch (error) {
       setToastMessage(`Failed to generate feed PDF: ${getErrorMessage(error)}`);
@@ -1043,20 +1089,39 @@ export default function FeedsConsumptionReportPage() {
           </Card>
 
           <Card className="!rounded-sm !border !border-slate-200 shadow-sm" styles={{ body: { padding: isMobile ? 12 : 18 } }}>
-            <div className="mb-2 flex items-center justify-between gap-3">
+            <div className={isMobile ? "mb-3 space-y-3" : "mb-3 flex items-start justify-between gap-3"}>
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Filtered Lists</div>
-                <div className="text-lg font-bold text-slate-900">Feed Consumption Report Data</div>
+                <div className="text-lg font-bold text-slate-900">{activeReportSection.title}</div>
+                <div className="mt-1 text-xs text-slate-500">{activeReportSection.description}</div>
               </div>
               <Button
                 icon={<MdOutlinePictureAsPdf size={18} />}
                 onClick={handlePdfClick}
                 loading={isExportingPdf}
                 disabled={!hasReportData}
-                title={hasReportData ? "Export all filtered feed data" : "No feed records to export"}
+                title={hasReportData ? "Export filtered feed report sections" : "No feed records to export"}
               >
-                Export All Filtered Data
+                Export Filtered PDF
               </Button>
+            </div>
+            <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
+              <div className={isMobile ? "space-y-2" : "flex items-center justify-between gap-3"}>
+                <div className={isMobile ? "overflow-x-auto pb-1" : ""}>
+                  <Segmented
+                    size={isMobile ? "small" : "middle"}
+                    value={activeReportTab}
+                    onChange={(value) => setActiveReportTab(value as ReportTabKey)}
+                    options={reportSections.map((section) => ({
+                      label: `${section.shortLabel} ${section.count.toLocaleString()}`,
+                      value: section.key,
+                    }))}
+                  />
+                </div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  PDF exports all filtered sections
+                </div>
+              </div>
             </div>
             {!isLoading && !hasReportData ? (
               <div className="mb-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900 md:text-sm">
@@ -1065,6 +1130,8 @@ export default function FeedsConsumptionReportPage() {
               </div>
             ) : null}
             <Tabs
+              activeKey={activeReportTab}
+              onChange={(key) => setActiveReportTab(key as ReportTabKey)}
               items={[
                 {
                   key: "usage",
