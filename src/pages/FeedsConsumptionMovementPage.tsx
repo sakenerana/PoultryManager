@@ -7,7 +7,7 @@ import { FiEdit2, FiTrash2 } from "react-icons/fi";
 import { IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
@@ -58,7 +58,7 @@ const SECTION_META: Record<SectionKey, { title: string; subtitle: string; addLab
     emptyDescription: "Add delivery records with document number, feed code, bags, and remarks.",
     tableName: FEED_RECEIVED_TABLE,
     dateColumn: "received_date",
-    select: "id, received_date, document_no, feed_code, qty_bags, remarks",
+    select: "id, grow_id, received_date, document_no, feed_code, qty_bags, remarks",
   },
   "transfer-in": {
     title: "Feed Transfer In",
@@ -68,7 +68,7 @@ const SECTION_META: Record<SectionKey, { title: string; subtitle: string; addLab
     emptyDescription: "Add feed moved into this building with issue number, feed code, bags, and farm name.",
     tableName: FEED_TRANSFER_IN_TABLE,
     dateColumn: "transfer_date",
-    select: "id, transfer_date, issue_no, feed_code, qty_bags, farm_name",
+    select: "id, grow_id, transfer_date, issue_no, feed_code, qty_bags, farm_name",
   },
   "transfer-out": {
     title: "Feed Transfer Out",
@@ -78,7 +78,7 @@ const SECTION_META: Record<SectionKey, { title: string; subtitle: string; addLab
     emptyDescription: "Add feed moved out of this building with issue number, feed code, bags, and farm name.",
     tableName: FEED_TRANSFER_OUT_TABLE,
     dateColumn: "transfer_date",
-    select: "id, transfer_date, issue_no, feed_code, qty_bags, farm_name",
+    select: "id, grow_id, transfer_date, issue_no, feed_code, qty_bags, farm_name",
   },
 };
 
@@ -102,6 +102,7 @@ const getErrorMessage = (error: unknown): string => {
 export default function FeedsConsumptionMovementPage() {
   const navigate = useNavigate();
   const { buildingId, section } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -140,8 +141,7 @@ export default function FeedsConsumptionMovementPage() {
             .select("id")
             .eq("building_id", safeBuildingId)
             .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
+            .limit(20),
           supabase
             .from(meta.tableName)
             .select(meta.select)
@@ -155,12 +155,16 @@ export default function FeedsConsumptionMovementPage() {
         if (movementResult.error) throw movementResult.error;
 
         const building = buildingResult.data as { name: string | null } | null;
-        const grow = growResult.data as { id: number | null } | null;
+        const growRows = (growResult.data ?? []) as Array<{ id: number | null }>;
+        const requestedGrowId = Number(searchParams.get("growId"));
+        const safeRequestedGrowId = Number.isFinite(requestedGrowId) ? requestedGrowId : null;
+        const grow = growRows.find((row) => row.id === safeRequestedGrowId) ?? growRows[0] ?? null;
         setBuildingName(building?.name ?? `Building ${safeBuildingId}`);
         setGrowId(grow?.id ?? null);
 
         const mapped = ((movementResult.data ?? []) as unknown as Array<{
           id: number | null;
+          grow_id?: number | null;
           received_date?: string | null;
           transfer_date?: string | null;
           document_no?: string | null;
@@ -169,17 +173,19 @@ export default function FeedsConsumptionMovementPage() {
           qty_bags?: number | null;
           farm_name?: string | null;
           remarks?: string | null;
-        }>).map((row, index) => ({
-          key: String(row.id ?? index),
-          id: row.id ?? 0,
-          date: row.received_date ?? row.transfer_date ?? "",
-          documentNo: row.document_no ?? null,
-          issueNo: row.issue_no ?? null,
-          feedCode: row.feed_code ?? null,
-          quantityBags: toNumber(row.qty_bags),
-          farmName: row.farm_name ?? null,
-          remarks: row.remarks ?? null,
-        }));
+        }>)
+          .filter((row) => row.grow_id === (grow?.id ?? null))
+          .map((row, index) => ({
+            key: String(row.id ?? index),
+            id: row.id ?? 0,
+            date: row.received_date ?? row.transfer_date ?? "",
+            documentNo: row.document_no ?? null,
+            issueNo: row.issue_no ?? null,
+            feedCode: row.feed_code ?? null,
+            quantityBags: toNumber(row.qty_bags),
+            farmName: row.farm_name ?? null,
+            remarks: row.remarks ?? null,
+          }));
         setRows(mapped);
       } catch (error) {
         console.error(`Failed to load ${meta.title}:`, error);
@@ -188,7 +194,7 @@ export default function FeedsConsumptionMovementPage() {
         if (active) setIsLoading(false);
       }
     },
-    [meta.dateColumn, meta.select, meta.tableName, meta.title, safeBuildingId]
+    [meta.dateColumn, meta.select, meta.tableName, meta.title, safeBuildingId, searchParams]
   );
 
   useEffect(() => {
@@ -422,7 +428,10 @@ export default function FeedsConsumptionMovementPage() {
                 <Button
                   className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
                   disabled={safeBuildingId == null}
-                  onClick={() => safeBuildingId != null && navigate(`/feeds-consumption/building/${safeBuildingId}`)}
+                  onClick={() =>
+                    safeBuildingId != null &&
+                    navigate(`/feeds-consumption/building/${safeBuildingId}${growId ? `?growId=${growId}` : ""}`)
+                  }
                 >
                   Record Types
                 </Button>

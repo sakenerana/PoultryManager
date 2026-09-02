@@ -6,7 +6,7 @@ import { FiTrash2 } from "react-icons/fi";
 import { IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
@@ -107,6 +107,7 @@ const getErrorMessage = (error: unknown): string => {
 export default function FeedsConsumptionBuildingPage() {
   const navigate = useNavigate();
   const { buildingId } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -153,8 +154,17 @@ export default function FeedsConsumptionBuildingPage() {
   );
 
   const selectedGrowForDays = useMemo(
-    () => selectedBuildingGrows.find((grow) => grow.id === selectedSetupRow?.latestGrowId) ?? selectedBuildingGrows[0] ?? null,
-    [selectedBuildingGrows, selectedSetupRow?.latestGrowId]
+    () => {
+      const requestedGrowId = Number(searchParams.get("growId"));
+      const safeRequestedGrowId = Number.isFinite(requestedGrowId) ? requestedGrowId : null;
+      return (
+        selectedBuildingGrows.find((grow) => grow.id === safeRequestedGrowId) ??
+        selectedBuildingGrows.find((grow) => grow.id === selectedSetupRow?.latestGrowId) ??
+        selectedBuildingGrows[0] ??
+        null
+      );
+    },
+    [searchParams, selectedBuildingGrows, selectedSetupRow?.latestGrowId]
   );
 
   const selectedGrowFeedEntries = useMemo(
@@ -221,6 +231,10 @@ export default function FeedsConsumptionBuildingPage() {
     [feedDayRows]
   );
   const pendingFeedDays = feedDayRows.length - recordedFeedDays;
+  const selectedGrowFeedKg = useMemo(
+    () => selectedGrowFeedEntries.reduce((sum, entry) => sum + toNumber(entry.feedQuantityKg), 0),
+    [selectedGrowFeedEntries]
+  );
 
   const loadRows = useCallback(async (active = true) => {
     try {
@@ -621,7 +635,10 @@ export default function FeedsConsumptionBuildingPage() {
                 <Button
                   className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
                   disabled={!selectedBuildingId}
-                  onClick={() => selectedBuildingId && navigate(`/feeds-consumption/building/${selectedBuildingId}`)}
+                  onClick={() =>
+                    selectedBuildingId &&
+                    navigate(`/feeds-consumption/building/${selectedBuildingId}${selectedGrowForDays ? `?growId=${selectedGrowForDays.id}` : ""}`)
+                  }
                 >
                   Record Types
                 </Button>
@@ -636,10 +653,13 @@ export default function FeedsConsumptionBuildingPage() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {selectedGrowForDays ? `#${selectedGrowForDays.id}` : "-"}</div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                {selectedGrowForDays?.isHarvested ? "Harvested history" : selectedGrowForDays?.status ?? "Current"}
+              </div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Days {feedDayRows.length.toLocaleString()}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Recorded {recordedFeedDays.toLocaleString()}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                Feed {(selectedSetupRow?.totalKg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                Feed {selectedGrowFeedKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
               </div>
             </div>
           </div>
