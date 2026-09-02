@@ -128,7 +128,7 @@ export default function FeedsConsumptionBuildingPage() {
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [feedForm] = Form.useForm<FeedEntryFormValues>();
-  const canDeleteFeedEntries = userRole === "Admin";
+  const canManageExistingFeedEntries = userRole === "Admin";
 
   const selectedSetupRow = useMemo(
     () => rows.find((row) => row.id === selectedBuildingId) ?? null,
@@ -425,6 +425,12 @@ export default function FeedsConsumptionBuildingPage() {
   }, [buildingId]);
 
   const handleOpenFeedModal = (dayRow: FeedDayRow) => {
+    if (dayRow.entry && !canManageExistingFeedEntries) {
+      setToastMessage("Only Admin users can edit feed entries.");
+      setIsToastOpen(true);
+      return;
+    }
+
     if (!selectedSetupRow) {
       setToastMessage("Select a building before adding feed entry.");
       setIsToastOpen(true);
@@ -489,6 +495,11 @@ export default function FeedsConsumptionBuildingPage() {
 
   const handleSaveFeedEntry = async () => {
     if (!selectedSetupRow) return;
+    if (activeFeedDay?.entry && !canManageExistingFeedEntries) {
+      setToastMessage("Only Admin users can edit feed entries.");
+      setIsToastOpen(true);
+      return;
+    }
 
     try {
       setIsSavingFeedEntry(true);
@@ -528,7 +539,7 @@ export default function FeedsConsumptionBuildingPage() {
   };
 
   const handleDeleteFeedEntry = async (entry: FeedEntryRecord) => {
-    if (!canDeleteFeedEntries) {
+    if (!canManageExistingFeedEntries) {
       setToastMessage("Only Admin users can delete feed entries.");
       setIsToastOpen(true);
       return;
@@ -753,7 +764,7 @@ export default function FeedsConsumptionBuildingPage() {
                                   <div className="text-[10px] text-slate-500">remain</div>
                                 </div>
                               </div>
-                              {entry && canDeleteFeedEntries && (
+                              {entry && canManageExistingFeedEntries && (
                                 <div className="mt-3 flex justify-end">
                                   <Popconfirm
                                     title={`Delete Day ${dayRow.ageDay} feed entry?`}

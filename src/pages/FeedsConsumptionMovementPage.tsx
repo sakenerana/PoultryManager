@@ -122,7 +122,7 @@ export default function FeedsConsumptionMovementPage() {
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [form] = Form.useForm<MovementFormValues>();
-  const canDeleteFeedEntries = userRole === "Admin";
+  const canManageExistingFeedEntries = userRole === "Admin";
 
   const loadRows = useCallback(
     async (active = true) => {
@@ -235,6 +235,12 @@ export default function FeedsConsumptionMovementPage() {
   }, [loadRows]);
 
   const openEntryModal = (row?: MovementRow) => {
+    if (row && !canManageExistingFeedEntries) {
+      setToastMessage("Only Admin users can edit feed entries.");
+      setIsToastOpen(true);
+      return;
+    }
+
     if (safeBuildingId == null || growId == null) {
       setToastMessage("This building needs a grow batch before adding feed records.");
       setIsToastOpen(true);
@@ -256,6 +262,11 @@ export default function FeedsConsumptionMovementPage() {
 
   const saveEntry = async () => {
     if (safeBuildingId == null || growId == null) return;
+    if (editingRow && !canManageExistingFeedEntries) {
+      setToastMessage("Only Admin users can edit feed entries.");
+      setIsToastOpen(true);
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -303,7 +314,7 @@ export default function FeedsConsumptionMovementPage() {
   };
 
   const deleteEntry = async (row: MovementRow) => {
-    if (!canDeleteFeedEntries) {
+    if (!canManageExistingFeedEntries) {
       setToastMessage("Only Admin users can delete feed entries.");
       setIsToastOpen(true);
       return;
@@ -344,31 +355,33 @@ export default function FeedsConsumptionMovementPage() {
     ...(sectionKey === "received"
       ? [{ title: "Remarks", dataIndex: "remarks", key: "remarks", render: (value: string | null) => value || "-" }]
       : [{ title: "Farm Name", dataIndex: "farmName", key: "farmName", render: (value: string | null) => value || "-" }]),
-    {
-      title: "Actions",
-      key: "actions",
-      width: 150,
-      render: (_, record) => (
-        <div className="flex justify-end gap-2">
-          <Button size="small" icon={<FiEdit2 size={13} />} onClick={() => openEntryModal(record)}>
-            Edit
-          </Button>
-          {canDeleteFeedEntries && (
-            <Popconfirm
-              title={`Delete ${meta.title} entry?`}
-              description="This cannot be undone."
-              okText="Delete"
-              okButtonProps={{ danger: true, loading: deletingRowId === record.id }}
-              onConfirm={() => deleteEntry(record)}
-            >
-              <Button size="small" danger icon={<FiTrash2 size={13} />} loading={deletingRowId === record.id}>
-                Delete
-              </Button>
-            </Popconfirm>
-          )}
-        </div>
-      ),
-    },
+    ...(canManageExistingFeedEntries
+      ? [
+          {
+            title: "Actions",
+            key: "actions",
+            width: 150,
+            render: (_: unknown, record: MovementRow) => (
+              <div className="flex justify-end gap-2">
+                <Button size="small" icon={<FiEdit2 size={13} />} onClick={() => openEntryModal(record)}>
+                  Edit
+                </Button>
+                <Popconfirm
+                  title={`Delete ${meta.title} entry?`}
+                  description="This cannot be undone."
+                  okText="Delete"
+                  okButtonProps={{ danger: true, loading: deletingRowId === record.id }}
+                  onConfirm={() => deleteEntry(record)}
+                >
+                  <Button size="small" danger icon={<FiTrash2 size={13} />} loading={deletingRowId === record.id}>
+                    Delete
+                  </Button>
+                </Popconfirm>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -462,11 +475,11 @@ export default function FeedsConsumptionMovementPage() {
                     <div className="mt-2 text-xs text-slate-500">
                       {sectionKey === "received" ? row.documentNo || row.remarks || "No reference" : row.issueNo || row.farmName || "No reference"}
                     </div>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <Button size="small" icon={<FiEdit2 size={13} />} onClick={() => openEntryModal(row)}>
-                        Edit
-                      </Button>
-                      {canDeleteFeedEntries && (
+                    {canManageExistingFeedEntries && (
+                      <div className="mt-3 flex justify-end gap-2">
+                        <Button size="small" icon={<FiEdit2 size={13} />} onClick={() => openEntryModal(row)}>
+                          Edit
+                        </Button>
                         <Popconfirm
                           title={`Delete ${meta.title} entry?`}
                           description="This cannot be undone."
@@ -478,8 +491,8 @@ export default function FeedsConsumptionMovementPage() {
                             Delete
                           </Button>
                         </Popconfirm>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
