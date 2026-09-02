@@ -135,7 +135,7 @@ export default function FeedsConsumptionPage() {
         key: "actionHint",
         width: 120,
         align: "right",
-        render: () => <span className="text-xs font-semibold text-orange-700">Open setup</span>,
+        render: () => <span className="text-xs font-semibold text-orange-700">Open feed setup</span>,
       },
     ],
     []
@@ -337,7 +337,7 @@ export default function FeedsConsumptionPage() {
                       <div><span className="text-slate-500">Records:</span> {record.feedRecords.toLocaleString()}</div>
                       <div><span className="text-slate-500">KG:</span> {record.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="mt-2 text-right text-[11px] font-semibold text-orange-700">Open setup</div>
+                    <div className="mt-2 text-right text-[11px] font-semibold text-orange-700">Open feed setup</div>
                   </button>
                 ))}
                 <Pagination

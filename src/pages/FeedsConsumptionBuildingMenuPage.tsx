@@ -373,7 +373,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
                   <div className="mt-2 text-xs font-medium text-slate-500">{card.secondary}</div>
                 </div>
                 <div className="mt-3 text-right text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: card.accent }}>
-                  Open
+                  Open {card.title}
                 </div>
               </button>
             ))}
