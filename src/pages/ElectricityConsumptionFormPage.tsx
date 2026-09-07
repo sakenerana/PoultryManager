@@ -63,7 +63,22 @@ const formatNumber = (value: number | null | undefined, fractionDigits = 0): str
   });
 };
 
-const displayDay = (day: number): number => day + 1;
+const isLoadingDay = (day: number): boolean => day === 0;
+const displayDay = (day: number): number => day;
+const displayDayLabel = (day: number): string => (isLoadingDay(day) ? "Loading Day" : `Day ${displayDay(day)}`);
+const displayDayDetail = (day: number): string => (isLoadingDay(day) ? "Day 0 baseline" : `Day ${displayDay(day)}`);
+const getPreviousMeterReading = (day: number, sourceEntries: ElectricityEntry[]): number | null => {
+  return sourceEntries.find((entry) => entry.day === day - 1)?.meterReading ?? null;
+};
+const getCalculatedConsumption = (entry: ElectricityEntry, sourceEntries: ElectricityEntry[]): number | null => {
+  if (isLoadingDay(entry.day)) return null;
+  if (entry.consumption != null) return entry.consumption;
+  const previousMeterReading = getPreviousMeterReading(entry.day, sourceEntries);
+  if (entry.meterReading != null && previousMeterReading != null) {
+    return Math.max(0, Number(entry.meterReading) - Number(previousMeterReading));
+  }
+  return null;
+};
 
 export default function ElectricityConsumptionFormPage() {
   const navigate = useNavigate();
@@ -83,7 +98,7 @@ export default function ElectricityConsumptionFormPage() {
   const [userRole, setUserRole] = useState<AppRole>(null);
 
   const totalConsumption = useMemo(
-    () => entries.reduce((sum, entry) => sum + (entry.consumption ?? 0), 0),
+    () => entries.reduce((sum, entry) => sum + (getCalculatedConsumption(entry, entries) ?? 0), 0),
     [entries]
   );
   const electricitySummary = useMemo(() => {
@@ -91,7 +106,8 @@ export default function ElectricityConsumptionFormPage() {
       (entry) => entry.id != null || entry.meterReading != null || entry.consumption != null || entry.remarks.trim()
     );
     const daysLogged = loggedEntries.length;
-    const averageKwh = daysLogged > 0 ? totalConsumption / daysLogged : 0;
+    const consumptionDays = loggedEntries.filter((entry) => !isLoadingDay(entry.day) && getCalculatedConsumption(entry, entries) != null);
+    const averageKwh = consumptionDays.length > 0 ? totalConsumption / consumptionDays.length : 0;
     const latestEntry = [...loggedEntries]
       .filter((entry) => dayjs(entry.date).isValid())
       .sort((a, b) => dayjs(b.date).unix() - dayjs(a.date).unix())[0];
@@ -286,7 +302,9 @@ export default function ElectricityConsumptionFormPage() {
         const next = { ...entry, ...patch };
         if ("meterReading" in patch && !("consumption" in patch)) {
           const previous = current.find((item) => item.day === day - 1);
-          if (patch.meterReading != null && previous?.meterReading != null) {
+          if (isLoadingDay(day)) {
+            next.consumption = null;
+          } else if (patch.meterReading != null && previous?.meterReading != null) {
             next.consumption = Math.max(0, Number(patch.meterReading) - Number(previous.meterReading));
           }
         }
@@ -301,7 +319,9 @@ export default function ElectricityConsumptionFormPage() {
       const next = { ...current, ...patch };
       if ("meterReading" in patch && !("consumption" in patch)) {
         const previous = entries.find((item) => item.day === current.day - 1);
-        if (patch.meterReading != null && previous?.meterReading != null) {
+        if (isLoadingDay(current.day)) {
+          next.consumption = null;
+        } else if (patch.meterReading != null && previous?.meterReading != null) {
           next.consumption = Math.max(0, Number(patch.meterReading) - Number(previous.meterReading));
         }
       }
@@ -320,12 +340,14 @@ export default function ElectricityConsumptionFormPage() {
 
     try {
       setSavingDay(entry.day);
+      const draftEntries = entries.map((current) => (current.day === entry.day ? entry : current));
+      const calculatedConsumption = getCalculatedConsumption(entry, draftEntries);
       const payload = {
         grow_id: resolvedGrowId,
         date: entry.date,
         day: entry.day,
         meter_reading: entry.meterReading,
-        consumption: entry.consumption,
+        consumption: calculatedConsumption,
         remarks: entry.remarks.trim() || null,
       };
 
@@ -338,11 +360,11 @@ export default function ElectricityConsumptionFormPage() {
       updateEntry(entry.day, {
         id: data?.id ? Number(data.id) : entry.id,
         meterReading: entry.meterReading,
-        consumption: entry.consumption,
+        consumption: calculatedConsumption,
         remarks: entry.remarks,
       });
       setActiveEntry(null);
-      setToastMessage(`Saved electricity consumption for Day ${displayDay(entry.day)}.`);
+      setToastMessage(`Saved electricity consumption for ${displayDayLabel(entry.day)}.`);
       setIsToastOpen(true);
     } catch (error) {
       setToastMessage(`Save failed: ${getErrorMessage(error)}`);
@@ -386,12 +408,13 @@ export default function ElectricityConsumptionFormPage() {
       autoTable(doc, {
         startY: 53,
         theme: "grid",
-        head: [["Day", "Date", "Meter Reading", "Consumption", "Remarks"]],
+        head: [["Day", "Date", "Previous / Start", "Current / End", "Consumption", "Remarks"]],
         body: entries.map((entry) => [
-          `Day ${displayDay(entry.day)}`,
+          displayDayLabel(entry.day),
           dayjs(entry.date).format("MMM D, YYYY"),
+          isLoadingDay(entry.day) ? "-" : formatNumber(getPreviousMeterReading(entry.day, entries), 2),
           formatNumber(entry.meterReading, 2),
-          `${formatNumber(entry.consumption, 2)} kWh`,
+          isLoadingDay(entry.day) ? "-" : `${formatNumber(getCalculatedConsumption(entry, entries), 2)} kWh`,
           entry.remarks.trim() || "-",
         ]),
         headStyles: {
@@ -406,11 +429,12 @@ export default function ElectricityConsumptionFormPage() {
           lineWidth: 0.1,
         },
         columnStyles: {
-          0: { cellWidth: 18 },
-          1: { cellWidth: 34 },
-          2: { cellWidth: 34, halign: "right" },
-          3: { cellWidth: 32, halign: "right" },
-          4: { cellWidth: 64 },
+          0: { cellWidth: 24 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 30, halign: "right" },
+          3: { cellWidth: 30, halign: "right" },
+          4: { cellWidth: 30, halign: "right" },
+          5: { cellWidth: 38 },
         },
         didDrawPage: (data) => {
           doc.setFontSize(8);
@@ -522,48 +546,59 @@ export default function ElectricityConsumptionFormPage() {
                 {growInfo ? `No readings have been saved yet for ${growInfo.buildingName}.` : "No electricity history is available yet."}
               </div>
             ) : null}
-            {entries.map((entry) => (
-              <button
-                key={entry.day}
-                type="button"
-                className="w-full rounded-sm border border-emerald-100 bg-white p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40"
-                onClick={() => {
-                  if (entry.id && !canEditExistingElectricityEntries) {
-                    setToastMessage("Only Admin users can edit saved electricity readings.");
-                    setIsToastOpen(true);
-                    return;
-                  }
-                  setActiveEntry(entry);
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-cyan-500" />
-                      <div className="text-sm font-semibold text-slate-900">Day {displayDay(entry.day)}</div>
+            {entries.map((entry) => {
+              const previousMeterReading = getPreviousMeterReading(entry.day, entries);
+              const calculatedConsumption = getCalculatedConsumption(entry, entries);
+              return (
+                <button
+                  key={entry.day}
+                  type="button"
+                  className="w-full rounded-sm border border-emerald-100 bg-white p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40"
+                  onClick={() => {
+                    if (entry.id && !canEditExistingElectricityEntries) {
+                      setToastMessage("Only Admin users can edit saved electricity readings.");
+                      setIsToastOpen(true);
+                      return;
+                    }
+                    setActiveEntry(entry);
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-cyan-500" />
+                        <div className="text-sm font-semibold text-slate-900">{displayDayLabel(entry.day)}</div>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">{dayjs(entry.date).format("MMMM D, YYYY")}</div>
+                      <div className="mt-0.5 text-[10px] text-slate-400">
+                        {displayDayDetail(entry.day)} | Active Grow {growInfo?.id == null ? "-" : `#${growInfo.id}`}
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs text-slate-500">{dayjs(entry.date).format("MMMM D, YYYY")}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">
-                      Active Grow {growInfo?.id == null ? "-" : `#${growInfo.id}`}
+                    <div className="text-right">
+                      <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">Consumption</div>
+                      <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(calculatedConsumption, 2)}</div>
+                      <div className="mt-1 text-[10px] text-slate-400">kWh</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">Consumption</div>
-                    <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(entry.consumption, 2)}</div>
-                    <div className="mt-1 text-[10px] text-slate-400">kWh</div>
+                  {isLoadingDay(entry.day) ? (
+                    <div className="mt-2 text-[11px] text-slate-500">
+                      Baseline Reading: {formatNumber(entry.meterReading, 2)}
+                    </div>
+                  ) : (
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-500">
+                      <span>Previous: {formatNumber(previousMeterReading, 2)}</span>
+                      <span>Current: {formatNumber(entry.meterReading, 2)}</span>
+                    </div>
+                  )}
+                  <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="line-clamp-2 text-slate-500">Remarks: {entry.remarks.trim() || "-"}</span>
+                    <span className="shrink-0 font-medium text-emerald-700">
+                      {entry.id ? (canEditExistingElectricityEntries ? "Tap to edit" : "Saved") : "Tap to add reading"}
+                    </span>
                   </div>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                  <span>Meter Reading: {formatNumber(entry.meterReading, 2)}</span>
-                  <span className="font-medium text-emerald-700">
-                    {entry.id ? (canEditExistingElectricityEntries ? "Tap to edit" : "Saved") : "Tap to add reading"}
-                  </span>
-                </div>
-                <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                  Remarks: {entry.remarks.trim() || "-"}
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
       </Content>
@@ -577,23 +612,45 @@ export default function ElectricityConsumptionFormPage() {
         className="electricity-consumption-drawer"
         bodyStyle={{ padding: 16, backgroundColor: "#f8fafc" }}
       >
-        {activeEntry ? (
+        {activeEntry ? (() => {
+          const activeEntries = entries.map((entry) => (entry.day === activeEntry.day ? activeEntry : entry));
+          const activePreviousMeterReading = getPreviousMeterReading(activeEntry.day, activeEntries);
+          const activeConsumption = getCalculatedConsumption(activeEntry, activeEntries);
+          return (
           <div>
             <div className="rounded-sm border border-emerald-100 bg-white p-4 shadow-sm">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                 {growInfo?.buildingName ?? "Grow"}
               </div>
-              <div className="mt-1 text-lg font-bold text-slate-900">Day {displayDay(activeEntry.day)}</div>
+              <div className="mt-1 text-lg font-bold text-slate-900">{displayDayLabel(activeEntry.day)}</div>
               <div className="mt-1 text-xs text-slate-500">{dayjs(activeEntry.date).format("MMMM D, YYYY")}</div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">
+                    {isLoadingDay(activeEntry.day) ? "Start" : "Previous"}
+                  </div>
+                  <div className="mt-1 font-semibold text-slate-900">
+                    {isLoadingDay(activeEntry.day) ? "-" : formatNumber(activePreviousMeterReading, 2)}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">
+                    {isLoadingDay(activeEntry.day) ? "Baseline" : "Current"}
+                  </div>
+                  <div className="mt-1 font-semibold text-slate-900">{formatNumber(activeEntry.meterReading, 2)}</div>
+                </div>
+              </div>
               <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-right">
                 <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">Consumption</div>
-                <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(activeEntry.consumption, 2)}</div>
+                <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(activeConsumption, 2)}</div>
                 <div className="mt-1 text-[10px] text-slate-400">kWh</div>
               </div>
             </div>
 
             <div className="mt-3 rounded-sm border border-emerald-100 bg-white p-4 shadow-sm">
-              <div className="mb-1 text-[11px] font-medium text-slate-500">Meter Reading</div>
+              <div className="mb-1 text-[11px] font-medium text-slate-500">
+                {isLoadingDay(activeEntry.day) ? "Baseline Meter Reading" : "Current Meter Reading"}
+              </div>
               <InputNumber
                 min={0}
                 value={activeEntry.meterReading}
@@ -604,14 +661,17 @@ export default function ElectricityConsumptionFormPage() {
                 styles={{ input: { fontSize: 16 } }}
               />
 
-              <div className="mb-1 mt-3 text-[11px] font-medium text-slate-500">Consumption</div>
+              <div className="mb-1 mt-3 text-[11px] font-medium text-slate-500">
+                {isLoadingDay(activeEntry.day) ? "Consumption" : "Calculated Consumption"}
+              </div>
               <InputNumber
                 min={0}
-                value={activeEntry.consumption}
+                value={activeConsumption}
                 onChange={(value) => updateActiveEntry({ consumption: toNumberOrNull(value) })}
                 className="!w-full"
                 controls={false}
                 placeholder="0"
+                disabled={isLoadingDay(activeEntry.day)}
                 styles={{ input: { fontSize: 16 } }}
               />
 
@@ -636,7 +696,8 @@ export default function ElectricityConsumptionFormPage() {
               </Button>
             </div>
           </div>
-        ) : null}
+          );
+        })() : null}
       </Drawer>
 
       <NotificationToast
