@@ -397,8 +397,8 @@ export default function ElectricityConsumptionFormPage() {
       const generatedAt = dayjs();
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text("Electricity History", 14, 16);
+      doc.setFontSize(14);
+      doc.text("Daily Electricity Consumption Monitoring - Broiler Farm", 14, 16);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
@@ -418,15 +418,20 @@ export default function ElectricityConsumptionFormPage() {
       autoTable(doc, {
         startY: 53,
         theme: "grid",
-        head: [["Day", "Date", "Previous / Start", "Current / End", "Consumption", "Remarks"]],
-        body: entries.map((entry) => [
-          displayDayLabel(entry.day),
-          dayjs(entry.date).format("MMM D, YYYY"),
-          isLoadingDay(entry.day) ? "-" : formatNumber(getPreviousMeterReading(entry.day, entries), 2),
-          formatNumber(entry.meterReading, 2),
-          isLoadingDay(entry.day) ? "-" : `${formatNumber(getCalculatedConsumption(entry, entries), 2)} kWh`,
-          entry.remarks.trim() || "-",
-        ]),
+        head: [["Date", "Day No", "Time", "Previous / Start", "Current / End", "Electricity Consumption", "Remarks"]],
+        body: entries.map((entry) => {
+          const previousMeterReading = getPreviousMeterReading(entry.day, entries);
+          const calculatedConsumption = getCalculatedConsumption(entry, entries);
+          return [
+            dayjs(entry.date).format("M/D/YYYY"),
+            isLoadingDay(entry.day) ? "LOADING" : `DAY ${displayDay(entry.day)}`,
+            "-",
+            isLoadingDay(entry.day) ? "-" : formatNumber(previousMeterReading, 2),
+            formatNumber(entry.meterReading, 2),
+            isLoadingDay(entry.day) ? "-" : formatNumber(calculatedConsumption, 2),
+            entry.remarks.trim() || "-",
+          ];
+        }),
         headStyles: {
           fillColor: [0, 136, 34],
           textColor: [255, 255, 255],
@@ -439,12 +444,13 @@ export default function ElectricityConsumptionFormPage() {
           lineWidth: 0.1,
         },
         columnStyles: {
-          0: { cellWidth: 24 },
-          1: { cellWidth: 30 },
-          2: { cellWidth: 30, halign: "right" },
-          3: { cellWidth: 30, halign: "right" },
-          4: { cellWidth: 30, halign: "right" },
-          5: { cellWidth: 38 },
+          0: { cellWidth: 23 },
+          1: { cellWidth: 22, halign: "center" },
+          2: { cellWidth: 18, halign: "center" },
+          3: { cellWidth: 26, halign: "right" },
+          4: { cellWidth: 26, halign: "right" },
+          5: { cellWidth: 32, halign: "right" },
+          6: { cellWidth: 35 },
         },
         didDrawPage: (data) => {
           doc.setFontSize(8);
