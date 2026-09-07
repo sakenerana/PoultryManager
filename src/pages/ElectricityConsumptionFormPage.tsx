@@ -1,4 +1,4 @@
-import { Button, Divider, Drawer, Grid, Input, InputNumber, Layout, Typography } from "antd";
+import { Button, Checkbox, Divider, Drawer, Grid, Input, InputNumber, Layout, Typography } from "antd";
 import dayjs from "dayjs";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -19,6 +19,7 @@ const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const ELECTRICITY_TABLE = import.meta.env.VITE_SUPABASE_ELECTRICITY_CONSUMPTION_TABLE ?? "ElectricityConsumption";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+const METER_RESET_NOTE = "[Meter reset/replaced]";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
@@ -78,6 +79,15 @@ const getCalculatedConsumption = (entry: ElectricityEntry, sourceEntries: Electr
     return Math.max(0, Number(entry.meterReading) - Number(previousMeterReading));
   }
   return null;
+};
+const hasMeterReadingDrop = (entry: ElectricityEntry, sourceEntries: ElectricityEntry[]): boolean => {
+  const previousMeterReading = getPreviousMeterReading(entry.day, sourceEntries);
+  return !isLoadingDay(entry.day) && entry.meterReading != null && previousMeterReading != null && entry.meterReading < previousMeterReading;
+};
+const hasMeterResetNote = (remarks: string): boolean => remarks.includes(METER_RESET_NOTE);
+const setMeterResetNote = (remarks: string, checked: boolean): string => {
+  const withoutNote = remarks.replace(METER_RESET_NOTE, "").replace(/\s{2,}/g, " ").trim();
+  return checked ? [METER_RESET_NOTE, withoutNote].filter(Boolean).join(" ") : withoutNote;
 };
 
 export default function ElectricityConsumptionFormPage() {
@@ -549,6 +559,8 @@ export default function ElectricityConsumptionFormPage() {
             {entries.map((entry) => {
               const previousMeterReading = getPreviousMeterReading(entry.day, entries);
               const calculatedConsumption = getCalculatedConsumption(entry, entries);
+              const meterReadingDropped = hasMeterReadingDrop(entry, entries);
+              const meterResetNoted = hasMeterResetNote(entry.remarks);
               return (
                 <button
                   key={entry.day}
@@ -590,6 +602,16 @@ export default function ElectricityConsumptionFormPage() {
                       <span>Current: {formatNumber(entry.meterReading, 2)}</span>
                     </div>
                   )}
+                  {meterReadingDropped ? (
+                    <div className={[
+                      "mt-2 rounded-md border px-2.5 py-2 text-[11px] font-medium",
+                      meterResetNoted ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800",
+                    ].join(" ")}>
+                      {meterResetNoted
+                        ? "Meter reset/replaced noted. Manual consumption can be used for this day."
+                        : "Current reading is lower than previous. Check the meter reading or mark meter reset/replaced."}
+                    </div>
+                  ) : null}
                   <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
                     <span className="line-clamp-2 text-slate-500">Remarks: {entry.remarks.trim() || "-"}</span>
                     <span className="shrink-0 font-medium text-emerald-700">
@@ -616,6 +638,8 @@ export default function ElectricityConsumptionFormPage() {
           const activeEntries = entries.map((entry) => (entry.day === activeEntry.day ? activeEntry : entry));
           const activePreviousMeterReading = getPreviousMeterReading(activeEntry.day, activeEntries);
           const activeConsumption = getCalculatedConsumption(activeEntry, activeEntries);
+          const activeMeterReadingDropped = hasMeterReadingDrop(activeEntry, activeEntries);
+          const activeMeterResetNoted = hasMeterResetNote(activeEntry.remarks);
           return (
           <div>
             <div className="rounded-sm border border-emerald-100 bg-white p-4 shadow-sm">
@@ -645,6 +669,16 @@ export default function ElectricityConsumptionFormPage() {
                 <div className="text-2xl font-bold leading-none text-slate-900">{formatNumber(activeConsumption, 2)}</div>
                 <div className="mt-1 text-[10px] text-slate-400">kWh</div>
               </div>
+              {activeMeterReadingDropped ? (
+                <div className={[
+                  "mt-3 rounded-md border px-3 py-2 text-xs font-medium",
+                  activeMeterResetNoted ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800",
+                ].join(" ")}>
+                  {activeMeterResetNoted
+                    ? "Meter reset/replaced noted. Manual consumption can be used for this day."
+                    : "Current reading is lower than previous. Check the meter reading or mark meter reset/replaced."}
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-3 rounded-sm border border-emerald-100 bg-white p-4 shadow-sm">
@@ -674,6 +708,16 @@ export default function ElectricityConsumptionFormPage() {
                 disabled={isLoadingDay(activeEntry.day)}
                 styles={{ input: { fontSize: 16 } }}
               />
+
+              {!isLoadingDay(activeEntry.day) && activeMeterReadingDropped ? (
+                <Checkbox
+                  className="mt-3 !text-sm !text-slate-700"
+                  checked={activeMeterResetNoted}
+                  onChange={(event) => updateActiveEntry({ remarks: setMeterResetNote(activeEntry.remarks, event.target.checked) })}
+                >
+                  Meter reset / replaced
+                </Checkbox>
+              ) : null}
 
               <div className="mb-1 mt-3 text-[11px] font-medium text-slate-500">Remarks</div>
               <Input.TextArea
