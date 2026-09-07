@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { FaSignOutAlt } from "react-icons/fa";
 import { IoHome } from "react-icons/io5";
 import { IoMdArrowRoundBack } from "react-icons/io";
-import { useNavigate } from "react-router-dom";
+import { MdOutlineBolt, MdOutlineConstruction, MdOutlinePictureAsPdf } from "react-icons/md";
+import { useLocation, useNavigate } from "react-router-dom";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
@@ -46,6 +47,7 @@ const statusColor = (status: string, isHarvested: boolean): string => {
 
 export default function ElectricityConsumptionPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -54,6 +56,11 @@ export default function ElectricityConsumptionPage() {
   const [mobilePage, setMobilePage] = useState(1);
   const [mobilePageSize, setMobilePageSize] = useState(5);
   const [summary, setSummary] = useState({ buildings: 0, grows: 0, todayKwh: 0 });
+  const pageMode = location.pathname.endsWith("/daily")
+    ? "daily"
+    : location.pathname.endsWith("/grow-cycle")
+      ? "grow-cycle"
+      : "menu";
 
   const mobilePagedRows = useMemo(() => {
     const start = (mobilePage - 1) * mobilePageSize;
@@ -212,46 +219,186 @@ export default function ElectricityConsumptionPage() {
     };
   }, []);
 
-  return (
-    <Layout className="min-h-screen bg-slate-100">
-      <Header
-        className="!px-3 !h-auto !min-h-14 sticky top-0 z-40 flex items-center justify-between"
-        style={{
-          backgroundColor: BRAND,
-          paddingTop: mobileSafeAreaTop,
-          height: `calc(56px + ${mobileSafeAreaTop})`,
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <Button
-            type="text"
-            icon={<IoMdArrowRoundBack size={20} />}
-            className="!text-white hover:!text-white/90"
-            onClick={() => navigate(-1)}
-            aria-label="Back"
-          />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
-          <Button
-            type="text"
-            icon={<IoHome size={18} />}
-            className="!text-white hover:!text-white/90"
-            onClick={() => navigate("/landing-page")}
-            aria-label="Home"
-          />
-          <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
-          <Title level={4} className="!m-0 !text-base !text-white">
-            Electricity Consumption
-          </Title>
-        </div>
+  const electricityMenuCards = [
+    {
+      title: "Daily Electricity Consumption Monitoring",
+      subtitle: "Broiler Farm",
+      description: "Record and review daily building kWh readings.",
+      icon: <MdOutlineBolt size={30} />,
+      accent: "#008822",
+      stat: `${summary.todayKwh.toLocaleString(undefined, { maximumFractionDigits: 2 })} kWh today`,
+      path: "/electricity-consumption/daily",
+    },
+    {
+      title: "Electricity Consumption per Broiler Grow Cycle",
+      subtitle: "Cycle summary",
+      description: "Grow-cycle comparison and analytics.",
+      icon: <MdOutlineConstruction size={30} />,
+      accent: "#f59e0b",
+      stat: "Under maintenance",
+      path: "/electricity-consumption/grow-cycle",
+    },
+  ];
+
+  const renderHeader = (title: string) => (
+    <Header
+      className="!px-3 !h-auto !min-h-14 sticky top-0 z-40 flex items-center justify-between"
+      style={{
+        backgroundColor: BRAND,
+        paddingTop: mobileSafeAreaTop,
+        height: `calc(56px + ${mobileSafeAreaTop})`,
+      }}
+    >
+      <div className="flex items-center gap-2">
         <Button
           type="text"
-          icon={<FaSignOutAlt size={18} />}
+          icon={<IoMdArrowRoundBack size={20} />}
           className="!text-white hover:!text-white/90"
-          onClick={() => void signOutAndRedirect(navigate)}
-          aria-label="Sign out"
+          onClick={() => navigate(-1)}
+          aria-label="Back"
         />
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
-      </Header>
+        <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+        <Button
+          type="text"
+          icon={<IoHome size={18} />}
+          className="!text-white hover:!text-white/90"
+          onClick={() => navigate("/landing-page")}
+          aria-label="Home"
+        />
+        <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
+        <Title level={4} className="!m-0 !text-base !text-white">
+          {title}
+        </Title>
+      </div>
+      <Button
+        type="text"
+        icon={<FaSignOutAlt size={18} />}
+        className="!text-white hover:!text-white/90"
+        onClick={() => void signOutAndRedirect(navigate)}
+        aria-label="Sign out"
+      />
+      <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ffc700]" />
+    </Header>
+  );
+
+  if (pageMode === "menu") {
+    return (
+      <Layout className="min-h-screen bg-slate-100">
+        {renderHeader("Electricity Consumption")}
+        <Content className="px-3 py-3 md:px-6 md:py-5">
+          <div className="mx-auto w-full max-w-[420px] md:max-w-5xl">
+            <div className="mb-4 rounded-2xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-4 py-5 text-white md:px-6 md:py-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
+                    Electricity Consumption
+                  </div>
+                  <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Choose a monitoring type</div>
+                  <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
+                    Select daily building readings or grow-cycle electricity analysis.
+                  </div>
+                </div>
+                <Button
+                  icon={<MdOutlinePictureAsPdf size={17} />}
+                  className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20"
+                  onClick={() => navigate("/reports/electricity-consumption")}
+                >
+                  Report
+                </Button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">
+                <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Buildings {summary.buildings.toLocaleString()}</div>
+                <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grows {summary.grows.toLocaleString()}</div>
+                <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                  Today {summary.todayKwh.toLocaleString(undefined, { maximumFractionDigits: 2 })} kWh
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {electricityMenuCards.map((card) => (
+                <button
+                  key={card.title}
+                  type="button"
+                  className="rounded-lg border bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  style={{ borderColor: card.accent }}
+                  onClick={() => navigate(card.path)}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                        Electricity
+                      </div>
+                      <div className="mt-3 text-xl font-bold leading-tight md:text-2xl" style={{ color: card.accent }}>
+                        {card.title}
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-slate-700">{card.subtitle}</div>
+                      <div className="mt-2 text-sm text-slate-500">{card.description}</div>
+                    </div>
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-[#ffda8a] text-slate-900">
+                      {card.icon}
+                    </div>
+                  </div>
+                  <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</div>
+                    <div className="mt-1 text-base font-bold text-slate-950">{card.stat}</div>
+                  </div>
+                  <div className="mt-3 text-right text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: card.accent }}>
+                    Open
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Content>
+      </Layout>
+    );
+  }
+
+  if (pageMode === "grow-cycle") {
+    return (
+      <Layout className="min-h-screen bg-slate-100">
+        {renderHeader("Electricity Consumption")}
+        <Content className="px-3 py-3 md:px-6 md:py-5">
+          <div className="mx-auto w-full max-w-[420px] md:max-w-4xl">
+            <div className="mb-4 rounded-2xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-4 py-5 text-white md:px-6 md:py-6">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
+                Electricity Consumption
+              </div>
+              <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">
+                Electricity Consumption per Broiler Grow Cycle
+              </div>
+              <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
+                Grow-cycle electricity analytics are not available yet.
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-amber-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-[#ffda8a] text-slate-900">
+                  <MdOutlineConstruction size={32} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">Under maintenance</div>
+                  <div className="mt-2 text-xl font-bold text-slate-900">Grow-cycle electricity report is being prepared</div>
+                  <div className="mt-2 text-sm text-slate-500">
+                    Use Daily Electricity Consumption Monitoring for now. This section can be connected once the grow-cycle rules and database fields are finalized.
+                  </div>
+                  <Button className="mt-4 !border-emerald-200 !text-emerald-700" onClick={() => navigate("/electricity-consumption")}>
+                    Back to Electricity Menu
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Content>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout className="min-h-screen bg-slate-100">
+      {renderHeader("Electricity Consumption")}
 
       <Content className="px-3 py-3 md:px-6 md:py-5">
         <div className="mx-auto w-full max-w-[420px] md:max-w-6xl">
@@ -261,9 +408,9 @@ export default function ElectricityConsumptionPage() {
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
                   Electricity Consumption
                 </div>
-                <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a building</div>
+                <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Daily Electricity Consumption Monitoring</div>
                 <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">
-                  Tap or click a row below to review electricity consumption records.
+                  Select a building to review daily electricity consumption records.
                 </div>
               </div>
               <Button

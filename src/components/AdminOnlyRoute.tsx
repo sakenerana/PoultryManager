@@ -6,8 +6,15 @@ import supabase from "../utils/supabase";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 type AccessState = "checking" | "allowed" | "denied";
+type AppRole = "Admin" | "Supervisor" | "Staff";
+const ADMIN_ROLES: AppRole[] = ["Admin"];
 
-export default function AdminOnlyRoute() {
+type AdminOnlyRouteProps = {
+  allowedRoles?: readonly AppRole[];
+  redirectTo?: string;
+};
+
+export default function AdminOnlyRoute({ allowedRoles = ADMIN_ROLES, redirectTo = "/reports" }: AdminOnlyRouteProps) {
   const { user, isLoading } = useAuth();
   const [access, setAccess] = useState<AccessState>("checking");
 
@@ -37,14 +44,19 @@ export default function AdminOnlyRoute() {
         return;
       }
 
-      setAccess(data?.role === "Admin" && data?.status !== "Inactive" ? "allowed" : "denied");
+      const role = data?.role;
+      setAccess(
+        role && allowedRoles.includes(role as AppRole) && data?.status !== "Inactive"
+          ? "allowed"
+          : "denied"
+      );
     };
 
     void loadAccess();
     return () => {
       alive = false;
     };
-  }, [isLoading, user?.id]);
+  }, [allowedRoles, isLoading, user?.id]);
 
   if (isLoading || access === "checking") {
     return (
@@ -55,7 +67,7 @@ export default function AdminOnlyRoute() {
   }
 
   if (access === "denied") {
-    return <Navigate to="/reports" replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   return <Outlet />;

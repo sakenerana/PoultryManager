@@ -10,6 +10,7 @@ import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
+import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
@@ -17,6 +18,7 @@ const BRAND = "#008822";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const ELECTRICITY_TABLE = import.meta.env.VITE_SUPABASE_ELECTRICITY_CONSUMPTION_TABLE ?? "ElectricityConsumption";
+const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
@@ -37,6 +39,8 @@ type ElectricityEntry = {
   consumption: number | null;
   remarks: string;
 };
+
+type AppRole = "Admin" | "Supervisor" | "Staff" | null;
 
 const toNumberOrNull = (value: unknown): number | null => {
   if (value === null || value === undefined || value === "") return null;
@@ -64,6 +68,7 @@ const displayDay = (day: number): number => day + 1;
 export default function ElectricityConsumptionFormPage() {
   const navigate = useNavigate();
   const { growId, buildingId } = useParams();
+  const { user } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -75,6 +80,7 @@ export default function ElectricityConsumptionFormPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [userRole, setUserRole] = useState<AppRole>(null);
 
   const totalConsumption = useMemo(
     () => entries.reduce((sum, entry) => sum + (entry.consumption ?? 0), 0),
@@ -98,6 +104,41 @@ export default function ElectricityConsumptionFormPage() {
     };
   }, [entries, totalConsumption]);
   const hasResolvedGrow = growInfo?.id != null;
+  const canEditExistingElectricityEntries = userRole === "Admin";
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadUserRole = async () => {
+      if (!user?.id) {
+        setUserRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select("role, status")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!alive) return;
+      if (error) {
+        console.error("Failed to load electricity edit access:", error.message);
+        setUserRole(null);
+        return;
+      }
+
+      const role = data?.role === "Admin" || data?.role === "Supervisor" || data?.role === "Staff" ? data.role : null;
+      setUserRole(data?.status === "Inactive" ? null : role);
+    };
+
+    void loadUserRole();
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -271,6 +312,11 @@ export default function ElectricityConsumptionFormPage() {
   const handleSaveEntry = async (entry: ElectricityEntry) => {
     const resolvedGrowId = growInfo?.id;
     if (resolvedGrowId == null || !Number.isFinite(resolvedGrowId)) return;
+    if (entry.id && !canEditExistingElectricityEntries) {
+      setToastMessage("Only Admin users can edit electricity readings.");
+      setIsToastOpen(true);
+      return;
+    }
 
     try {
       setSavingDay(entry.day);
@@ -481,7 +527,14 @@ export default function ElectricityConsumptionFormPage() {
                 key={entry.day}
                 type="button"
                 className="w-full rounded-sm border border-emerald-100 bg-white p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40"
-                onClick={() => setActiveEntry(entry)}
+                onClick={() => {
+                  if (entry.id && !canEditExistingElectricityEntries) {
+                    setToastMessage("Only Admin users can edit saved electricity readings.");
+                    setIsToastOpen(true);
+                    return;
+                  }
+                  setActiveEntry(entry);
+                }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -502,7 +555,9 @@ export default function ElectricityConsumptionFormPage() {
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
                   <span>Meter Reading: {formatNumber(entry.meterReading, 2)}</span>
-                  <span className="font-medium text-emerald-700">{entry.id ? "Saved" : "Tap to add reading"}</span>
+                  <span className="font-medium text-emerald-700">
+                    {entry.id ? (canEditExistingElectricityEntries ? "Tap to edit" : "Saved") : "Tap to add reading"}
+                  </span>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-slate-500">
                   Remarks: {entry.remarks.trim() || "-"}

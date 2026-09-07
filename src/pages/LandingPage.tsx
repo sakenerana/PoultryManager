@@ -295,8 +295,7 @@ export default function LandingPage() {
 
     const visibleTiles = useMemo(() => {
         if (role === "Admin") return tiles;
-        if (role === "Supervisor") return tiles.filter((tile) => tile.key !== "electricity" && tile.key !== "feeds");
-        return tiles.filter((tile) => tile.key !== "userAccess" && tile.key !== "electricity" && tile.key !== "feeds");
+        return tiles.filter((tile) => tile.key !== "userAccess");
     }, [role]);
 
     const isTileDisabled = (tile: Tile): boolean => role === "Staff" && tile.key === "harvest";

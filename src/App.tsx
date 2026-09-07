@@ -35,6 +35,8 @@ import PublicRoute from "./components/PublicRoute";
 import AdminOnlyRoute from "./components/AdminOnlyRoute";
 import AppUpdateIndicator from "./components/AppUpdateIndicator";
 
+const ALL_ACTIVE_ROLES = ["Admin", "Supervisor", "Staff"] as const;
+
 function App() {
   return (
     <>
@@ -66,9 +68,13 @@ function App() {
             <Route element={<AdminOnlyRoute />}>
               <Route path="/reports/income" element={<IncomeReportPage />} />
               <Route path="/reports/income/new" element={<IncomeSummaryFormPage />} />
+            </Route>
+            <Route element={<AdminOnlyRoute allowedRoles={ALL_ACTIVE_ROLES} redirectTo="/landing-page" />}>
               <Route path="/reports/electricity-consumption" element={<ElectricityConsumptionReportPage />} />
               <Route path="/reports/feeds-consumption" element={<FeedsConsumptionReportPage />} />
               <Route path="/electricity-consumption" element={<ElectricityConsumptionPage />} />
+              <Route path="/electricity-consumption/daily" element={<ElectricityConsumptionPage />} />
+              <Route path="/electricity-consumption/grow-cycle" element={<ElectricityConsumptionPage />} />
               <Route path="/electricity-consumption/building/:buildingId" element={<ElectricityConsumptionFormPage />} />
               <Route path="/electricity-consumption/grow/:growId" element={<ElectricityConsumptionFormPage />} />
               <Route path="/feeds-consumption" element={<FeedsConsumptionPage />} />

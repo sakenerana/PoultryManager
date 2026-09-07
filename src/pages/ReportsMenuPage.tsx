@@ -91,6 +91,7 @@ export default function ReportsMenuPage() {
   const [electricityKwh, setElectricityKwh] = useState(0);
   const [feedRecordsCount, setFeedRecordsCount] = useState(0);
   const isAdmin = userRole === "Admin";
+  const canViewConsumptionReports = userRole != null;
 
   useEffect(() => {
     let alive = true;
@@ -188,7 +189,7 @@ export default function ReportsMenuPage() {
     let alive = true;
 
     const loadElectricityTotal = async () => {
-      if (!isAdmin) {
+      if (!canViewConsumptionReports) {
         setElectricityKwh(0);
         return;
       }
@@ -213,13 +214,13 @@ export default function ReportsMenuPage() {
     return () => {
       alive = false;
     };
-  }, [isAdmin]);
+  }, [canViewConsumptionReports]);
 
   useEffect(() => {
     let alive = true;
 
     const loadFeedRecordsCount = async () => {
-      if (!isAdmin) {
+      if (!canViewConsumptionReports) {
         setFeedRecordsCount(0);
         return;
       }
@@ -234,7 +235,7 @@ export default function ReportsMenuPage() {
     return () => {
       alive = false;
     };
-  }, [isAdmin]);
+  }, [canViewConsumptionReports]);
 
   const statByTile = useMemo(
     () => ({
@@ -250,9 +251,9 @@ export default function ReportsMenuPage() {
   const visibleTiles = useMemo(
     () =>
       tiles.filter(
-        (tile) => !hiddenReportKeys.has(tile.key) && ((tile.key !== "electricity" && tile.key !== "feeds") || isAdmin)
+        (tile) => !hiddenReportKeys.has(tile.key) && ((tile.key !== "electricity" && tile.key !== "feeds") || canViewConsumptionReports)
       ),
-    [isAdmin]
+    [canViewConsumptionReports]
   );
 
   return (
