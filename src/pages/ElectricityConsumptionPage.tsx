@@ -1,6 +1,7 @@
-import { Button, Divider, Grid, Layout, Pagination, Table, Tag, Typography } from "antd";
+import { Button, Checkbox, DatePicker, Divider, Grid, Layout, Pagination, Select, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import type { Dayjs } from "dayjs";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useEffect, useMemo, useState } from "react";
@@ -20,6 +21,7 @@ const ELECTRICITY_TABLE = import.meta.env.VITE_SUPABASE_ELECTRICITY_CONSUMPTION_
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
+const { RangePicker } = DatePicker;
 
 type BuildingElectricityRow = {
   key: string;
@@ -104,6 +106,10 @@ export default function ElectricityConsumptionPage() {
   const [isExportingCyclePdf, setIsExportingCyclePdf] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [cycleBuildingFilter, setCycleBuildingFilter] = useState<number | "all">("all");
+  const [cycleStatusFilter, setCycleStatusFilter] = useState<"all" | "growing" | "harvested">("all");
+  const [cycleDateRange, setCycleDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [cycleWithRecordsOnly, setCycleWithRecordsOnly] = useState(false);
   const pageMode = location.pathname.endsWith("/daily")
     ? "daily"
     : location.pathname.endsWith("/grow-cycle")
@@ -115,10 +121,44 @@ export default function ElectricityConsumptionPage() {
     return rows.slice(start, start + mobilePageSize);
   }, [mobilePage, mobilePageSize, rows]);
 
+  const cycleBuildingOptions = useMemo(
+    () => [
+      { label: "All buildings", value: "all" as const },
+      ...Array.from(new Map(cycleRows.map((row) => [row.buildingId, row.buildingName])).entries())
+        .filter((entry): entry is [number, string] => entry[0] != null)
+        .map(([value, label]) => ({ label, value }))
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" })),
+    ],
+    [cycleRows]
+  );
+
+  const filteredCycleRows = useMemo(
+    () =>
+      cycleRows.filter((row) => {
+        if (cycleBuildingFilter !== "all" && row.buildingId !== cycleBuildingFilter) return false;
+        if (cycleStatusFilter === "growing" && (row.isHarvested || row.status.toLowerCase() === "harvested")) return false;
+        if (cycleStatusFilter === "harvested" && !row.isHarvested && row.status.toLowerCase() !== "harvested") return false;
+        if (cycleWithRecordsOnly && row.daysLogged === 0) return false;
+        if (cycleDateRange) {
+          const createdAt = dayjs(row.createdAt);
+          if (!createdAt.isValid()) return false;
+          if (createdAt.isBefore(cycleDateRange[0].startOf("day")) || createdAt.isAfter(cycleDateRange[1].endOf("day"))) {
+            return false;
+          }
+        }
+        return true;
+      }),
+    [cycleBuildingFilter, cycleDateRange, cycleRows, cycleStatusFilter, cycleWithRecordsOnly]
+  );
+
   const mobilePagedCycleRows = useMemo(() => {
     const start = (mobilePage - 1) * mobilePageSize;
-    return cycleRows.slice(start, start + mobilePageSize);
-  }, [cycleRows, mobilePage, mobilePageSize]);
+    return filteredCycleRows.slice(start, start + mobilePageSize);
+  }, [filteredCycleRows, mobilePage, mobilePageSize]);
+
+  useEffect(() => {
+    setMobilePage(1);
+  }, [cycleBuildingFilter, cycleDateRange, cycleStatusFilter, cycleWithRecordsOnly]);
 
   const columns: ColumnsType<BuildingElectricityRow> = useMemo(
     () => [
@@ -394,7 +434,7 @@ export default function ElectricityConsumptionPage() {
   }, []);
 
   const handleExportCyclePdf = () => {
-    if (cycleRows.length === 0) {
+    if (filteredCycleRows.length === 0) {
       setToastMessage("No grow-cycle electricity data available to export.");
       setIsToastOpen(true);
       return;
@@ -404,8 +444,8 @@ export default function ElectricityConsumptionPage() {
       setIsExportingCyclePdf(true);
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       const generatedAt = dayjs();
-      const totalKwh = cycleRows.reduce((sum, row) => sum + row.totalKwh, 0);
-      const totalDays = cycleRows.reduce((sum, row) => sum + row.daysLogged, 0);
+      const totalKwh = filteredCycleRows.reduce((sum, row) => sum + row.totalKwh, 0);
+      const totalDays = filteredCycleRows.reduce((sum, row) => sum + row.daysLogged, 0);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(15);
@@ -414,7 +454,7 @@ export default function ElectricityConsumptionPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.text(`Generated: ${generatedAt.format("MMMM D, YYYY h:mm A")}`, 14, 24);
-      doc.text(`Grow Cycles: ${cycleRows.length.toLocaleString()}`, 14, 30);
+      doc.text(`Grow Cycles: ${filteredCycleRows.length.toLocaleString()}`, 14, 30);
       doc.text(`Total kWh: ${formatKwh(totalKwh)}`, 118, 24);
       doc.text(`Logged Days: ${totalDays.toLocaleString()}`, 118, 30);
 
@@ -426,7 +466,7 @@ export default function ElectricityConsumptionPage() {
         startY: 41,
         theme: "grid",
         head: [["Building", "Grow", "Start Date", "End Date", "Start Reading", "End Reading", "Total kWh", "Days", "Status"]],
-        body: cycleRows.map((row) => [
+        body: filteredCycleRows.map((row) => [
           row.buildingName,
           `#${row.growId}`,
           formatShortDate(row.createdAt),
@@ -657,12 +697,12 @@ export default function ElectricityConsumptionPage() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">
-                <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow Cycles {cycleRows.length.toLocaleString()}</div>
+                <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow Cycles {filteredCycleRows.length.toLocaleString()}</div>
                 <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                  Total {formatKwh(cycleRows.reduce((sum, row) => sum + row.totalKwh, 0))} kWh
+                  Total {formatKwh(filteredCycleRows.reduce((sum, row) => sum + row.totalKwh, 0))} kWh
                 </div>
                 <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                  Logged {cycleRows.reduce((sum, row) => sum + row.daysLogged, 0).toLocaleString()} days
+                  Logged {filteredCycleRows.reduce((sum, row) => sum + row.daysLogged, 0).toLocaleString()} days
                 </div>
               </div>
             </div>
@@ -673,6 +713,56 @@ export default function ElectricityConsumptionPage() {
               </div>
               <div className="mb-2 text-xs text-slate-500">
                 Total kWh uses end meter reading minus start meter reading, with saved daily kWh as fallback when readings are incomplete.
+              </div>
+              <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1.2fr_1fr_1.4fr_auto_auto] md:items-end">
+                <div>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Building</div>
+                  <Select
+                    className="!w-full"
+                    value={cycleBuildingFilter}
+                    options={cycleBuildingOptions}
+                    onChange={(value) => setCycleBuildingFilter(value)}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Status</div>
+                  <Select
+                    className="!w-full"
+                    value={cycleStatusFilter}
+                    options={[
+                      { label: "All status", value: "all" },
+                      { label: "Growing", value: "growing" },
+                      { label: "Harvested", value: "harvested" },
+                    ]}
+                    onChange={(value) => setCycleStatusFilter(value)}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Grow Start Date</div>
+                  <RangePicker
+                    className="!w-full"
+                    value={cycleDateRange}
+                    onChange={(dates) => setCycleDateRange(dates as [Dayjs, Dayjs] | null)}
+                    allowClear
+                  />
+                </div>
+                <Checkbox
+                  className="!text-sm !text-slate-700"
+                  checked={cycleWithRecordsOnly}
+                  onChange={(event) => setCycleWithRecordsOnly(event.target.checked)}
+                >
+                  With records only
+                </Checkbox>
+                <Button
+                  onClick={() => {
+                    setCycleBuildingFilter("all");
+                    setCycleStatusFilter("all");
+                    setCycleDateRange(null);
+                    setCycleWithRecordsOnly(false);
+                  }}
+                >
+                  Reset
+                </Button>
               </div>
               {isMobile ? (
                 <div className="space-y-2">
@@ -708,9 +798,9 @@ export default function ElectricityConsumptionPage() {
                     <Pagination
                       current={mobilePage}
                       pageSize={mobilePageSize}
-                      total={cycleRows.length}
+                      total={filteredCycleRows.length}
                       size="small"
-                      showSizeChanger={cycleRows.length > 5}
+                      showSizeChanger={filteredCycleRows.length > 5}
                       pageSizeOptions={["5", "10", "20"]}
                       onChange={(page, pageSize) => {
                         setMobilePage(page);
@@ -725,11 +815,11 @@ export default function ElectricityConsumptionPage() {
                   size="small"
                   rowKey="key"
                   columns={cycleColumns}
-                  dataSource={cycleRows}
+                  dataSource={filteredCycleRows}
                   loading={isLoading}
                   pagination={{
                     pageSize: 8,
-                    showSizeChanger: cycleRows.length > 8,
+                    showSizeChanger: filteredCycleRows.length > 8,
                     pageSizeOptions: ["8", "15", "30"],
                     showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} grow cycles`,
                   }}
