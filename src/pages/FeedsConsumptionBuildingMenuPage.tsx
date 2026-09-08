@@ -55,6 +55,25 @@ const formatDate = (value: string): string => {
   return parsed.isValid() ? parsed.format("MMMM DD, YYYY") : "-";
 };
 
+const formatCount = (value: number, noun: string): string => {
+  const count = value.toLocaleString();
+  return `${count} ${noun}${value === 1 ? "" : "s"}`;
+};
+
+const getRecordStatus = (count: number): { label: string; className: string } => {
+  if (count > 0) {
+    return {
+      label: "Recorded",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  }
+
+  return {
+    label: "No records",
+    className: "border-slate-200 bg-slate-50 text-slate-500",
+  };
+};
+
 export default function FeedsConsumptionBuildingMenuPage() {
   const navigate = useNavigate();
   const { buildingId } = useParams();
@@ -220,7 +239,10 @@ export default function FeedsConsumptionBuildingMenuPage() {
       description: "Daily age-day consumption and mortality.",
       total: summary?.usedBags ?? 0,
       unit: "bags used",
-      secondary: `${(summary?.usedKg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} kg | ${(summary?.feedRecords ?? 0).toLocaleString()} records`,
+      recordCount: summary?.feedRecords ?? 0,
+      recordNoun: "record",
+      status: getRecordStatus(summary?.feedRecords ?? 0),
+      secondary: `${formatCount(summary?.feedRecords ?? 0, "record")} | ${(summary?.usedKg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} kg`,
       accent: "#008822",
       path: `/feeds-consumption/building/${parsedBuildingId}/daily${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
     },
@@ -229,7 +251,10 @@ export default function FeedsConsumptionBuildingMenuPage() {
       description: "Deliveries and document numbers.",
       total: summary?.receivedBags ?? 0,
       unit: "bags received",
-      secondary: `${(summary?.receivedRecords ?? 0).toLocaleString()} records`,
+      recordCount: summary?.receivedRecords ?? 0,
+      recordNoun: "entry",
+      status: getRecordStatus(summary?.receivedRecords ?? 0),
+      secondary: `${formatCount(summary?.receivedRecords ?? 0, "entry")} | ${(summary?.receivedBags ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} bags`,
       accent: "#0ea5e9",
       path: `/feeds-consumption/building/${parsedBuildingId}/received${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
     },
@@ -238,7 +263,10 @@ export default function FeedsConsumptionBuildingMenuPage() {
       description: "Feed moved into this building.",
       total: summary?.transferInBags ?? 0,
       unit: "bags in",
-      secondary: `${(summary?.transferInRecords ?? 0).toLocaleString()} records`,
+      recordCount: summary?.transferInRecords ?? 0,
+      recordNoun: "entry",
+      status: getRecordStatus(summary?.transferInRecords ?? 0),
+      secondary: `${formatCount(summary?.transferInRecords ?? 0, "entry")} | ${(summary?.transferInBags ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} bags`,
       accent: "#f59e0b",
       path: `/feeds-consumption/building/${parsedBuildingId}/transfer-in${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
     },
@@ -247,7 +275,10 @@ export default function FeedsConsumptionBuildingMenuPage() {
       description: "Feed moved out of this building.",
       total: summary?.transferOutBags ?? 0,
       unit: "bags out",
-      secondary: `${(summary?.transferOutRecords ?? 0).toLocaleString()} records`,
+      recordCount: summary?.transferOutRecords ?? 0,
+      recordNoun: "entry",
+      status: getRecordStatus(summary?.transferOutRecords ?? 0),
+      secondary: `${formatCount(summary?.transferOutRecords ?? 0, "entry")} | ${(summary?.transferOutBags ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} bags`,
       accent: "#ef4444",
       path: `/feeds-consumption/building/${parsedBuildingId}/transfer-out${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
     },
@@ -373,6 +404,14 @@ export default function FeedsConsumptionBuildingMenuPage() {
                       {card.title}
                     </div>
                     <div className="mt-1 text-sm text-slate-500">{card.description}</div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] ${card.status.className}`}>
+                        {card.status.label}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        {formatCount(card.recordCount, card.recordNoun)}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-[#ffda8a] text-2xl font-bold text-slate-900">
                     {card.title.charAt(0)}
