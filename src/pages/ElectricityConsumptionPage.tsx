@@ -56,6 +56,7 @@ type GrowCycleElectricityRow = {
   endReading: number | null;
   totalKwh: number;
   daysLogged: number;
+  dataStatus: "Complete" | "Needs start" | "Needs end" | "No records";
   status: string;
   isHarvested: boolean;
 };
@@ -89,6 +90,12 @@ const statusColor = (status: string, isHarvested: boolean): string => {
   if (normalized === "loading") return "blue";
   if (normalized === "ready") return "default";
   return "cyan";
+};
+
+const cycleDataStatusColor = (status: GrowCycleElectricityRow["dataStatus"]): string => {
+  if (status === "Complete") return "green";
+  if (status === "No records") return "default";
+  return "gold";
 };
 
 export default function ElectricityConsumptionPage() {
@@ -238,7 +245,7 @@ export default function ElectricityConsumptionPage() {
         key: "startReading",
         width: 130,
         align: "right",
-        render: (value: number | null) => formatKwh(value),
+        render: (value: number | null, record) => (record.dataStatus === "Needs start" ? "Missing start" : formatKwh(value)),
       },
       {
         title: "End Reading",
@@ -246,7 +253,7 @@ export default function ElectricityConsumptionPage() {
         key: "endReading",
         width: 130,
         align: "right",
-        render: (value: number | null) => formatKwh(value),
+        render: (value: number | null, record) => (record.dataStatus === "Needs end" ? "Missing end" : formatKwh(value)),
       },
       {
         title: "Total kWh",
@@ -263,6 +270,17 @@ export default function ElectricityConsumptionPage() {
         width: 90,
         align: "right",
         render: (value: number) => value.toLocaleString(),
+      },
+      {
+        title: "Data Status",
+        dataIndex: "dataStatus",
+        key: "dataStatus",
+        width: 130,
+        render: (status: GrowCycleElectricityRow["dataStatus"]) => (
+          <Tag color={cycleDataStatusColor(status)} className="!mr-0">
+            {status}
+          </Tag>
+        ),
       },
       {
         title: "Status",
@@ -392,8 +410,16 @@ export default function ElectricityConsumptionPage() {
             const endEntry = readings[readings.length - 1] ?? null;
             const startReading = startEntry?.meter_reading ?? null;
             const endReading = endEntry?.meter_reading ?? null;
+            const dataStatus =
+              growEntries.length === 0
+                ? "No records"
+                : !loadingReading
+                  ? "Needs start"
+                  : readings.length < 2
+                    ? "Needs end"
+                    : "Complete";
             const calculatedKwh =
-              startReading != null && endReading != null
+              dataStatus === "Complete" && startReading != null && endReading != null
                 ? Math.max(0, Number(endReading) - Number(startReading))
                 : totalKwhByGrowId.get(growId) ?? 0;
 
@@ -409,6 +435,7 @@ export default function ElectricityConsumptionPage() {
               endReading,
               totalKwh: calculatedKwh,
               daysLogged: growEntries.length,
+              dataStatus,
               status: String(grow.status ?? "Ready"),
               isHarvested: grow.is_harvested === true,
             };
@@ -465,16 +492,17 @@ export default function ElectricityConsumptionPage() {
       autoTable(doc, {
         startY: 41,
         theme: "grid",
-        head: [["Building", "Grow", "Start Date", "End Date", "Start Reading", "End Reading", "Total kWh", "Days", "Status"]],
+        head: [["Building", "Grow", "Start Date", "End Date", "Start Reading", "End Reading", "Total kWh", "Days", "Data Status", "Status"]],
         body: filteredCycleRows.map((row) => [
           row.buildingName,
           `#${row.growId}`,
           formatShortDate(row.createdAt),
           formatShortDate(row.endDate),
-          formatKwh(row.startReading),
-          formatKwh(row.endReading),
+          row.dataStatus === "Needs start" ? "Missing start" : formatKwh(row.startReading),
+          row.dataStatus === "Needs end" ? "Missing end" : formatKwh(row.endReading),
           formatKwh(row.totalKwh),
           row.daysLogged.toLocaleString(),
+          row.dataStatus,
           row.status || "Unknown",
         ]),
         headStyles: {
@@ -489,15 +517,16 @@ export default function ElectricityConsumptionPage() {
           lineWidth: 0.1,
         },
         columnStyles: {
-          0: { cellWidth: 34 },
+          0: { cellWidth: 32 },
           1: { cellWidth: 18, halign: "center" },
-          2: { cellWidth: 28 },
-          3: { cellWidth: 28 },
-          4: { cellWidth: 31, halign: "right" },
-          5: { cellWidth: 31, halign: "right" },
-          6: { cellWidth: 31, halign: "right" },
+          2: { cellWidth: 26 },
+          3: { cellWidth: 26 },
+          4: { cellWidth: 30, halign: "right" },
+          5: { cellWidth: 30, halign: "right" },
+          6: { cellWidth: 30, halign: "right" },
           7: { cellWidth: 18, halign: "right" },
-          8: { cellWidth: 24 },
+          8: { cellWidth: 27 },
+          9: { cellWidth: 24 },
         },
         didDrawPage: (data) => {
           doc.setFontSize(8);
@@ -785,9 +814,20 @@ export default function ElectricityConsumptionPage() {
                           {record.status || "Unknown"}
                         </Tag>
                       </div>
+                      <div className="mt-2">
+                        <Tag color={cycleDataStatusColor(record.dataStatus)} className="!mr-0">
+                          {record.dataStatus}
+                        </Tag>
+                      </div>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-700">
-                        <div><span className="text-slate-500">Start:</span> {formatKwh(record.startReading)}</div>
-                        <div><span className="text-slate-500">End:</span> {formatKwh(record.endReading)}</div>
+                        <div>
+                          <span className="text-slate-500">Start:</span>{" "}
+                          {record.dataStatus === "Needs start" ? "Missing start" : formatKwh(record.startReading)}
+                        </div>
+                        <div>
+                          <span className="text-slate-500">End:</span>{" "}
+                          {record.dataStatus === "Needs end" ? "Missing end" : formatKwh(record.endReading)}
+                        </div>
                         <div><span className="text-slate-500">Total kWh:</span> {formatKwh(record.totalKwh)}</div>
                         <div><span className="text-slate-500">Days:</span> {record.daysLogged.toLocaleString()}</div>
                       </div>
