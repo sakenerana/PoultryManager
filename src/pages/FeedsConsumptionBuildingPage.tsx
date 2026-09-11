@@ -10,6 +10,8 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
+import { FEED_CODE_OPTIONS } from "../utils/feedCodes";
+import { createGrowSequenceMapByBuilding, withGrowSequenceNumbers } from "../utils/growSequence";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
@@ -40,6 +42,7 @@ type FeedSetupRow = {
 type GrowRecord = {
   id: number;
   buildingId: number;
+  sequenceNumber: number;
   createdAt: string;
   totalBirds: number;
   status: string;
@@ -77,13 +80,8 @@ type FeedEntryFormValues = {
   ageDay: number;
   recordDate: Dayjs;
   feedCode?: string;
-  feedStandard?: number;
   feedQuantityBags?: number;
   feedQuantityKg?: number;
-  cumulativeFeedKg?: number;
-  mortalityDead?: number;
-  mortalityCulling?: number;
-  remainingBirds?: number;
   remarks?: string;
 };
 
@@ -148,7 +146,7 @@ export default function FeedsConsumptionBuildingPage() {
     () =>
       selectedBuildingGrows.map((grow) => ({
         value: grow.id,
-        label: `Grow #${grow.id} | ${grow.status} | ${grow.totalBirds.toLocaleString()} birds`,
+        label: `Grow #${grow.sequenceNumber} | ${grow.status} | ${grow.totalBirds.toLocaleString()} birds`,
       })),
     [selectedBuildingGrows]
   );
@@ -220,8 +218,6 @@ export default function FeedsConsumptionBuildingPage() {
         recordedDays: days.filter((row) => row.entry != null).length,
         totalBags: days.reduce((sum, row) => sum + toNumber(row.entry?.feedQuantityBags), 0),
         totalKg: days.reduce((sum, row) => sum + toNumber(row.entry?.feedQuantityKg), 0),
-        totalDead: days.reduce((sum, row) => sum + toNumber(row.entry?.mortalityDead), 0),
-        totalCulling: days.reduce((sum, row) => sum + toNumber(row.entry?.mortalityCulling), 0),
       };
     });
   }, [filteredFeedDayRows]);
@@ -292,8 +288,11 @@ export default function FeedsConsumptionBuildingPage() {
           isHarvested: row.is_harvested === true,
         }));
 
+      const growSequenceById = createGrowSequenceMapByBuilding(nextGrows);
+      const sequencedGrows = withGrowSequenceNumbers(nextGrows, growSequenceById);
+
       const latestGrowByBuildingId = new Map<number, GrowRecord>();
-      nextGrows.forEach((grow) => {
+      sequencedGrows.forEach((grow) => {
         if (latestGrowByBuildingId.has(grow.buildingId)) return;
         latestGrowByBuildingId.set(grow.buildingId, grow);
       });
@@ -376,7 +375,7 @@ export default function FeedsConsumptionBuildingPage() {
       });
 
       setRows(mapped);
-      setAllGrows(nextGrows);
+      setAllGrows(sequencedGrows);
       setFeedEntries(nextFeedEntries);
       setSelectedBuildingId((current) => (current != null && mapped.some((row) => row.id === current) ? current : null));
     } catch (error) {
@@ -457,54 +456,18 @@ export default function FeedsConsumptionBuildingPage() {
     }
 
     const existingEntry = dayRow.entry;
-    const previousEntry = selectedGrowFeedEntries
-      .filter((entry) => entry.ageDay != null && entry.ageDay < dayRow.ageDay)
-      .sort((a, b) => (b.ageDay ?? 0) - (a.ageDay ?? 0))[0];
-    const feedQuantityKg = existingEntry?.feedQuantityKg ?? 0;
-    const mortalityDead = existingEntry?.mortalityDead ?? 0;
-    const mortalityCulling = existingEntry?.mortalityCulling ?? 0;
-    const previousCumulativeFeedKg = toNumber(previousEntry?.cumulativeFeedKg);
-    const previousRemainingBirds = previousEntry?.remainingBirds ?? selectedGrowForDays.totalBirds;
 
     feedForm.setFieldsValue({
       growId: selectedGrowForDays.id,
       ageDay: dayRow.ageDay,
       recordDate: dayjs(existingEntry?.recordDate || dayRow.recordDate),
       feedCode: existingEntry?.feedCode ?? "",
-      feedStandard: existingEntry?.feedStandard ?? 0,
       feedQuantityBags: existingEntry?.feedQuantityBags ?? 0,
-      feedQuantityKg,
-      cumulativeFeedKg: existingEntry?.cumulativeFeedKg ?? previousCumulativeFeedKg + feedQuantityKg,
-      mortalityDead,
-      mortalityCulling,
-      remainingBirds: existingEntry?.remainingBirds ?? Math.max(0, previousRemainingBirds - mortalityDead - mortalityCulling),
+      feedQuantityKg: existingEntry?.feedQuantityKg ?? 0,
       remarks: existingEntry?.remarks ?? "",
     });
     setActiveFeedDay(dayRow);
     setIsFeedModalOpen(true);
-  };
-
-  const handleFeedFormChange = (changedValues: Partial<FeedEntryFormValues>) => {
-    if (!activeFeedDay || !selectedGrowForDays) return;
-    const shouldRecalculateCumulative = "feedQuantityKg" in changedValues;
-    const shouldRecalculateRemaining = "mortalityDead" in changedValues || "mortalityCulling" in changedValues;
-    if (!shouldRecalculateCumulative && !shouldRecalculateRemaining) return;
-
-    const previousEntry = selectedGrowFeedEntries
-      .filter((entry) => entry.ageDay != null && entry.ageDay < activeFeedDay.ageDay)
-      .sort((a, b) => (b.ageDay ?? 0) - (a.ageDay ?? 0))[0];
-    const values = feedForm.getFieldsValue();
-    const updates: Partial<FeedEntryFormValues> = {};
-
-    if (shouldRecalculateCumulative) {
-      updates.cumulativeFeedKg = toNumber(previousEntry?.cumulativeFeedKg) + toNumber(values.feedQuantityKg);
-    }
-    if (shouldRecalculateRemaining) {
-      const previousRemainingBirds = previousEntry?.remainingBirds ?? selectedGrowForDays.totalBirds;
-      updates.remainingBirds = Math.max(0, previousRemainingBirds - toNumber(values.mortalityDead) - toNumber(values.mortalityCulling));
-    }
-
-    feedForm.setFieldsValue(updates);
   };
 
   const handleSaveFeedEntry = async () => {
@@ -518,19 +481,26 @@ export default function FeedsConsumptionBuildingPage() {
     try {
       setIsSavingFeedEntry(true);
       const values = await feedForm.validateFields();
+      const previousEntry = selectedGrowFeedEntries
+        .filter((entry) => entry.ageDay != null && entry.ageDay < values.ageDay)
+        .sort((a, b) => (b.ageDay ?? 0) - (a.ageDay ?? 0))[0];
+      const feedQuantityKg = values.feedQuantityKg ?? 0;
+      const hiddenMortalityDead = activeFeedDay?.entry?.mortalityDead ?? 0;
+      const hiddenMortalityCulling = activeFeedDay?.entry?.mortalityCulling ?? 0;
+      const previousRemainingBirds = previousEntry?.remainingBirds ?? selectedGrowForDays?.totalBirds ?? 0;
       const payload = {
         building_id: selectedSetupRow.id,
         grow_id: values.growId,
         age_day: values.ageDay,
         record_date: values.recordDate.format("YYYY-MM-DD"),
         feed_code: values.feedCode?.trim() || null,
-        feed_standard: values.feedStandard ?? 0,
+        feed_standard: activeFeedDay?.entry?.feedStandard ?? 0,
         feed_quantity_bags: values.feedQuantityBags ?? 0,
-        feed_quantity_kg: values.feedQuantityKg ?? 0,
-        cumulative_feed_kg: values.cumulativeFeedKg ?? 0,
-        mortality_dead: values.mortalityDead ?? 0,
-        mortality_culling: values.mortalityCulling ?? 0,
-        remaining_birds: values.remainingBirds ?? 0,
+        feed_quantity_kg: feedQuantityKg,
+        cumulative_feed_kg: toNumber(previousEntry?.cumulativeFeedKg) + feedQuantityKg,
+        mortality_dead: hiddenMortalityDead,
+        mortality_culling: hiddenMortalityCulling,
+        remaining_birds: activeFeedDay?.entry?.remainingBirds ?? Math.max(0, previousRemainingBirds - hiddenMortalityDead - hiddenMortalityCulling),
         remarks: values.remarks?.trim() || null,
       };
 
@@ -603,7 +573,7 @@ export default function FeedsConsumptionBuildingPage() {
           />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className="!m-0 !text-base !text-white">
-            Feeds Setup
+            Daily Feed Usage
           </Title>
         </div>
         <Button
@@ -622,7 +592,7 @@ export default function FeedsConsumptionBuildingPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">
-                  Feeds Setup
+                  Daily Feed Usage
                 </div>
                 <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">
                   {selectedSetupRow ? selectedSetupRow.name : "Daily feed usage"}
@@ -652,7 +622,7 @@ export default function FeedsConsumptionBuildingPage() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-50/90">
-              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {selectedGrowForDays ? `#${selectedGrowForDays.id}` : "-"}</div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {selectedGrowForDays ? `#${selectedGrowForDays.sequenceNumber}` : "-"}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
                 {selectedGrowForDays?.isHarvested ? "Harvested history" : selectedGrowForDays?.status ?? "Current"}
               </div>
@@ -666,7 +636,7 @@ export default function FeedsConsumptionBuildingPage() {
 
           {selectedGrowForDays?.isHarvested && (
             <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900 shadow-sm">
-              <span className="font-semibold">Historical grow selected.</span> Entries on this page will be saved to Grow #{selectedGrowForDays.id}, not the current active batch.
+              <span className="font-semibold">Historical grow selected.</span> Entries on this page will be saved to Grow #{selectedGrowForDays.sequenceNumber}, not the current active batch.
             </div>
           )}
 
@@ -680,7 +650,7 @@ export default function FeedsConsumptionBuildingPage() {
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Daily Feed Usage</div>
                   <div className="mt-1 text-lg font-bold text-slate-900">
-                    {selectedSetupRow.name} {selectedGrowForDays ? `| Grow #${selectedGrowForDays.id}` : ""}
+                    {selectedSetupRow.name} {selectedGrowForDays ? `| Grow #${selectedGrowForDays.sequenceNumber}` : ""}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
                     Days are recorded daily and grouped every 7 days to match the broiler raising record.
@@ -723,7 +693,7 @@ export default function FeedsConsumptionBuildingPage() {
                           </div>
                           <div className="text-[11px] text-slate-400">Week {group.weekNumber}</div>
                         </div>
-                        <div className="mb-2 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs md:grid-cols-5">
+                        <div className="mb-2 grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                           <div>
                             <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Recorded</div>
                             <div className="mt-1 font-bold text-slate-900">{group.recordedDays.toLocaleString()} / {group.days.length}</div>
@@ -735,14 +705,6 @@ export default function FeedsConsumptionBuildingPage() {
                           <div>
                             <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">KG</div>
                             <div className="mt-1 font-bold text-slate-900">{group.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                          </div>
-                          <div>
-                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Dead</div>
-                            <div className="mt-1 font-bold text-slate-900">{group.totalDead.toLocaleString()}</div>
-                          </div>
-                          <div>
-                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Culling</div>
-                            <div className="mt-1 font-bold text-slate-900">{group.totalCulling.toLocaleString()}</div>
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -780,14 +742,8 @@ export default function FeedsConsumptionBuildingPage() {
                                     Feed {entry?.feedCode || "-"} | Bags {toNumber(entry?.feedQuantityBags).toLocaleString(undefined, { maximumFractionDigits: 2 })} | KG {toNumber(entry?.feedQuantityKg).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                   </div>
                                 </div>
-                                <div className="text-right">
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                <div className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                                     {hasEntry ? "Recorded" : "Pending"}
-                                  </div>
-                                  <div className="mt-1 text-lg font-bold text-slate-900">
-                                    {entry?.remainingBirds == null ? "-" : toNumber(entry.remainingBirds).toLocaleString()}
-                                  </div>
-                                  <div className="text-[10px] text-slate-500">remain</div>
                                 </div>
                               </div>
                               {entry && canManageExistingFeedEntries && (
@@ -839,7 +795,7 @@ export default function FeedsConsumptionBuildingPage() {
       <Modal
         title={
           activeFeedDay
-            ? `${selectedSetupRow?.name ?? "Building"} | Grow #${selectedGrowForDays?.id ?? "-"} | Day ${activeFeedDay.ageDay}`
+            ? `${selectedSetupRow?.name ?? "Building"} | Grow #${selectedGrowForDays?.sequenceNumber ?? "-"} | Day ${activeFeedDay.ageDay}`
             : "Feed Entry"
         }
         open={isFeedModalOpen}
@@ -859,7 +815,7 @@ export default function FeedsConsumptionBuildingPage() {
             {activeFeedDay ? `${formatDate(activeFeedDay.recordDate)} saves to ${FEEDS_TABLE}.` : `Daily feed usage saves to ${FEEDS_TABLE}.`}
           </div>
         </div>
-        <Form form={feedForm} layout="vertical" requiredMark={false} onValuesChange={handleFeedFormChange}>
+        <Form form={feedForm} layout="vertical" requiredMark={false}>
           <div className="grid grid-cols-1 gap-x-3 md:grid-cols-3">
             <Form.Item
               name="growId"
@@ -883,28 +839,20 @@ export default function FeedsConsumptionBuildingPage() {
               <DatePicker className="!w-full" disabled />
             </Form.Item>
             <Form.Item name="feedCode" label="Feed Code">
-              <Input placeholder="510, 511, 512..." />
-            </Form.Item>
-            <Form.Item name="feedStandard" label="STD">
-              <InputNumber className="!w-full" min={0} precision={2} />
+              <Select
+                allowClear
+                showSearch
+                className="!w-full"
+                optionFilterProp="label"
+                options={FEED_CODE_OPTIONS}
+                placeholder="Select feed code"
+              />
             </Form.Item>
             <Form.Item name="feedQuantityBags" label="QTY Bags">
               <InputNumber className="!w-full" min={0} precision={2} />
             </Form.Item>
             <Form.Item name="feedQuantityKg" label="QTY KG">
               <InputNumber className="!w-full" min={0} precision={2} />
-            </Form.Item>
-            <Form.Item name="cumulativeFeedKg" label="Cum Feed KG">
-              <InputNumber className="!w-full" min={0} precision={2} />
-            </Form.Item>
-            <Form.Item name="mortalityDead" label="Dead">
-              <InputNumber className="!w-full" min={0} precision={0} />
-            </Form.Item>
-            <Form.Item name="mortalityCulling" label="Culling">
-              <InputNumber className="!w-full" min={0} precision={0} />
-            </Form.Item>
-            <Form.Item name="remainingBirds" label="Remain">
-              <InputNumber className="!w-full" min={0} precision={0} />
             </Form.Item>
             <Form.Item name="remarks" label="Remarks" className="md:col-span-3">
               <Input.TextArea rows={3} placeholder="Optional notes" />

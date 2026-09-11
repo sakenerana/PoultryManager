@@ -1,4 +1,4 @@
-import { Button, DatePicker, Divider, Form, Grid, Input, InputNumber, Layout, Modal, Popconfirm, Table, Typography } from "antd";
+import { Button, DatePicker, Divider, Form, Grid, Input, InputNumber, Layout, Modal, Popconfirm, Select, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,6 +11,8 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
+import { FEED_CODE_OPTIONS } from "../utils/feedCodes";
+import { createGrowSequenceMap } from "../utils/growSequence";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
@@ -113,6 +115,7 @@ export default function FeedsConsumptionMovementPage() {
   const safeBuildingId = Number.isFinite(parsedBuildingId) ? parsedBuildingId : null;
   const [buildingName, setBuildingName] = useState("Building");
   const [growId, setGrowId] = useState<number | null>(null);
+  const [growSequenceNumber, setGrowSequenceNumber] = useState<number | null>(null);
   const [growStatus, setGrowStatus] = useState("Unknown");
   const [isGrowHarvested, setIsGrowHarvested] = useState(false);
   const [rows, setRows] = useState<MovementRow[]>([]);
@@ -140,10 +143,9 @@ export default function FeedsConsumptionMovementPage() {
           supabase.from(BUILDINGS_TABLE).select("id, name").eq("id", safeBuildingId).maybeSingle(),
           supabase
             .from(GROWS_TABLE)
-            .select("id, status, is_harvested")
+            .select("id, created_at, status, is_harvested")
             .eq("building_id", safeBuildingId)
-            .order("created_at", { ascending: false })
-            .limit(20),
+            .order("created_at", { ascending: false }),
           supabase
             .from(meta.tableName)
             .select(meta.select)
@@ -157,12 +159,16 @@ export default function FeedsConsumptionMovementPage() {
         if (movementResult.error) throw movementResult.error;
 
         const building = buildingResult.data as { name: string | null } | null;
-        const growRows = (growResult.data ?? []) as Array<{ id: number | null; status: string | null; is_harvested: boolean | null }>;
+        const growRows = (growResult.data ?? []) as Array<{ id: number | null; created_at: string | null; status: string | null; is_harvested: boolean | null }>;
         const requestedGrowId = Number(searchParams.get("growId"));
         const safeRequestedGrowId = Number.isFinite(requestedGrowId) ? requestedGrowId : null;
         const grow = growRows.find((row) => row.id === safeRequestedGrowId) ?? growRows[0] ?? null;
+        const growSequenceById = createGrowSequenceMap(
+          growRows.filter((row): row is { id: number; created_at: string | null; status: string | null; is_harvested: boolean | null } => row.id != null)
+        );
         setBuildingName(building?.name ?? `Building ${safeBuildingId}`);
         setGrowId(grow?.id ?? null);
+        setGrowSequenceNumber(grow?.id == null ? null : growSequenceById.get(grow.id) ?? null);
         setGrowStatus(grow?.status ?? "Unknown");
         setIsGrowHarvested(grow?.is_harvested === true || String(grow?.status ?? "").toLowerCase() === "harvested");
 
@@ -449,7 +455,7 @@ export default function FeedsConsumptionMovementPage() {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.16em]">
-              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {growId ? `#${growId}` : "-"}</div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {growSequenceNumber ? `#${growSequenceNumber}` : "-"}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{isGrowHarvested ? "Harvested history" : growStatus}</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{rows.length.toLocaleString()} records</div>
               <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{totalBags.toLocaleString(undefined, { maximumFractionDigits: 2 })} bags</div>
@@ -458,7 +464,7 @@ export default function FeedsConsumptionMovementPage() {
 
           {isGrowHarvested && growId != null && (
             <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900 shadow-sm">
-              <span className="font-semibold">Historical grow selected.</span> Entries on this page will be saved to Grow #{growId}, not the current active batch.
+              <span className="font-semibold">Historical grow selected.</span> Entries on this page will be saved to Grow #{growSequenceNumber ?? "-"}, not the current active batch.
             </div>
           )}
 
@@ -466,7 +472,7 @@ export default function FeedsConsumptionMovementPage() {
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <div className="text-base font-semibold text-slate-900">{meta.title} List</div>
-                <div className="mt-1 text-sm text-slate-500">{buildingName} | Grow {growId ? `#${growId}` : "-"}</div>
+                <div className="mt-1 text-sm text-slate-500">{buildingName} | Grow {growSequenceNumber ? `#${growSequenceNumber}` : "-"}</div>
               </div>
               <Button type="primary" disabled={growId == null} onClick={() => openEntryModal()}>
                 {meta.addLabel}
@@ -549,7 +555,7 @@ export default function FeedsConsumptionMovementPage() {
       >
         <div className="mb-4 rounded-lg border border-orange-100 bg-orange-50 px-3 py-3 text-xs text-orange-900">
           <div className="font-semibold">{buildingName}</div>
-          <div className="mt-1 text-orange-800">Grow {growId ? `#${growId}` : "-"} saves to {meta.tableName}.</div>
+          <div className="mt-1 text-orange-800">Grow {growSequenceNumber ? `#${growSequenceNumber}` : "-"} saves to {meta.tableName}.</div>
         </div>
         <Form form={form} layout="vertical" requiredMark={false}>
           <Form.Item name="date" label="Date" rules={[{ required: true, message: "Select date" }]}>
@@ -566,7 +572,14 @@ export default function FeedsConsumptionMovementPage() {
           )}
           <div className="grid grid-cols-1 gap-x-3 md:grid-cols-2">
             <Form.Item name="feedCode" label="Feed Code">
-              <Input placeholder="510, 511, 512..." />
+              <Select
+                allowClear
+                showSearch
+                className="!w-full"
+                optionFilterProp="label"
+                options={FEED_CODE_OPTIONS}
+                placeholder="Select feed code"
+              />
             </Form.Item>
             <Form.Item name="qtyBags" label="Qty Bags">
               <InputNumber className="!w-full" min={0} precision={2} />

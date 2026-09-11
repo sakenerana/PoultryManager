@@ -11,15 +11,14 @@ import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
+import { FEED_CODES } from "../utils/feedCodes";
+import { formatGrowSequenceNumber, withGrowSequenceNumbers } from "../utils/growSequence";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const FEEDS_TABLE = import.meta.env.VITE_SUPABASE_FEEDS_CONSUMPTION_TABLE ?? "FeedsConsumption";
-const FEED_RECEIVED_TABLE = import.meta.env.VITE_SUPABASE_FEED_RECEIVED_TABLE ?? "FeedReceived";
-const FEED_TRANSFER_IN_TABLE = import.meta.env.VITE_SUPABASE_FEED_TRANSFER_IN_TABLE ?? "FeedTransferIn";
-const FEED_TRANSFER_OUT_TABLE = import.meta.env.VITE_SUPABASE_FEED_TRANSFER_OUT_TABLE ?? "FeedTransferOut";
 const FEED_USAGE_SUMMARY_TABLE = import.meta.env.VITE_SUPABASE_FEED_USAGE_SUMMARY_TABLE ?? "FeedUsageSummary";
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -34,6 +33,7 @@ type BuildingOption = {
 type GrowOption = {
   id: number;
   building_id: number;
+  sequenceNumber: number;
   created_at: string;
   total_animals: number;
   status: string;
@@ -57,28 +57,6 @@ type FeedRow = {
   remarks: string | null;
 };
 
-type FeedReceivedRow = {
-  id: number;
-  building_id: number;
-  grow_id: number;
-  received_date: string;
-  document_no: string | null;
-  feed_code: string | null;
-  qty_bags: number | null;
-  remarks: string | null;
-};
-
-type FeedTransferRow = {
-  id: number;
-  building_id: number;
-  grow_id: number;
-  transfer_date: string;
-  issue_no: string | null;
-  feed_code: string | null;
-  qty_bags: number | null;
-  farm_name: string | null;
-};
-
 type FeedUsageSummaryRow = {
   id: number;
   building_id: number;
@@ -88,7 +66,7 @@ type FeedUsageSummaryRow = {
   kg: number | null;
 };
 
-type ReportTabKey = "usage" | "received" | "transferIn" | "transferOut" | "summary";
+type ReportTabKey = "usage" | "summary";
 type GrowStatusFilter = "all" | "growing" | "harvested";
 
 function getErrorMessage(error: unknown): string {
@@ -143,9 +121,6 @@ export default function FeedsConsumptionReportPage() {
   const [buildings, setBuildings] = useState<BuildingOption[]>([]);
   const [grows, setGrows] = useState<GrowOption[]>([]);
   const [feedRows, setFeedRows] = useState<FeedRow[]>([]);
-  const [receivedRows, setReceivedRows] = useState<FeedReceivedRow[]>([]);
-  const [transferInRows, setTransferInRows] = useState<FeedTransferRow[]>([]);
-  const [transferOutRows, setTransferOutRows] = useState<FeedTransferRow[]>([]);
   const [usageSummaryRows, setUsageSummaryRows] = useState<FeedUsageSummaryRow[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [growStatusFilter, setGrowStatusFilter] = useState<GrowStatusFilter>("all");
@@ -231,7 +206,7 @@ export default function FeedsConsumptionReportPage() {
             is_harvested: row.is_harvested === true,
           }));
 
-        setGrows(nextGrows);
+        setGrows(withGrowSequenceNumbers(nextGrows));
         setSelectedGrowId("all");
       } catch (error) {
         setToastMessage(`Failed to load grows: ${getErrorMessage(error)}`);
@@ -265,9 +240,6 @@ export default function FeedsConsumptionReportPage() {
     const loadReport = async () => {
       if (!selectedBuildingId) {
         setFeedRows([]);
-        setReceivedRows([]);
-        setTransferInRows([]);
-        setTransferOutRows([]);
         setUsageSummaryRows([]);
         return;
       }
@@ -300,36 +272,6 @@ export default function FeedsConsumptionReportPage() {
           .order("age_day", { ascending: true })
           .order("record_date", { ascending: true });
 
-        const receivedQuery = applyDateRange(
-          applyGrowFilter(
-            supabase
-              .from(FEED_RECEIVED_TABLE)
-              .select("id, building_id, grow_id, received_date, document_no, feed_code, qty_bags, remarks")
-              .eq("building_id", selectedBuildingId)
-          ),
-          "received_date"
-        ).order("received_date", { ascending: true });
-
-        const transferInQuery = applyDateRange(
-          applyGrowFilter(
-            supabase
-              .from(FEED_TRANSFER_IN_TABLE)
-              .select("id, building_id, grow_id, transfer_date, issue_no, feed_code, qty_bags, farm_name")
-              .eq("building_id", selectedBuildingId)
-          ),
-          "transfer_date"
-        ).order("transfer_date", { ascending: true });
-
-        const transferOutQuery = applyDateRange(
-          applyGrowFilter(
-            supabase
-              .from(FEED_TRANSFER_OUT_TABLE)
-              .select("id, building_id, grow_id, transfer_date, issue_no, feed_code, qty_bags, farm_name")
-              .eq("building_id", selectedBuildingId)
-          ),
-          "transfer_date"
-        ).order("transfer_date", { ascending: true });
-
         const usageSummaryQuery = applyGrowFilter(
           supabase
             .from(FEED_USAGE_SUMMARY_TABLE)
@@ -337,19 +279,13 @@ export default function FeedsConsumptionReportPage() {
             .eq("building_id", selectedBuildingId)
         ).order("feed_code", { ascending: true });
 
-        const [feedResult, receivedResult, transferInResult, transferOutResult, usageSummaryResult] = await Promise.all([
+        const [feedResult, usageSummaryResult] = await Promise.all([
           feedQuery,
-          receivedQuery,
-          transferInQuery,
-          transferOutQuery,
           usageSummaryQuery,
         ]);
 
         if (!alive) return;
         if (feedResult.error) throw feedResult.error;
-        if (receivedResult.error) throw receivedResult.error;
-        if (transferInResult.error) throw transferInResult.error;
-        if (transferOutResult.error) throw transferOutResult.error;
         if (usageSummaryResult.error) throw usageSummaryResult.error;
 
         const matchesGrowStatus = (growId: number) => {
@@ -360,17 +296,11 @@ export default function FeedsConsumptionReportPage() {
         };
 
         setFeedRows(((feedResult.data ?? []) as FeedRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
-        setReceivedRows(((receivedResult.data ?? []) as FeedReceivedRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
-        setTransferInRows(((transferInResult.data ?? []) as FeedTransferRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
-        setTransferOutRows(((transferOutResult.data ?? []) as FeedTransferRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
         setUsageSummaryRows(((usageSummaryResult.data ?? []) as FeedUsageSummaryRow[]).filter((row) => matchesGrowStatus(row.grow_id)));
       } catch (error) {
         setFeedRows([]);
-        setReceivedRows([]);
-        setTransferInRows([]);
-        setTransferOutRows([]);
         setUsageSummaryRows([]);
-        setToastMessage(`Failed to load feed report: ${getErrorMessage(error)}`);
+        setToastMessage(`Failed to load daily feed report: ${getErrorMessage(error)}`);
         setIsToastOpen(true);
       } finally {
         if (alive) setIsLoading(false);
@@ -428,7 +358,7 @@ export default function FeedsConsumptionReportPage() {
       },
       ...visibleGrows.map((grow) => ({
         value: grow.id,
-        label: `Grow #${grow.id} | ${getGrowStatusLabel(grow)} | ${formatDate(grow.created_at)} | ${grow.total_animals.toLocaleString()} birds`,
+        label: `Grow #${grow.sequenceNumber} | ${getGrowStatusLabel(grow)} | ${formatDate(grow.created_at)} | ${grow.total_animals.toLocaleString()} birds`,
       })),
     ],
     [growStatusFilter, visibleGrows]
@@ -440,7 +370,7 @@ export default function FeedsConsumptionReportPage() {
   }, [dateRange]);
 
   const selectedGrowLabel = useMemo(
-    () => (selectedGrowId === "all" ? growOptions[0]?.label ?? "All grow batches" : `Grow #${selectedGrowId} | ${getGrowStatusLabel(selectedGrow)}`),
+    () => (selectedGrowId === "all" ? growOptions[0]?.label ?? "All grow batches" : `Grow #${selectedGrow?.sequenceNumber ?? selectedGrowId} | ${getGrowStatusLabel(selectedGrow)}`),
     [growOptions, selectedGrow, selectedGrowId]
   );
   const growStatusLabel =
@@ -449,11 +379,6 @@ export default function FeedsConsumptionReportPage() {
   const summary = useMemo(() => {
     const totalBags = feedRows.reduce((sum, row) => sum + toNumber(row.feed_quantity_bags), 0);
     const totalKg = feedRows.reduce((sum, row) => sum + toNumber(row.feed_quantity_kg), 0);
-    const totalMortality = feedRows.reduce((sum, row) => sum + toNumber(row.mortality_dead) + toNumber(row.mortality_culling), 0);
-    const receivedBags = receivedRows.reduce((sum, row) => sum + toNumber(row.qty_bags), 0);
-    const transferInBags = transferInRows.reduce((sum, row) => sum + toNumber(row.qty_bags), 0);
-    const transferOutBags = transferOutRows.reduce((sum, row) => sum + toNumber(row.qty_bags), 0);
-    const latestRemain = [...feedRows].reverse().find((row) => row.remaining_birds != null)?.remaining_birds ?? selectedGrow?.total_animals ?? 0;
     const byFeedCode = usageSummaryRows.length > 0
       ? usageSummaryRows.reduce<Record<string, { bags: number; kg: number }>>((acc, row) => {
           const key = row.feed_code?.trim() || "Uncoded";
@@ -474,29 +399,18 @@ export default function FeedsConsumptionReportPage() {
       totalRecords: feedRows.length,
       totalBags,
       totalKg,
-      totalMortality,
-      receivedBags,
-      transferInBags,
-      transferOutBags,
-      latestRemain,
       byFeedCode,
     };
-  }, [feedRows, receivedRows, selectedGrow?.total_animals, transferInRows, transferOutRows, usageSummaryRows]);
+  }, [feedRows, usageSummaryRows]);
 
   const hasReportData =
     feedRows.length > 0 ||
-    receivedRows.length > 0 ||
-    transferInRows.length > 0 ||
-    transferOutRows.length > 0 ||
     usageSummaryRows.length > 0;
   const hasActiveSecondaryFilters = selectedGrowId !== "all" || growStatusFilter !== "all" || dateRange !== null;
 
   const reportHistorySummary = useMemo(() => {
     const growIds = [
       ...feedRows.map((row) => row.grow_id),
-      ...receivedRows.map((row) => row.grow_id),
-      ...transferInRows.map((row) => row.grow_id),
-      ...transferOutRows.map((row) => row.grow_id),
       ...usageSummaryRows.map((row) => row.grow_id),
     ];
 
@@ -508,7 +422,7 @@ export default function FeedsConsumptionReportPage() {
       },
       { active: 0, historical: 0 }
     );
-  }, [feedRows, growById, receivedRows, transferInRows, transferOutRows, usageSummaryRows]);
+  }, [feedRows, growById, usageSummaryRows]);
 
   const feedCodeSummaryRows = useMemo(
     () =>
@@ -529,28 +443,7 @@ export default function FeedsConsumptionReportPage() {
         shortLabel: "Daily Usage",
         title: "Daily Feed Usage",
         count: feedRows.length,
-        description: "Age-day feed consumption, mortality, and remaining birds.",
-      },
-      {
-        key: "received" as const,
-        shortLabel: "Received",
-        title: "Feed Received",
-        count: receivedRows.length,
-        description: "Feed deliveries received for the selected building and grow.",
-      },
-      {
-        key: "transferIn" as const,
-        shortLabel: "Transfer In",
-        title: "Feed Transfer In",
-        count: transferInRows.length,
-        description: "Feed moved into this building or grow batch.",
-      },
-      {
-        key: "transferOut" as const,
-        shortLabel: "Transfer Out",
-        title: "Feed Transfer Out",
-        count: transferOutRows.length,
-        description: "Feed moved out from this building or grow batch.",
+        description: "Age-day feed quantity by bags and kilograms.",
       },
       {
         key: "summary" as const,
@@ -560,14 +453,14 @@ export default function FeedsConsumptionReportPage() {
         description: "Bag and kilogram totals grouped by feed code.",
       },
     ],
-    [feedCodeSummaryRows.length, feedRows.length, receivedRows.length, transferInRows.length, transferOutRows.length]
+    [feedCodeSummaryRows.length, feedRows.length]
   );
 
   const activeReportSection = reportSections.find((section) => section.key === activeReportTab) ?? reportSections[0];
 
   const handlePdfClick = () => {
     if (!selectedBuildingId) {
-      setToastMessage("Select a building before exporting the feed report.");
+      setToastMessage("Select a building before exporting the daily feed report.");
       setIsToastOpen(true);
       return;
     }
@@ -589,7 +482,7 @@ export default function FeedsConsumptionReportPage() {
       };
       const growStartDate = selectedGrow?.created_at ? formatDate(selectedGrow.created_at) : "-";
       const pdfGrowContext = selectedGrow
-        ? `Grow #${selectedGrow.id} (${getGrowStatusLabel(selectedGrow)})`
+        ? `Grow #${selectedGrow.sequenceNumber} (${getGrowStatusLabel(selectedGrow)})`
         : selectedGrowLabel;
       const pdfFilterContext = `${selectedBuildingName} | ${pdfGrowContext} | ${dateRangeLabel}`;
       const dailyRowsByAge = new Map<number, FeedRow>();
@@ -615,12 +508,9 @@ export default function FeedsConsumptionReportPage() {
           return [
             String(age),
             row ? dayjs(row.record_date).format("M-D") : "",
-            row?.feed_standard ? formatNumber(row.feed_standard, 2) : "",
+            row?.feed_code || "",
             row?.feed_quantity_bags ? formatNumber(row.feed_quantity_bags, 2) : "",
-            row?.cumulative_feed_kg ? formatNumber(row.cumulative_feed_kg, 2) : "",
-            row?.mortality_dead ? formatNumber(row.mortality_dead) : "",
-            row?.mortality_culling ? formatNumber(row.mortality_culling) : "",
-            row?.remaining_birds ? formatNumber(row.remaining_birds) : "",
+            row?.feed_quantity_kg ? formatNumber(row.feed_quantity_kg, 2) : "",
           ];
         });
         const blockRows = feedRows.filter((row) => row.age_day != null && row.age_day >= startAge && row.age_day < startAge + 7);
@@ -629,10 +519,7 @@ export default function FeedsConsumptionReportPage() {
           "",
           "",
           formatNumber(blockRows.reduce((sum, row) => sum + toNumber(row.feed_quantity_bags), 0), 2),
-          "",
-          formatNumber(blockRows.reduce((sum, row) => sum + toNumber(row.mortality_dead), 0)),
-          formatNumber(blockRows.reduce((sum, row) => sum + toNumber(row.mortality_culling), 0)),
-          "",
+          formatNumber(blockRows.reduce((sum, row) => sum + toNumber(row.feed_quantity_kg), 0), 2),
         ]);
         return rows;
       };
@@ -643,24 +530,14 @@ export default function FeedsConsumptionReportPage() {
           startY: y,
           margin: { left: x },
           tableWidth: 88,
-          head: [[
-            { content: "AGE\n(Day)", rowSpan: 2 },
-            { content: "DATE", rowSpan: 2 },
-            { content: "FEED USAGE", colSpan: 2 },
-            { content: "CUM\nFEED", rowSpan: 2 },
-            { content: "MORTALITY", colSpan: 2 },
-            { content: "REMAIN", rowSpan: 2 },
-          ], ["STD", "QTY", "Dead", "Culling"]],
+          head: [["AGE\n(Day)", "DATE", "CODE", "BAGS", "KG"]],
           body: makeAgeBlockRows(startAge),
           columnStyles: {
-            0: { cellWidth: 9 },
-            1: { cellWidth: 12 },
-            2: { cellWidth: 11 },
-            3: { cellWidth: 12 },
-            4: { cellWidth: 13 },
-            5: { cellWidth: 10 },
-            6: { cellWidth: 11 },
-            7: { cellWidth: 10 },
+            0: { cellWidth: 14 },
+            1: { cellWidth: 18 },
+            2: { cellWidth: 16 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 20 },
           },
         });
         doc.setFillColor(255, 255, 255);
@@ -708,41 +585,8 @@ export default function FeedsConsumptionReportPage() {
         margin: { left: 108 },
         tableWidth: 54,
         head: [["FEED USAGE SUMMARY", "BAGS", "KG"]],
-        body: summaryRows.length > 0 ? summaryRows.slice(0, 5) : [["510", "", ""], ["511", "", ""], ["512", "", ""], ["513", "", ""]],
+        body: summaryRows.length > 0 ? summaryRows.slice(0, 5) : FEED_CODES.map((code) => [code, "", ""]),
         foot: [["Total", formatNumber(summary.totalBags, 2), formatNumber(summary.totalKg, 2)]],
-      });
-
-      autoTable(doc, {
-        ...tableTheme,
-        startY: 103,
-        margin: { left: 108 },
-        tableWidth: 88,
-        head: [["FEED RECEIVED", "DOCUMENT NO.", "FEED CODE", "QTY (bags)", "REMARKS"]],
-        body: receivedRows.length > 0
-          ? receivedRows.slice(0, 9).map((row) => [dayjs(row.received_date).format("M-D"), row.document_no || "", row.feed_code || "", formatNumber(row.qty_bags, 2), row.remarks || ""])
-          : Array.from({ length: 9 }, () => ["", "", "", "", ""]),
-      });
-
-      autoTable(doc, {
-        ...tableTheme,
-        startY: 161,
-        margin: { left: 108 },
-        tableWidth: 88,
-        head: [["FEED TRANSFER IN", "ISSUE NO.", "FEED CODE", "QTY (bags)", "FARM NAME"]],
-        body: transferInRows.length > 0
-          ? transferInRows.slice(0, 7).map((row) => [dayjs(row.transfer_date).format("M-D"), row.issue_no || "", row.feed_code || "", formatNumber(row.qty_bags, 2), row.farm_name || ""])
-          : Array.from({ length: 7 }, () => ["", "", "", "", ""]),
-      });
-
-      autoTable(doc, {
-        ...tableTheme,
-        startY: 211,
-        margin: { left: 108 },
-        tableWidth: 88,
-        head: [["FEED TRANSFER OUT", "ISSUE NO.", "FEED CODE", "QTY (bags)", "FARM NAME"]],
-        body: transferOutRows.length > 0
-          ? transferOutRows.slice(0, 7).map((row) => [dayjs(row.transfer_date).format("M-D"), row.issue_no || "", row.feed_code || "", formatNumber(row.qty_bags, 2), row.farm_name || ""])
-          : Array.from({ length: 7 }, () => ["", "", "", "", ""]),
       });
 
       doc.setFontSize(6);
@@ -751,7 +595,7 @@ export default function FeedsConsumptionReportPage() {
       doc.addPage();
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text("FILTERED FEED CONSUMPTION DETAIL", 14, 15);
+      doc.text("FILTERED DAILY FEED DETAIL", 14, 15);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.text(pdfFilterContext, 14, 21);
@@ -765,111 +609,22 @@ export default function FeedsConsumptionReportPage() {
       autoTable(doc, {
         startY: 32,
         theme: "grid",
-        head: [["Grow", "Status", "Age", "Date", "Code", "Bags", "KG", "Cum Feed", "Dead", "Culling", "Remain", "Remarks"]],
+        head: [["Grow", "Status", "Age", "Date", "Code", "Bags", "KG", "Remarks"]],
         body: feedRows.map((row) => [
-          `#${row.grow_id}`,
+          formatGrowSequenceNumber(growById.get(row.grow_id)?.sequenceNumber),
           getGrowStatusLabel(growById.get(row.grow_id)),
           row.age_day == null ? "-" : String(row.age_day),
           formatDate(row.record_date),
           row.feed_code || "-",
           formatNumber(row.feed_quantity_bags, 2),
           formatNumber(row.feed_quantity_kg, 2),
-          formatNumber(row.cumulative_feed_kg, 2),
-          formatNumber(row.mortality_dead),
-          formatNumber(row.mortality_culling),
-          formatNumber(row.remaining_birds),
           row.remarks || "-",
         ]),
-        foot: [["Total", "", "", "", "", formatNumber(summary.totalBags, 2), formatNumber(summary.totalKg, 2), "", formatNumber(summary.totalMortality), "", formatNumber(summary.latestRemain), ""]],
+        foot: [["Total", "", "", "", "", formatNumber(summary.totalBags, 2), formatNumber(summary.totalKg, 2), ""]],
         styles: { fontSize: 6.2, cellPadding: 1, lineWidth: 0.1, lineColor: [120, 120, 120] },
         headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
         footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
       });
-
-      if (receivedRows.length > 0) {
-        doc.addPage();
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text("FILTERED FEED RECEIVED DETAIL", 14, 15);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text(pdfFilterContext, 14, 21);
-
-        autoTable(doc, {
-          startY: 28,
-          theme: "grid",
-          head: [["Grow", "Status", "Date", "Document No.", "Feed Code", "Qty Bags", "Remarks"]],
-          body: receivedRows.map((row) => [
-            `#${row.grow_id}`,
-            getGrowStatusLabel(growById.get(row.grow_id)),
-            formatDate(row.received_date),
-            row.document_no || "-",
-            row.feed_code || "-",
-            formatNumber(row.qty_bags, 2),
-            row.remarks || "-",
-          ]),
-          foot: [["Feed Received Total", "", "", "", "", formatNumber(summary.receivedBags, 2), ""]],
-          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
-          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
-          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
-        });
-      }
-
-      if (transferInRows.length > 0) {
-        doc.addPage();
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text("FILTERED FEED TRANSFER IN DETAIL", 14, 15);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text(pdfFilterContext, 14, 21);
-        autoTable(doc, {
-          startY: 28,
-          theme: "grid",
-          head: [["Grow", "Status", "Date", "Issue No.", "Feed Code", "Qty Bags", "Farm Name"]],
-          body: transferInRows.map((row) => [
-            `#${row.grow_id}`,
-            getGrowStatusLabel(growById.get(row.grow_id)),
-            formatDate(row.transfer_date),
-            row.issue_no || "-",
-            row.feed_code || "-",
-            formatNumber(row.qty_bags, 2),
-            row.farm_name || "-",
-          ]),
-          foot: [["Transfer In Total", "", "", "", "", formatNumber(summary.transferInBags, 2), ""]],
-          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
-          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
-          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
-        });
-      }
-
-      if (transferOutRows.length > 0) {
-        doc.addPage();
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text("FILTERED FEED TRANSFER OUT DETAIL", 14, 15);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text(pdfFilterContext, 14, 21);
-        autoTable(doc, {
-          startY: 28,
-          theme: "grid",
-          head: [["Grow", "Status", "Date", "Issue No.", "Feed Code", "Qty Bags", "Farm Name"]],
-          body: transferOutRows.map((row) => [
-            `#${row.grow_id}`,
-            getGrowStatusLabel(growById.get(row.grow_id)),
-            formatDate(row.transfer_date),
-            row.issue_no || "-",
-            row.feed_code || "-",
-            formatNumber(row.qty_bags, 2),
-            row.farm_name || "-",
-          ]),
-          foot: [["Transfer Out Total", "", "", "", "", formatNumber(summary.transferOutBags, 2), ""]],
-          styles: { fontSize: 7, cellPadding: 1.2, lineWidth: 0.1, lineColor: [120, 120, 120] },
-          headStyles: { fillColor: [235, 242, 235], textColor: [20, 20, 20], fontStyle: "bold" },
-          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontStyle: "bold" },
-        });
-      }
 
       if (feedCodeSummaryRows.length > 0) {
         doc.addPage();
@@ -895,19 +650,19 @@ export default function FeedsConsumptionReportPage() {
         });
       }
 
-      const growFilenamePart = selectedGrowId === "all" ? "All Grows" : `Grow ${selectedGrowId}`;
+      const growFilenamePart = selectedGrow ? formatGrowSequenceNumber(selectedGrow.sequenceNumber) : "All Grows";
       const pdfFilename = [
-        "Filtered Feed Report",
+        "Daily Feed Report",
         sanitizeFilenamePart(selectedBuildingName),
         sanitizeFilenamePart(`${growFilenamePart} ${growStatusLabel}`),
         generatedAt.format("MMM D YYYY"),
       ].join(" - ");
 
       doc.save(`${pdfFilename}.pdf`);
-      setToastMessage("Filtered feed report PDF downloaded.");
+      setToastMessage("Daily feed report PDF downloaded.");
       setIsToastOpen(true);
     } catch (error) {
-      setToastMessage(`Failed to generate feed PDF: ${getErrorMessage(error)}`);
+      setToastMessage(`Failed to generate daily feed PDF: ${getErrorMessage(error)}`);
       setIsToastOpen(true);
     } finally {
       setIsExportingPdf(false);
@@ -918,7 +673,7 @@ export default function FeedsConsumptionReportPage() {
     const grow = growById.get(growId);
     return (
       <div>
-        <div className="font-semibold text-slate-900">#{growId}</div>
+        <div className="font-semibold text-slate-900">{formatGrowSequenceNumber(grow?.sequenceNumber)}</div>
         <Tag color={isGrowHarvested(grow) ? "orange" : "green"} className="!mr-0 !mt-1">
           {getGrowStatusLabel(grow)}
         </Tag>
@@ -933,29 +688,7 @@ export default function FeedsConsumptionReportPage() {
     { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", width: 110, render: (value: string | null) => value || "-" },
     { title: "Bags", dataIndex: "feed_quantity_bags", key: "feed_quantity_bags", align: "right", width: 100, render: (value: number | null) => formatNumber(value, 2) },
     { title: "KG", dataIndex: "feed_quantity_kg", key: "feed_quantity_kg", align: "right", width: 100, render: (value: number | null) => formatNumber(value, 2) },
-    { title: "Cum Feed", dataIndex: "cumulative_feed_kg", key: "cumulative_feed_kg", align: "right", width: 120, render: (value: number | null) => formatNumber(value, 2) },
-    { title: "Dead", dataIndex: "mortality_dead", key: "mortality_dead", align: "right", width: 90, render: (value: number | null) => formatNumber(value) },
-    { title: "Culling", dataIndex: "mortality_culling", key: "mortality_culling", align: "right", width: 90, render: (value: number | null) => formatNumber(value) },
-    { title: "Remain", dataIndex: "remaining_birds", key: "remaining_birds", align: "right", width: 110, render: (value: number | null) => formatNumber(value) },
     { title: "Remarks", dataIndex: "remarks", key: "remarks", render: (value: string | null) => value || "-" },
-  ];
-
-  const receivedColumns: ColumnsType<FeedReceivedRow> = [
-    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 115, render: renderGrowLabel },
-    { title: "Date", dataIndex: "received_date", key: "received_date", width: 130, render: formatDate },
-    { title: "Document No.", dataIndex: "document_no", key: "document_no", render: (value: string | null) => value || "-" },
-    { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", width: 110, render: (value: string | null) => value || "-" },
-    { title: "Qty Bags", dataIndex: "qty_bags", key: "qty_bags", align: "right", width: 110, render: (value: number | null) => formatNumber(value, 2) },
-    { title: "Remarks", dataIndex: "remarks", key: "remarks", render: (value: string | null) => value || "-" },
-  ];
-
-  const transferColumns: ColumnsType<FeedTransferRow> = [
-    { title: "Grow", dataIndex: "grow_id", key: "grow_id", width: 115, render: renderGrowLabel },
-    { title: "Date", dataIndex: "transfer_date", key: "transfer_date", width: 130, render: formatDate },
-    { title: "Issue No.", dataIndex: "issue_no", key: "issue_no", render: (value: string | null) => value || "-" },
-    { title: "Feed Code", dataIndex: "feed_code", key: "feed_code", width: 110, render: (value: string | null) => value || "-" },
-    { title: "Qty Bags", dataIndex: "qty_bags", key: "qty_bags", align: "right", width: 110, render: (value: number | null) => formatNumber(value, 2) },
-    { title: "Farm Name", dataIndex: "farm_name", key: "farm_name", render: (value: string | null) => value || "-" },
   ];
 
   const usageSummaryColumns: ColumnsType<FeedUsageSummaryRow> = [
@@ -972,7 +705,7 @@ export default function FeedsConsumptionReportPage() {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Feed Usage</div>
-              <div className="text-lg font-bold text-emerald-700">Grow #{row.grow_id} | Day {row.age_day ?? "-"}</div>
+              <div className="text-lg font-bold text-emerald-700">Grow {formatGrowSequenceNumber(growById.get(row.grow_id)?.sequenceNumber)} | Day {row.age_day ?? "-"}</div>
               <div className="text-[11px] text-slate-500">{formatDate(row.record_date)}</div>
               <Tag color={isGrowHarvested(growById.get(row.grow_id)) ? "orange" : "green"} className="!mr-0 !mt-1">
                 {getGrowStatusLabel(growById.get(row.grow_id))}
@@ -980,7 +713,7 @@ export default function FeedsConsumptionReportPage() {
             </div>
             <div className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{row.feed_code || "No code"}</div>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-md bg-amber-50 px-2.5 py-2">
               <div className="text-[9px] uppercase tracking-wide text-amber-700">Bags</div>
               <div className="text-base font-bold text-amber-800">{formatNumber(row.feed_quantity_bags, 2)}</div>
@@ -989,26 +722,8 @@ export default function FeedsConsumptionReportPage() {
               <div className="text-[9px] uppercase tracking-wide text-emerald-700">KG</div>
               <div className="text-base font-bold text-emerald-800">{formatNumber(row.feed_quantity_kg, 2)}</div>
             </div>
-            <div className="rounded-md bg-slate-50 px-2.5 py-2">
-              <div className="text-[9px] uppercase tracking-wide text-slate-500">Remain</div>
-              <div className="text-base font-bold text-slate-900">{formatNumber(row.remaining_birds)}</div>
-            </div>
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 rounded-md border border-slate-100 bg-white px-2.5 py-2 text-[11px]">
-            <div>
-              <div className="text-[9px] uppercase tracking-wide text-slate-400">Cumulative Feed</div>
-              <div className="font-semibold text-slate-800">{formatNumber(row.cumulative_feed_kg, 2)} kg</div>
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wide text-slate-400">Mortality</div>
-              <div className="font-semibold text-slate-800">
-                {formatNumber(row.mortality_dead)} dead / {formatNumber(row.mortality_culling)} cull
-              </div>
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wide text-slate-400">Standard</div>
-              <div className="font-semibold text-slate-800">{formatNumber(row.feed_standard, 2)}</div>
-            </div>
+          <div className="mt-2 rounded-md border border-slate-100 bg-white px-2.5 py-2 text-[11px]">
             <div>
               <div className="text-[9px] uppercase tracking-wide text-slate-400">Remarks</div>
               <div className="truncate font-semibold text-slate-800">{row.remarks || "-"}</div>
@@ -1019,84 +734,6 @@ export default function FeedsConsumptionReportPage() {
       {feedRows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 px-3 py-5 text-center text-xs text-slate-500">
           No feed usage records match the current filters.
-        </div>
-      ) : null}
-    </div>
-  );
-
-  const renderMobileReceivedList = () => (
-    <div className="space-y-3">
-      {receivedRows.map((row) => (
-        <Card key={row.id} size="small" className="!rounded-sm !border !border-slate-200 shadow-sm" styles={{ body: { padding: 12 } }}>
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Feed Received</div>
-              <div className="text-lg font-bold text-emerald-700">Grow #{row.grow_id}</div>
-              <div className="text-[11px] text-slate-500">{formatDate(row.received_date)}</div>
-              <Tag color={isGrowHarvested(growById.get(row.grow_id)) ? "orange" : "green"} className="!mr-0 !mt-1">
-                {getGrowStatusLabel(growById.get(row.grow_id))}
-              </Tag>
-            </div>
-            <div className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{row.feed_code || "No code"}</div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-md bg-amber-50 px-2.5 py-2">
-              <div className="text-[9px] uppercase tracking-wide text-amber-700">Bags</div>
-              <div className="text-base font-bold text-amber-800">{formatNumber(row.qty_bags, 2)}</div>
-            </div>
-            <div className="rounded-md bg-slate-50 px-2.5 py-2">
-              <div className="text-[9px] uppercase tracking-wide text-slate-500">Document No.</div>
-              <div className="truncate text-base font-bold text-slate-900">{row.document_no || "-"}</div>
-            </div>
-          </div>
-          <div className="mt-2 rounded-md border border-slate-100 bg-white px-2.5 py-2">
-            <div className="text-[9px] uppercase tracking-wide text-slate-400">Remarks</div>
-            <div className="text-[11px] font-semibold text-slate-800">{row.remarks || "-"}</div>
-          </div>
-        </Card>
-      ))}
-      {receivedRows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 px-3 py-5 text-center text-xs text-slate-500">
-          No feed received records match the current filters.
-        </div>
-      ) : null}
-    </div>
-  );
-
-  const renderMobileTransferList = (rows: FeedTransferRow[], emptyText: string, title: string) => (
-    <div className="space-y-3">
-      {rows.map((row) => (
-        <Card key={row.id} size="small" className="!rounded-sm !border !border-slate-200 shadow-sm" styles={{ body: { padding: 12 } }}>
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</div>
-              <div className="text-lg font-bold text-emerald-700">Grow #{row.grow_id}</div>
-              <div className="text-[11px] text-slate-500">{formatDate(row.transfer_date)}</div>
-              <Tag color={isGrowHarvested(growById.get(row.grow_id)) ? "orange" : "green"} className="!mr-0 !mt-1">
-                {getGrowStatusLabel(growById.get(row.grow_id))}
-              </Tag>
-            </div>
-            <div className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{row.feed_code || "No code"}</div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-md bg-amber-50 px-2.5 py-2">
-              <div className="text-[9px] uppercase tracking-wide text-amber-700">Bags</div>
-              <div className="text-base font-bold text-amber-800">{formatNumber(row.qty_bags, 2)}</div>
-            </div>
-            <div className="rounded-md bg-slate-50 px-2.5 py-2">
-              <div className="text-[9px] uppercase tracking-wide text-slate-500">Issue No.</div>
-              <div className="truncate text-base font-bold text-slate-900">{row.issue_no || "-"}</div>
-            </div>
-          </div>
-          <div className="mt-2 rounded-md border border-slate-100 bg-white px-2.5 py-2">
-            <div className="text-[9px] uppercase tracking-wide text-slate-400">Farm Name</div>
-            <div className="text-[11px] font-semibold text-slate-800">{row.farm_name || "-"}</div>
-          </div>
-        </Card>
-      ))}
-      {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 px-3 py-5 text-center text-xs text-slate-500">
-          {emptyText}
         </div>
       ) : null}
     </div>
@@ -1131,7 +768,7 @@ export default function FeedsConsumptionReportPage() {
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className={["!m-0 !border-white/60", isMobile ? "!h-5" : "!h-6"].join(" ")} />
           <Title level={4} className="!m-0 !text-base !text-white md:!text-lg">
-            Feeds Report
+            Daily Feed Report
           </Title>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
@@ -1157,9 +794,9 @@ export default function FeedsConsumptionReportPage() {
               <div className={isMobile ? "space-y-4" : "grid grid-cols-12 gap-6 items-end"}>
                 <div className={isMobile ? "" : "col-span-7"}>
                   <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">Reports Center</div>
-                  <div className="mt-2 text-2xl font-bold leading-tight md:text-3xl">Feeds Report</div>
+                  <div className="mt-2 text-2xl font-bold leading-tight md:text-3xl">Daily Feed Report</div>
                   <div className="mt-2 max-w-2xl text-sm text-emerald-50/90 md:text-base">
-                    Filter feed usage by building, grow, and date range, then export the visible report to PDF.
+                    Filter daily feed usage by building, grow, and date range, then export the visible report to PDF.
                   </div>
                 </div>
                 <div className={isMobile ? "grid grid-cols-2 gap-3" : "col-span-5 grid grid-cols-2 gap-3"}>
@@ -1264,28 +901,22 @@ export default function FeedsConsumptionReportPage() {
           </div>
 
           <Row gutter={isMobile ? [8, 8] : [16, 16]}>
-            <Col xs={12} md={6}>
+            <Col xs={24} md={8}>
               <Card className="!rounded-sm !border !border-slate-200 shadow-sm" styles={{ body: { padding: isMobile ? 10 : 16 } }}>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Records</div>
                 <Statistic value={summary.totalRecords} valueStyle={{ color: "#0f172a", fontSize: isMobile ? 18 : 28, fontWeight: 700 }} />
               </Card>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={8}>
+              <Card className="!rounded-sm !border !border-amber-100 shadow-sm" styles={{ body: { padding: isMobile ? 10 : 16 } }}>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">Total Feed Bags</div>
+                <Statistic value={summary.totalBags} precision={2} valueStyle={{ color: "#92400e", fontSize: isMobile ? 18 : 28, fontWeight: 700 }} />
+              </Card>
+            </Col>
+            <Col xs={12} md={8}>
               <Card className="!rounded-sm !border !border-emerald-100 shadow-sm" styles={{ body: { padding: isMobile ? 10 : 16 } }}>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Feed KG</div>
                 <Statistic value={summary.totalKg} precision={2} valueStyle={{ color: BRAND, fontSize: isMobile ? 18 : 28, fontWeight: 700 }} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card className="!rounded-sm !border !border-amber-100 shadow-sm" styles={{ body: { padding: isMobile ? 10 : 16 } }}>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">Received Bags</div>
-                <Statistic value={summary.receivedBags} precision={2} valueStyle={{ color: "#92400e", fontSize: isMobile ? 18 : 28, fontWeight: 700 }} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card className="!rounded-sm !border !border-slate-200 shadow-sm" styles={{ body: { padding: isMobile ? 10 : 16 } }}>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Net Transfer Bags</div>
-                <Statistic value={summary.transferInBags - summary.transferOutBags} precision={2} valueStyle={{ color: "#0f172a", fontSize: isMobile ? 18 : 28, fontWeight: 700 }} />
               </Card>
             </Col>
           </Row>
@@ -1337,7 +968,7 @@ export default function FeedsConsumptionReportPage() {
                 onClick={handlePdfClick}
                 loading={isExportingPdf}
                 disabled={!hasReportData}
-                title={hasReportData ? "Export filtered feed report sections" : "No feed records to export"}
+                title={hasReportData ? "Export filtered daily feed report" : "No feed records to export"}
               >
                 Export Filtered PDF
               </Button>
@@ -1356,13 +987,13 @@ export default function FeedsConsumptionReportPage() {
                   />
                 </div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  PDF exports all filtered sections
+                  PDF exports daily feed usage and feed code summary
                 </div>
               </div>
             </div>
             {!isLoading && !hasReportData ? (
               <div className="mb-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900 md:text-sm">
-                <div className="font-semibold">No feed records found for this building, grow, and date range.</div>
+                <div className="font-semibold">No daily feed records found for this building, grow, and date range.</div>
                 <div className="mt-1 text-amber-800">Try clearing filters or selecting another grow batch.</div>
               </div>
             ) : null}
@@ -1380,56 +1011,8 @@ export default function FeedsConsumptionReportPage() {
                       rowKey="id"
                       loading={isLoading}
                       pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} feed records` }}
-                      scroll={{ x: 1120 }}
+                      scroll={{ x: 820 }}
                       locale={{ emptyText: "No feed usage records match the current filters." }}
-                    />
-                  ),
-                },
-                {
-                  key: "received",
-                  label: renderTabLabel("Feed Received", receivedRows.length),
-                  children: isMobile ? renderMobileReceivedList() : (
-                    <Table<FeedReceivedRow>
-                      dataSource={receivedRows}
-                      columns={receivedColumns}
-                      rowKey="id"
-                      loading={isLoading}
-                      pagination={{ pageSize: 10 }}
-                      size={isMobile ? "small" : "middle"}
-                      scroll={{ x: 760 }}
-                      locale={{ emptyText: "No feed received records match the current filters." }}
-                    />
-                  ),
-                },
-                {
-                  key: "transferIn",
-                  label: renderTabLabel("Transfer In", transferInRows.length),
-                  children: isMobile ? renderMobileTransferList(transferInRows, "No transfer in records match the current filters.", "Transfer In") : (
-                    <Table<FeedTransferRow>
-                      dataSource={transferInRows}
-                      columns={transferColumns}
-                      rowKey="id"
-                      loading={isLoading}
-                      pagination={{ pageSize: 10 }}
-                      size={isMobile ? "small" : "middle"}
-                      scroll={{ x: 760 }}
-                      locale={{ emptyText: "No transfer in records match the current filters." }}
-                    />
-                  ),
-                },
-                {
-                  key: "transferOut",
-                  label: renderTabLabel("Transfer Out", transferOutRows.length),
-                  children: isMobile ? renderMobileTransferList(transferOutRows, "No transfer out records match the current filters.", "Transfer Out") : (
-                    <Table<FeedTransferRow>
-                      dataSource={transferOutRows}
-                      columns={transferColumns}
-                      rowKey="id"
-                      loading={isLoading}
-                      pagination={{ pageSize: 10 }}
-                      size={isMobile ? "small" : "middle"}
-                      scroll={{ x: 760 }}
-                      locale={{ emptyText: "No transfer out records match the current filters." }}
                     />
                   ),
                 },

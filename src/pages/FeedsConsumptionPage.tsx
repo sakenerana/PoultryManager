@@ -8,6 +8,7 @@ import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { signOutAndRedirect } from "../utils/auth";
+import { createGrowSequenceMapByBuilding } from "../utils/growSequence";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
@@ -23,6 +24,7 @@ type FeedSetupRow = {
   id: number;
   name: string;
   latestGrowId: number | null;
+  latestGrowSequenceNumber: number | null;
   createdAt: string;
   totalBirds: number;
   growCount: number;
@@ -75,8 +77,8 @@ export default function FeedsConsumptionPage() {
       { title: "Building", dataIndex: "name", key: "name", width: 160 },
       {
         title: "Current Grow",
-        dataIndex: "latestGrowId",
-        key: "latestGrowId",
+        dataIndex: "latestGrowSequenceNumber",
+        key: "latestGrowSequenceNumber",
         width: 120,
         render: (id: number | null) => (id == null ? "-" : `#${id}`),
       },
@@ -135,7 +137,7 @@ export default function FeedsConsumptionPage() {
         key: "actionHint",
         width: 120,
         align: "right",
-        render: () => <span className="text-xs font-semibold text-orange-700">Open feed setup</span>,
+        render: () => <span className="text-xs font-semibold text-orange-700">Open daily feed</span>,
       },
     ],
     []
@@ -175,19 +177,34 @@ export default function FeedsConsumptionPage() {
 
         const latestGrowByBuildingId = new Map<
           number,
-          { id: number; createdAt: string; totalBirds: number; status: string; isHarvested: boolean }
+          { id: number; sequenceNumber: number; createdAt: string; totalBirds: number; status: string; isHarvested: boolean }
         >();
         const growCountsByBuildingId = new Map<number, { total: number; active: number; harvested: number }>();
-
-        ((growRows ?? []) as Array<{
+        const growRowsWithBuilding = ((growRows ?? []) as Array<{
           id: number | null;
           building_id: number | null;
           created_at: string | null;
           total_animals: number | null;
           status: string | null;
           is_harvested: boolean | null;
-        }>).forEach((row) => {
-          if (row.id == null || row.building_id == null) return;
+        }>)
+          .filter((row): row is {
+            id: number;
+            building_id: number;
+            created_at: string | null;
+            total_animals: number | null;
+            status: string | null;
+            is_harvested: boolean | null;
+          } => row.id != null && row.building_id != null);
+        const growSequenceById = createGrowSequenceMapByBuilding(
+          growRowsWithBuilding.map((row) => ({
+            id: row.id,
+            buildingId: row.building_id,
+            createdAt: row.created_at ?? "",
+          }))
+        );
+
+        growRowsWithBuilding.forEach((row) => {
           const currentCounts = growCountsByBuildingId.get(row.building_id) ?? { total: 0, active: 0, harvested: 0 };
           const isHarvested = row.is_harvested === true || String(row.status ?? "").toLowerCase() === "harvested";
           currentCounts.total += 1;
@@ -198,6 +215,7 @@ export default function FeedsConsumptionPage() {
           if (isHarvested || latestGrowByBuildingId.has(row.building_id)) return;
           latestGrowByBuildingId.set(row.building_id, {
             id: row.id,
+            sequenceNumber: growSequenceById.get(row.id) ?? 0,
             createdAt: row.created_at ?? "",
             totalBirds: Math.max(0, Math.floor(toNumber(row.total_animals))),
             status: row.status ?? "Ready",
@@ -229,6 +247,7 @@ export default function FeedsConsumptionPage() {
             id: building.id,
             name,
             latestGrowId: latestGrow?.id ?? null,
+            latestGrowSequenceNumber: latestGrow?.sequenceNumber ?? null,
             createdAt: latestGrow?.createdAt ?? "",
             totalBirds: latestGrow?.totalBirds ?? 0,
             growCount: growCounts.total,
@@ -284,7 +303,7 @@ export default function FeedsConsumptionPage() {
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className="!m-0 !text-base !text-white">
-            Feeds Setup
+            Daily Feed Usage
           </Title>
         </div>
         <Button type="text" icon={<FaSignOutAlt size={18} />} className="!text-white hover:!text-white/90" onClick={() => void signOutAndRedirect(navigate)} aria-label="Sign out" />
@@ -296,9 +315,9 @@ export default function FeedsConsumptionPage() {
           <div className="mb-3 rounded-2xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-lime-700 px-4 py-4 text-white md:mb-5 md:px-6 md:py-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">Feeds Setup</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/75">Daily Feed Usage</div>
                 <div className="mt-1.5 text-xl font-bold leading-tight md:text-3xl">Select a building</div>
-                <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">Click a building to choose current or historical feed records.</div>
+                <div className="mt-1 text-xs text-emerald-50/90 md:text-sm">Click a building to choose the grow batch for daily feed usage.</div>
               </div>
               <Button icon={<MdOutlinePictureAsPdf size={17} />} className="!rounded-lg !border-white/30 !bg-white/10 !text-white hover:!border-white/50 hover:!bg-white/20" onClick={() => navigate("/reports/feeds-consumption")}>
                 Open Report
@@ -314,14 +333,14 @@ export default function FeedsConsumptionPage() {
 
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-2 text-sm font-semibold text-slate-700">Buildings</div>
-            <div className="mb-2 text-xs text-slate-500">Select a building, then choose the active or harvested grow batch to encode.</div>
+            <div className="mb-2 text-xs text-slate-500">Select a building, then choose the active or harvested grow batch for daily feed usage.</div>
             {isMobile ? (
               <div className="space-y-2">
                 {rows.length === 0 && !isLoading ? (
                   <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6">
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="No buildings are ready for feed setup yet."
+                      description="No buildings are ready for daily feed usage yet."
                     />
                   </div>
                 ) : null}
@@ -331,7 +350,7 @@ export default function FeedsConsumptionPage() {
                       <div>
                         <div className="text-xs text-slate-500">Building</div>
                         <div className="font-semibold text-slate-800">{record.name}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">Current Grow: {record.latestGrowId == null ? "-" : `#${record.latestGrowId}`}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">Current Grow: {record.latestGrowSequenceNumber == null ? "-" : `#${record.latestGrowSequenceNumber}`}</div>
                       </div>
                       <Tag color={statusColor(record.status, record.isHarvested)} className="!mr-0">
                         {record.status || "Unknown"}
@@ -345,7 +364,7 @@ export default function FeedsConsumptionPage() {
                       <div><span className="text-slate-500">Records:</span> {record.feedRecords.toLocaleString()}</div>
                       <div><span className="text-slate-500">KG:</span> {record.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="mt-2 text-right text-[11px] font-semibold text-orange-700">Open feed setup</div>
+                    <div className="mt-2 text-right text-[11px] font-semibold text-orange-700">Open daily feed</div>
                   </button>
                 ))}
                 <Pagination
@@ -376,10 +395,10 @@ export default function FeedsConsumptionPage() {
                   showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} buildings`,
                 }}
                 scroll={{ x: 1040 }}
-                locale={{ emptyText: "No buildings are ready for feed setup yet." }}
+                locale={{ emptyText: "No buildings are ready for daily feed usage yet." }}
                 onRow={(record) => ({
                   onClick: () => openBuilding(record.id),
-                  title: "Open feeds setup",
+                  title: "Open daily feed",
                   className: "cursor-pointer hover:!bg-orange-50/60",
                 })}
               />

@@ -69,8 +69,8 @@ const tiles: ReportTile[] = [
   },
   {
     key: "feeds",
-    title: "Feeds",
-    subtitle: "Filtered feed reports and PDF export",
+    title: "Daily Feed Report",
+    subtitle: "Daily feed usage reports and PDF export",
     borderColor: "#f97316",
     titleColor: "#475569",
     iconSrc: "/img/feeds.svg",

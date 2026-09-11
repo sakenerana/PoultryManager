@@ -101,18 +101,18 @@ const tiles: Tile[] = [
     },
     {
         key: "feeds",
-        title: "Feeds",
-        subtitle: "Feed usage records and history",
+        title: "Daily Feed Usage",
+        subtitle: "Daily feed records and history",
         accent: "text-[#008822]",
         borderColor: "#f97316",
         icon: (
             <img
                 src="/img/feeds.svg"
-                alt="Feeds"
+                alt="Daily Feed Usage"
                 className="h-10 w-10"
             />
         ),
-        largeText: "Feeds",
+        largeText: "Daily Feed Usage",
         link: "/feeds-consumption",
     },
     {

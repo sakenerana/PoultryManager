@@ -7,6 +7,7 @@ import { IoMdArrowRoundBack } from "react-icons/io";
 import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { signOutAndRedirect } from "../utils/auth";
+import { withGrowSequenceNumbers } from "../utils/growSequence";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
@@ -24,6 +25,7 @@ type BuildingSummary = {
   id: number;
   name: string;
   latestGrowId: number | null;
+  latestGrowSequenceNumber: number | null;
   createdAt: string;
   totalBirds: number;
   feedRecords: number;
@@ -39,6 +41,7 @@ type BuildingSummary = {
 
 type GrowOption = {
   id: number;
+  sequenceNumber: number;
   createdAt: string;
   totalBirds: number;
   status: string;
@@ -145,12 +148,13 @@ export default function FeedsConsumptionBuildingMenuPage() {
             status: grow.status ?? "Ready",
             isHarvested: grow.is_harvested === true,
           }));
+        const sequencedGrows = withGrowSequenceNumbers(grows);
 
         const effectiveGrow =
-          grows.find((grow) => grow.id === requestedGrowId) ?? grows[0] ?? null;
+          sequencedGrows.find((grow) => grow.id === requestedGrowId) ?? sequencedGrows[0] ?? null;
         const effectiveGrowId = effectiveGrow?.id ?? null;
 
-        setGrowOptions(grows);
+        setGrowOptions(sequencedGrows);
         setSelectedGrowId(effectiveGrowId);
         if (effectiveGrowId != null && requestedGrowId !== effectiveGrowId) {
           setSearchParams({ growId: String(effectiveGrowId) }, { replace: true });
@@ -199,6 +203,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
           id: building.id,
           name: building.name ?? `Building ${building.id}`,
           latestGrowId: effectiveGrowId,
+          latestGrowSequenceNumber: effectiveGrow?.sequenceNumber ?? null,
           createdAt: effectiveGrow?.createdAt ?? "",
           totalBirds: effectiveGrow?.totalBirds ?? 0,
           feedRecords: feedRows.length,
@@ -230,13 +235,16 @@ export default function FeedsConsumptionBuildingMenuPage() {
   const netAvailableBags = summary
     ? summary.receivedBags + summary.transferInBags - summary.usedBags - summary.transferOutBags
     : 0;
+  const overallTotalBags = summary
+    ? summary.usedBags + summary.receivedBags + summary.transferInBags + summary.transferOutBags
+    : 0;
   const selectedGrow = growOptions.find((grow) => grow.id === selectedGrowId) ?? null;
   const canOpenRecordSections = summary != null && selectedGrowId != null;
 
   const menuCards = [
     {
       title: "Daily Feed Usage",
-      description: "Daily age-day consumption and mortality.",
+      description: "Daily age-day feed quantity by bags and kilograms.",
       total: summary?.usedBags ?? 0,
       unit: "bags used",
       recordCount: summary?.feedRecords ?? 0,
@@ -245,42 +253,6 @@ export default function FeedsConsumptionBuildingMenuPage() {
       secondary: `${formatCount(summary?.feedRecords ?? 0, "record")} | ${(summary?.usedKg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} kg`,
       accent: "#008822",
       path: `/feeds-consumption/building/${parsedBuildingId}/daily${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
-    },
-    {
-      title: "Feed Received",
-      description: "Deliveries and document numbers.",
-      total: summary?.receivedBags ?? 0,
-      unit: "bags received",
-      recordCount: summary?.receivedRecords ?? 0,
-      recordNoun: "entry",
-      status: getRecordStatus(summary?.receivedRecords ?? 0),
-      secondary: `${formatCount(summary?.receivedRecords ?? 0, "entry")} | ${(summary?.receivedBags ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} bags`,
-      accent: "#0ea5e9",
-      path: `/feeds-consumption/building/${parsedBuildingId}/received${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
-    },
-    {
-      title: "Transfer In",
-      description: "Feed moved into this building.",
-      total: summary?.transferInBags ?? 0,
-      unit: "bags in",
-      recordCount: summary?.transferInRecords ?? 0,
-      recordNoun: "entry",
-      status: getRecordStatus(summary?.transferInRecords ?? 0),
-      secondary: `${formatCount(summary?.transferInRecords ?? 0, "entry")} | ${(summary?.transferInBags ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} bags`,
-      accent: "#f59e0b",
-      path: `/feeds-consumption/building/${parsedBuildingId}/transfer-in${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
-    },
-    {
-      title: "Transfer Out",
-      description: "Feed moved out of this building.",
-      total: summary?.transferOutBags ?? 0,
-      unit: "bags out",
-      recordCount: summary?.transferOutRecords ?? 0,
-      recordNoun: "entry",
-      status: getRecordStatus(summary?.transferOutRecords ?? 0),
-      secondary: `${formatCount(summary?.transferOutRecords ?? 0, "entry")} | ${(summary?.transferOutBags ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} bags`,
-      accent: "#ef4444",
-      path: `/feeds-consumption/building/${parsedBuildingId}/transfer-out${selectedGrowId ? `?growId=${selectedGrowId}` : ""}`,
     },
   ];
 
@@ -300,7 +272,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
           <Button type="text" icon={<IoHome size={18} />} className="!text-white hover:!text-white/90" onClick={() => navigate("/landing-page")} aria-label="Home" />
           <Divider type="vertical" className="!m-0 !h-5 !border-white/60" />
           <Title level={4} className="!m-0 !text-base !text-white">
-            Feeds Setup
+            Daily Feed Usage
           </Title>
         </div>
         <Button type="text" icon={<FaSignOutAlt size={18} />} className="!text-white hover:!text-white/90" onClick={() => void signOutAndRedirect(navigate)} aria-label="Sign out" />
@@ -312,17 +284,20 @@ export default function FeedsConsumptionBuildingMenuPage() {
           <div className="mb-5 rounded-xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-lime-700 px-5 py-6 text-white shadow-sm md:px-7">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">Feeds Setup</div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">Daily Feed Usage</div>
                 <Title level={isMobile ? 3 : 2} className="!m-0 !text-white">
-                  Choose feed record type
+                  Daily feed setup
                 </Title>
                 <p className="mt-2 max-w-2xl text-sm text-white/90 md:text-base">
-                  {summary?.name ?? (isLoading ? "Loading building" : "Building not found")} | Select the record section to encode for this building.
+                  {summary?.name ?? (isLoading ? "Loading building" : "Building not found")} | Encode daily feed usage for this building.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.16em]">
-                  <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {summary?.latestGrowId ? `#${summary.latestGrowId}` : "-"}</div>
+                  <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Grow {summary?.latestGrowSequenceNumber ? `#${summary.latestGrowSequenceNumber}` : "-"}</div>
                   <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{summary?.totalBirds.toLocaleString() ?? 0} birds</div>
                   <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{formatDate(summary?.createdAt ?? "")}</div>
+                  <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                    Overall {overallTotalBags.toLocaleString(undefined, { maximumFractionDigits: 2 })} bags
+                  </div>
                   <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
                     Net {netAvailableBags.toLocaleString(undefined, { maximumFractionDigits: 2 })} bags
                   </div>
@@ -344,7 +319,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Grow Batch</div>
                 <div className="mt-1 text-base font-semibold text-slate-900">Choose active or harvested grow</div>
-                <div className="mt-1 text-sm text-slate-500">Use older harvested batches when encoding backdated manual feed records.</div>
+                <div className="mt-1 text-sm text-slate-500">Use older harvested batches when encoding backdated daily feed records.</div>
               </div>
               <Select
                 className="!w-full md:!w-[360px]"
@@ -354,7 +329,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
                 onChange={(value) => setSearchParams({ growId: String(value) })}
                 options={growOptions.map((grow) => ({
                   value: grow.id,
-                  label: `Grow #${grow.id} | ${grow.isHarvested ? "Harvested" : grow.status} | ${formatDate(grow.createdAt)}`,
+                  label: `Grow #${grow.sequenceNumber} | ${grow.isHarvested ? "Harvested" : grow.status} | ${formatDate(grow.createdAt)}`,
                 }))}
               />
             </div>
@@ -362,7 +337,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {growOptions.slice(0, 8).map((grow) => (
                   <Tag key={grow.id} color={grow.isHarvested ? "orange" : "green"} className="!mr-0">
-                    #{grow.id} {grow.isHarvested ? "Harvested" : grow.status}
+                    Grow #{grow.sequenceNumber} {grow.isHarvested ? "Harvested" : grow.status}
                   </Tag>
                 ))}
               </div>
@@ -382,12 +357,12 @@ export default function FeedsConsumptionBuildingMenuPage() {
             ) : null}
             {selectedGrow?.isHarvested && (
               <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
-                <span className="font-semibold">Historical grow selected.</span> New entries will be saved to Grow #{selectedGrow.id}, not the current active batch.
+                <span className="font-semibold">Historical grow selected.</span> New entries will be saved to Grow #{selectedGrow.sequenceNumber}, not the current active batch.
               </div>
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4">
             {menuCards.map((card) => (
               <button
                 key={card.title}
@@ -424,7 +399,7 @@ export default function FeedsConsumptionBuildingMenuPage() {
                     <div className="text-xs text-slate-500">{card.unit}</div>
                   </div>
                   <div className="mt-2 text-xs font-medium text-slate-500">
-                    {canOpenRecordSections ? card.secondary : "Add a grow batch before encoding feed records."}
+                    {canOpenRecordSections ? card.secondary : "Add a grow batch before encoding daily feed usage."}
                   </div>
                 </div>
                 <div className="mt-3 text-right text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: card.accent }}>
