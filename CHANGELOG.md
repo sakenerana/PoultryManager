@@ -6,6 +6,10 @@ Historical releases are not backfilled because verified release notes are not av
 
 ## Unreleased
 
+### Changed
+
+- Daily Feed Usage now displays Day 1–30 feed targets scaled by the latest available bird count, daily actual-versus-target variance, and weekly cumulative actual, adjusted target, and variance through Day 30; incomplete periods are clearly marked until every required day is recorded.
+
 ### Added
 
 - Replaced the starter project README with system documentation covering modules, routes, Supabase configuration, local development, and build behavior.

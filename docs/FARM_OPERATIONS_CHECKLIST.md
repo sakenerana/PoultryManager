@@ -51,6 +51,9 @@ Do not enter an invented zero for a value that is unknown. Use zero only when ze
 - [ ] Save and confirm that the day is no longer pending.
 - [ ] Check that the daily entry appears once for the grow and age day.
 - [ ] Compare the displayed total with the source record used by the operator.
+- [ ] Review the Day 1–30 daily target, bird basis, and actual-minus-target variance.
+- [ ] Review weekly cumulative actual, adjusted target, and variance through the applicable guide day.
+- [ ] Resolve pending days before interpreting cumulative variance; **Incomplete** is not a confirmed under-target result.
 
 The visible workflow records daily feed usage only. Do not use legacy received, transfer-in, or transfer-out URLs as part of the current process.
 

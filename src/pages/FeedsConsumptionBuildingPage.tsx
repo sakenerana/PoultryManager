@@ -11,12 +11,14 @@ import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import { FEED_CODE_OPTIONS } from "../utils/feedCodes";
+import { getDailyFeedTarget, type DailyFeedTarget } from "../utils/feedTargets";
 import { createGrowSequenceMapByBuilding, withGrowSequenceNumbers } from "../utils/growSequence";
 import supabase from "../utils/supabase";
 
 const BRAND = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
+const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const FEEDS_TABLE = import.meta.env.VITE_SUPABASE_FEEDS_CONSUMPTION_TABLE ?? "FeedsConsumption";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const { Header, Content } = Layout;
@@ -73,6 +75,12 @@ type FeedDayRow = {
   entry: FeedEntryRecord | null;
 };
 
+type GrowBirdSnapshot = {
+  growId: number;
+  createdAt: string;
+  actualTotalBirds: number;
+};
+
 type FeedStatusFilter = "all" | "recorded" | "pending";
 
 type FeedEntryFormValues = {
@@ -93,6 +101,15 @@ const formatDate = (value: string): string => {
 const toNumber = (value: unknown): number => {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatKg = (value: number): string =>
+  value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+
+const formatSignedKg = (value: number): string => {
+  const rounded = Math.round(value * 10) / 10;
+  const prefix = rounded > 0 ? "+" : "";
+  return `${prefix}${formatKg(rounded)} kg`;
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -118,6 +135,7 @@ export default function FeedsConsumptionBuildingPage() {
   });
   const [allGrows, setAllGrows] = useState<GrowRecord[]>([]);
   const [feedEntries, setFeedEntries] = useState<FeedEntryRecord[]>([]);
+  const [growBirdSnapshots, setGrowBirdSnapshots] = useState<GrowBirdSnapshot[]>([]);
   const [activeFeedDay, setActiveFeedDay] = useState<FeedDayRow | null>(null);
   const [isFeedModalOpen, setIsFeedModalOpen] = useState(false);
   const [isSavingFeedEntry, setIsSavingFeedEntry] = useState(false);
@@ -194,6 +212,27 @@ export default function FeedsConsumptionBuildingPage() {
     });
   }, [feedEntryByDay, selectedGrowForDays?.createdAt]);
 
+  const feedTargetByDay = useMemo(() => {
+    const targets = new Map<number, DailyFeedTarget>();
+    feedDayRows.forEach((dayRow) => {
+      const dayEnd = dayjs(dayRow.recordDate).endOf("day");
+      const latestSnapshot = growBirdSnapshots.find((snapshot) => {
+        const snapshotDate = dayjs(snapshot.createdAt);
+        return snapshot.growId === selectedGrowForDays?.id && snapshotDate.isValid() && !snapshotDate.isAfter(dayEnd);
+      });
+      const birdCount =
+        latestSnapshot?.actualTotalBirds ??
+        dayRow.entry?.remainingBirds ??
+        selectedGrowForDays?.totalBirds ??
+        0;
+      const target = getDailyFeedTarget(dayRow.ageDay, birdCount);
+      if (target) targets.set(dayRow.ageDay, target);
+    });
+    return targets;
+  }, [feedDayRows, growBirdSnapshots, selectedGrowForDays?.id, selectedGrowForDays?.totalBirds]);
+
+  const activeFeedTarget = activeFeedDay ? feedTargetByDay.get(activeFeedDay.ageDay) ?? null : null;
+
   const filteredFeedDayRows = useMemo(() => {
     if (feedStatusFilter === "recorded") return feedDayRows.filter((row) => row.entry != null);
     if (feedStatusFilter === "pending") return feedDayRows.filter((row) => row.entry == null);
@@ -210,6 +249,22 @@ export default function FeedsConsumptionBuildingPage() {
     return Array.from(groups.entries()).map(([weekNumber, days]) => {
       const firstDay = days[0]?.ageDay ?? (weekNumber - 1) * 7 + 1;
       const lastDay = days[days.length - 1]?.ageDay ?? weekNumber * 7;
+      const guideThroughDay = firstDay <= 30
+        ? Math.min(weekNumber * 7, feedDayRows.length, 30)
+        : null;
+      const cumulativeRows = guideThroughDay == null
+        ? []
+        : feedDayRows.filter((row) => row.ageDay <= guideThroughDay);
+      const cumulativeActualKg = cumulativeRows.reduce(
+        (sum, row) => sum + toNumber(row.entry?.feedQuantityKg),
+        0
+      );
+      const cumulativeTargetKg = cumulativeRows.reduce(
+        (sum, row) => sum + (feedTargetByDay.get(row.ageDay)?.targetKg ?? 0),
+        0
+      );
+      const cumulativeRecordedDays = cumulativeRows.filter((row) => row.entry != null).length;
+      const isCumulativeComplete = cumulativeRecordedDays === cumulativeRows.length;
       return {
         weekNumber,
         days,
@@ -218,9 +273,19 @@ export default function FeedsConsumptionBuildingPage() {
         recordedDays: days.filter((row) => row.entry != null).length,
         totalBags: days.reduce((sum, row) => sum + toNumber(row.entry?.feedQuantityBags), 0),
         totalKg: days.reduce((sum, row) => sum + toNumber(row.entry?.feedQuantityKg), 0),
+        cumulative: guideThroughDay == null
+          ? null
+          : {
+              throughDay: guideThroughDay,
+              actualKg: cumulativeActualKg,
+              targetKg: cumulativeTargetKg,
+              varianceKg: isCumulativeComplete ? cumulativeActualKg - cumulativeTargetKg : null,
+              recordedDays: cumulativeRecordedDays,
+              totalDays: cumulativeRows.length,
+            },
       };
     });
-  }, [filteredFeedDayRows]);
+  }, [feedDayRows, feedTargetByDay, filteredFeedDayRows]);
 
   const recordedFeedDays = useMemo(
     () => feedDayRows.filter((row) => row.entry != null).length,
@@ -431,6 +496,56 @@ export default function FeedsConsumptionBuildingPage() {
       active = false;
     };
   }, [loadRows]);
+
+  useEffect(() => {
+    let active = true;
+    const growId = selectedGrowForDays?.id;
+
+    if (!growId) {
+      setGrowBirdSnapshots([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    setGrowBirdSnapshots([]);
+
+    const loadGrowBirdSnapshots = async () => {
+      const { data, error } = await supabase
+        .from(GROW_LOGS_TABLE)
+        .select("created_at, actual_total_animals")
+        .eq("grow_id", growId)
+        .not("actual_total_animals", "is", null)
+        .order("created_at", { ascending: false });
+
+      if (!active) return;
+      if (error) {
+        console.error("Failed to load bird counts for feed targets:", error.message);
+        setGrowBirdSnapshots([]);
+        return;
+      }
+
+      const snapshots = ((data ?? []) as Array<{
+        created_at: string | null;
+        actual_total_animals: number | null;
+      }>)
+        .filter((row): row is { created_at: string; actual_total_animals: number } =>
+          Boolean(row.created_at) && row.actual_total_animals != null && Number.isFinite(Number(row.actual_total_animals))
+        )
+        .map((row) => ({
+          growId,
+          createdAt: row.created_at,
+          actualTotalBirds: Math.max(0, Math.floor(Number(row.actual_total_animals))),
+        }));
+
+      setGrowBirdSnapshots(snapshots);
+    };
+
+    void loadGrowBirdSnapshots();
+    return () => {
+      active = false;
+    };
+  }, [selectedGrowForDays?.id]);
 
   useEffect(() => {
     const parsed = Number(buildingId);
@@ -706,11 +821,40 @@ export default function FeedsConsumptionBuildingPage() {
                             <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">KG</div>
                             <div className="mt-1 font-bold text-slate-900">{group.totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                           </div>
+                          {group.cumulative && (
+                            <div className="col-span-3 mt-1 border-t border-slate-200 pt-2">
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                <span>Cumulative through Day {group.cumulative.throughDay}</span>
+                                <span>{group.cumulative.recordedDays} / {group.cumulative.totalDays} days recorded</span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Recorded actual</div>
+                                  <div className="mt-1 font-bold text-slate-900">{formatKg(group.cumulative.actualKg)} kg</div>
+                                </div>
+                                <div>
+                                  <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Full target</div>
+                                  <div className="mt-1 font-bold text-slate-900">{formatKg(group.cumulative.targetKg)} kg</div>
+                                </div>
+                                <div>
+                                  <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Variance</div>
+                                  <div className="mt-1 font-bold text-slate-900">
+                                    {group.cumulative.varianceKg == null
+                                      ? "Incomplete"
+                                      : formatSignedKg(group.cumulative.varianceKg)}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-2">
                           {group.days.map((dayRow) => {
                           const entry = dayRow.entry;
                           const hasEntry = entry != null;
+                          const target = feedTargetByDay.get(dayRow.ageDay) ?? null;
+                          const actualKg = toNumber(entry?.feedQuantityKg);
+                          const varianceKg = target && hasEntry ? actualKg - target.targetKg : null;
                           return (
                             <div
                               key={dayRow.ageDay}
@@ -771,6 +915,31 @@ export default function FeedsConsumptionBuildingPage() {
                                   </Popconfirm>
                                 </div>
                               )}
+                              {target ? (
+                                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-200/80 pt-3 text-xs sm:grid-cols-3">
+                                  <div>
+                                    <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Daily target</div>
+                                    <div className="mt-1 font-bold text-slate-900">{formatKg(target.targetKg)} kg</div>
+                                    <div className="mt-0.5 text-[11px] text-slate-500">{target.gramsPerBird} g/bird</div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Bird basis</div>
+                                    <div className="mt-1 font-bold text-slate-900">{target.birdCount.toLocaleString()}</div>
+                                    <div className="mt-0.5 text-[11px] text-slate-500">Latest count by this day</div>
+                                  </div>
+                                  <div className="col-span-2 sm:col-span-1">
+                                    <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Variance</div>
+                                    <div className="mt-1 font-bold text-slate-900">
+                                      {varianceKg == null ? "Pending" : formatSignedKg(varianceKg)}
+                                    </div>
+                                    <div className="mt-0.5 text-[11px] text-slate-500">Actual minus target</div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mt-3 border-t border-slate-200/80 pt-3 text-xs text-slate-500">
+                                  Daily target is not available after Day 30.
+                                </div>
+                              )}
                             </div>
                           );
                           })}
@@ -815,6 +984,26 @@ export default function FeedsConsumptionBuildingPage() {
             {activeFeedDay ? `${formatDate(activeFeedDay.recordDate)} saves to ${FEEDS_TABLE}.` : `Daily feed usage saves to ${FEEDS_TABLE}.`}
           </div>
         </div>
+        {activeFeedTarget ? (
+          <div className="mb-4 grid grid-cols-3 gap-3 border-y border-slate-200 py-3 text-xs">
+            <div>
+              <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Daily target</div>
+              <div className="mt-1 font-bold text-slate-900">{formatKg(activeFeedTarget.targetKg)} kg</div>
+            </div>
+            <div>
+              <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Guide</div>
+              <div className="mt-1 font-bold text-slate-900">{activeFeedTarget.gramsPerBird} g/bird</div>
+            </div>
+            <div>
+              <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Bird basis</div>
+              <div className="mt-1 font-bold text-slate-900">{activeFeedTarget.birdCount.toLocaleString()}</div>
+            </div>
+          </div>
+        ) : activeFeedDay && activeFeedDay.ageDay > 30 ? (
+          <div className="mb-4 border-y border-slate-200 py-3 text-xs text-slate-500">
+            Daily target is not available after Day 30.
+          </div>
+        ) : null}
         <Form form={feedForm} layout="vertical" requiredMark={false}>
           <div className="grid grid-cols-1 gap-x-3 md:grid-cols-3">
             <Form.Item

@@ -279,6 +279,23 @@ The supported workflow is daily-feed-only. Feed Received, Transfer In, and Trans
 
 Expected: the day changes from Pending to Recorded, quantities match, and only one row exists for the grow/day.
 
+### Daily feed target
+
+1. Use a grow with a known initial total and dated `GrowLogs.actual_total_animals` snapshots.
+2. Open Days 1, 7, 14, 21, 28, and 30.
+3. Confirm the displayed grams per bird are `12`, `35`, `67`, `105`, `145`, and `156` respectively.
+4. Confirm target kilograms equal grams per bird multiplied by the latest bird count on or before that day, divided by `1,000`.
+5. Save a known actual kilogram value and verify variance equals actual minus target.
+6. Open Day 31 and confirm no target is claimed.
+7. Switch to another grow and confirm its bird count and target replace the previous grow's values.
+8. Confirm each weekly summary adds recorded daily kilograms and adjusted daily targets from Day 1 through that week's guide day.
+9. Confirm Week 5 stops cumulative comparison at Day 30 and later weeks do not claim a new cumulative target.
+10. Correct an earlier daily record as Admin, reload, and confirm cumulative actual and variance change without relying on the stored cumulative field.
+11. Leave one day pending and confirm the recorded-day count is short and cumulative variance shows `Incomplete`.
+12. Record the missing day and confirm cumulative variance appears using actual minus adjusted target.
+
+Expected: card and entry-modal targets match, pending days do not show an actual variance, incomplete cumulative periods do not imply zero consumption, and no stale bird basis appears after switching grows.
+
 ### Duplicate prevention
 
 Attempt to save the same grow day again.

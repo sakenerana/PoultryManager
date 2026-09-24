@@ -82,6 +82,8 @@ The active feed workflow records daily usage only. Feed received, transfer-in, a
 8. Add remarks when clarification is needed.
 9. Save the entry and confirm that the day is shown as recorded.
 
+For Days 1–30, each daily card shows the reference target in kilograms, grams per bird, the bird-count basis, and variance. Variance is calculated as actual kilograms minus target kilograms. Each weekly summary also shows cumulative recorded actual, full adjusted target, and cumulative variance through that week, capped at Day 30. If any required day is still pending, cumulative variance displays **Incomplete** instead of treating missing data as zero consumption. Positive or negative variance is informational and should be reviewed with current flock conditions rather than treated automatically as an error.
+
 Only administrators can modify or delete an existing daily feed entry. Other users should report a correction to an administrator instead of creating a duplicate record.
 
 ## Record Electricity Consumption

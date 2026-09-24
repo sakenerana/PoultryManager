@@ -195,6 +195,50 @@ remaining birds = max(
 
 The current daily form hides those mortality fields and preserves existing values. Grow logs and reduction transactions remain the primary operational source for daily mortality activity.
 
+### Daily feed targets
+
+The Daily Feed Usage page displays the client's Ross 308 / Ross 308 FF reference target for Days 1 through 30.
+
+```text
+daily target kg = reference grams per bird for the age day
+                  x bird count on or before that day
+                  / 1,000
+
+variance kg = actual daily feed kg - daily target kg
+
+cumulative actual kg = sum of recorded daily feed kg through the guide day
+
+adjusted cumulative target kg = sum of bird-adjusted daily targets
+                                through the guide day
+
+cumulative variance kg = cumulative actual kg
+                         - adjusted cumulative target kg
+```
+
+The bird basis uses the latest available `GrowLogs.actual_total_animals` value on or before the feed date. If no matching grow-log snapshot is available, the page falls back to the feed entry's saved `remaining_birds`, then the grow's initial `total_animals`.
+
+Reference grams per bird per day:
+
+| Day | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| g/bird | 12 | 16 | 20 | 24 | 27 | 31 | 35 | 39 | 44 | 48 |
+
+| Day | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| g/bird | 52 | 57 | 62 | 67 | 72 | 77 | 83 | 88 | 94 | 100 |
+
+| Day | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| g/bird | 105 | 111 | 117 | 122 | 128 | 134 | 139 | 145 | 150 | 156 |
+
+No new target is displayed after Day 30 unless the approved reference is extended. Weekly summaries show cumulative actual, adjusted target, and variance through the applicable guide day, capped at Day 30. They calculate cumulative values from the current daily rows rather than relying on the saved `cumulative_feed_kg`, so approved historical corrections are reflected when the page reloads.
+
+Cumulative variance is shown only when every day from Day 1 through the comparison day has a saved feed record. When one or more records are pending, the summary shows recorded actual and full target but marks variance as `Incomplete`; a missing record is not treated as confirmed zero consumption.
+
+The displayed daily grams are rounded values from the client reference. Summing them may differ slightly from the reference's separately rounded fixed-100,000-bird cumulative checkpoints. The application cumulative target intentionally sums its bird-adjusted daily targets so mortality and other changes in bird count remain represented.
+
+Targets are guides rather than automatic validations; actual consumption can vary with mortality, wastage, strain, sex, environmental conditions, and feed quality.
+
 ### Feed summary formulas
 
 The building feed summary distinguishes **Overall** from **Net**:
