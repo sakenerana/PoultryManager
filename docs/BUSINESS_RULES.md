@@ -365,10 +365,14 @@ This prevents an edited truck from being counted twice.
 
 ### Harvest remaining birds
 
+The Harvest page uses the Grow page's calculated Current as its starting Total Birds. It does not use a separate grow-log snapshot.
+
 ```text
+harvest total birds = grow page current
+
 harvest remaining = max(
   0,
-  grow total - total animals harvested - harvest reductions
+  harvest total birds - total animals harvested - harvest reductions
 )
 ```
 

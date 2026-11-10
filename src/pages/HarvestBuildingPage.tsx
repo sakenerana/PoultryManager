@@ -11,6 +11,7 @@ import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import { getHarvestById, loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
 import { updateGrow } from "../controller/growsCrud";
+import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import {
   addHarvestLog,
   addHarvestReductionTransaction,
@@ -18,6 +19,9 @@ import {
   updateHarvestReductionTransaction,
 } from "../controller/harvestLogsCrud";
 import type { HarvestReductionType } from "../type/harvestLogs.type";
+import utc from "dayjs/plugin/utc";
+
+dayjs.extend(utc);
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -26,6 +30,7 @@ const { useBreakpoint } = Grid;
 type Building = {
   id: string;
   growId: number;
+  growCreatedAt: string;
   name: string;
   days: number;
   total: number;
@@ -114,6 +119,12 @@ const BUILDING_CARD_THEMES: BuildingCardTheme[] = [
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
+const LOAD_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TABLE ?? "Load";
+const LOAD_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_LOAD_TRANSACTIONS_TABLE ?? "LoadTransactions";
+const DOA_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_DOA_TRANSACTIONS_TABLE ?? "DOATransactions";
+const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
+const TRANSFER_TRANSACTIONS_TABLE =
+  import.meta.env.VITE_SUPABASE_TRANSFER_TRANSACTIONS_TABLE ?? "TransferTransactions";
 const REDUCTION_TYPE_BY_METRIC: Record<EditableMetric, HarvestReductionType> = {
   mortality: "mortality",
   thinning: "thinning",
@@ -139,6 +150,12 @@ function getErrorMessage(error: unknown): string {
   }
   return "Unknown error";
 }
+
+const toNonNegativeInt = (value: unknown): number => {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return 0;
+  return Math.max(0, Math.floor(numberValue));
+};
 
 const getBuildingCardTheme = (seed: string): BuildingCardTheme => {
   let hash = 0;
@@ -636,6 +653,7 @@ export default function HarvestBuildingPage() {
         return {
           id: String(buildingId),
           growId: latest.growId,
+          growCreatedAt: latest.createdAt,
           name: nameById[buildingId] ?? `Building ${buildingId}`,
           days,
           total: latest.total,
@@ -663,7 +681,6 @@ export default function HarvestBuildingPage() {
     }
 
     try {
-      const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
       const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
       const growIds = buildings
         .map((building) => building.growId)
@@ -674,51 +691,193 @@ export default function HarvestBuildingPage() {
         return;
       }
 
-      const latestGrowLogByGrowId: Record<number, number> = {};
+      const growStartDayByGrowId = Object.fromEntries(
+        buildings.map((building) => [building.growId, dayjs.utc(building.growCreatedAt).startOf("day")])
+      ) as Record<number, dayjs.Dayjs>;
+      const isOnOrAfterGrowStart = (growId: number, createdAt: string): boolean => {
+        const growStartDay = growStartDayByGrowId[growId];
+        return !growStartDay || !dayjs.utc(createdAt).startOf("day").isBefore(growStartDay);
+      };
 
-      const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
-        .from(GROW_LOGS_TABLE)
-        .select("grow_id, actual_total_animals, created_at")
-        .in("grow_id", growIds)
-        .gte("created_at", selectedDayStart)
-        .lt("created_at", selectedDayEnd)
-        .order("created_at", { ascending: false });
+      const [loadResult, doaResult, culledResult, transferResult, growLogsResult] = await Promise.all([
+        supabase.from(LOAD_TABLE).select("id, grow_id").in("grow_id", growIds),
+        supabase
+          .from(DOA_TRANSACTIONS_TABLE)
+          .select("grow_id, total_animals_count, created_at")
+          .in("grow_id", growIds)
+          .lt("created_at", selectedDayEnd),
+        supabase
+          .from(CULLED_TRANSACTIONS_TABLE)
+          .select("grow_id, total_animals_count, created_at")
+          .in("grow_id", growIds)
+          .lt("created_at", selectedDayEnd),
+        supabase
+          .from(TRANSFER_TRANSACTIONS_TABLE)
+          .select("grow_id, total_animals_count, created_at")
+          .in("grow_id", growIds)
+          .lt("created_at", selectedDayEnd),
+        supabase
+          .from(GROW_LOGS_TABLE)
+          .select("grow_id, subbuilding_id, mortality, thinning, take_out, created_at")
+          .in("grow_id", growIds)
+          .lt("created_at", selectedDayEnd)
+          .order("created_at", { ascending: false }),
+      ]);
 
-      if (selectedDayGrowLogsError) throw selectedDayGrowLogsError;
+      for (const result of [loadResult, doaResult, culledResult, transferResult, growLogsResult]) {
+        if (result.error) throw result.error;
+      }
 
-      ((selectedDayGrowLogs ?? []) as Array<{
-        grow_id: number | null;
-        actual_total_animals: number | null;
-      }>).forEach((row) => {
-        if (row.grow_id == null || latestGrowLogByGrowId[row.grow_id] != null) return;
-        latestGrowLogByGrowId[row.grow_id] = Math.max(0, Math.floor(Number(row.actual_total_animals ?? 0)));
+      const growIdByLoadId: Record<number, number> = {};
+      ((loadResult.data ?? []) as Array<{ id: number | null; grow_id: number | null }>).forEach((row) => {
+        if (row.id == null || row.grow_id == null) return;
+        growIdByLoadId[row.id] = row.grow_id;
       });
 
-      const missingGrowIds = growIds.filter((growId) => latestGrowLogByGrowId[growId] == null);
-      if (missingGrowIds.length > 0) {
-        const { data: previousGrowLogs, error: previousGrowLogsError } = await supabase
-          .from(GROW_LOGS_TABLE)
-          .select("grow_id, actual_total_animals, created_at")
-          .in("grow_id", missingGrowIds)
-          .lt("created_at", selectedDayStart)
-          .order("created_at", { ascending: false });
+      const grossLoadedByGrowId: Record<number, number> = {};
+      const loadIds = Object.keys(growIdByLoadId).map(Number);
+      if (loadIds.length > 0) {
+        const { data: loadTransactions, error: loadTransactionsError } = await supabase
+          .from(LOAD_TRANSACTIONS_TABLE)
+          .select("load_id, animal_count, created_at")
+          .in("load_id", loadIds)
+          .lt("created_at", selectedDayEnd);
+        if (loadTransactionsError) throw loadTransactionsError;
 
-        if (previousGrowLogsError) throw previousGrowLogsError;
-
-        ((previousGrowLogs ?? []) as Array<{
-          grow_id: number | null;
-          actual_total_animals: number | null;
-        }>).forEach((row) => {
-          if (row.grow_id == null || latestGrowLogByGrowId[row.grow_id] != null) return;
-          latestGrowLogByGrowId[row.grow_id] = Math.max(0, Math.floor(Number(row.actual_total_animals ?? 0)));
+        ((loadTransactions ?? []) as Array<{ load_id: number | null; animal_count: number | null }>).forEach((row) => {
+          if (row.load_id == null) return;
+          const growId = growIdByLoadId[row.load_id];
+          if (growId == null) return;
+          grossLoadedByGrowId[growId] =
+            (grossLoadedByGrowId[growId] ?? 0) + toNonNegativeInt(row.animal_count);
         });
       }
 
+      const sumSpecialTransactions = (
+        rows: unknown[]
+      ): Record<number, number> => {
+        const totals: Record<number, number> = {};
+        (rows as Array<{ grow_id: number | null; total_animals_count: number | null; created_at: string }>).forEach((row) => {
+          if (row.grow_id == null || !isOnOrAfterGrowStart(row.grow_id, row.created_at)) return;
+          totals[row.grow_id] = (totals[row.grow_id] ?? 0) + toNonNegativeInt(row.total_animals_count);
+        });
+        return totals;
+      };
+
+      const doaByGrowId = sumSpecialTransactions(doaResult.data ?? []);
+      const culledByGrowId = sumSpecialTransactions(culledResult.data ?? []);
+      const transferByGrowId = sumSpecialTransactions(transferResult.data ?? []);
+
+      const latestLogByGrowDayAndCage: Record<
+        string,
+        { growId: number; dayKey: string; cageId: number; mortality: number; thinning: number; takeOut: number }
+      > = {};
+      const latestMetricFallbackByGrowId: Record<number, { mortality: number; thinning: number; takeOut: number }> = {};
+      ((growLogsResult.data ?? []) as Array<{
+        grow_id: number | null;
+        subbuilding_id: number | null;
+        mortality: number | null;
+        thinning: number | null;
+        take_out: number | null;
+        created_at: string;
+      }>).forEach((row) => {
+        if (row.grow_id == null) return;
+        if (!isOnOrAfterGrowStart(row.grow_id, row.created_at)) return;
+        if (!latestMetricFallbackByGrowId[row.grow_id]) {
+          latestMetricFallbackByGrowId[row.grow_id] = {
+            mortality: toNonNegativeInt(row.mortality),
+            thinning: toNonNegativeInt(row.thinning),
+            takeOut: toNonNegativeInt(row.take_out),
+          };
+        }
+        if (row.subbuilding_id == null) return;
+        const dayKey = dayjs.utc(row.created_at).format("YYYY-MM-DD");
+        const key = `${row.grow_id}-${dayKey}-${row.subbuilding_id}`;
+        if (latestLogByGrowDayAndCage[key]) return;
+        latestLogByGrowDayAndCage[key] = {
+          growId: row.grow_id,
+          dayKey,
+          cageId: row.subbuilding_id,
+          mortality: toNonNegativeInt(row.mortality),
+          thinning: toNonNegativeInt(row.thinning),
+          takeOut: toNonNegativeInt(row.take_out),
+        };
+      });
+
+      const reductionTransactionEntries = await Promise.all(
+        growIds.map(async (growId) => [growId, await loadGrowReductionTransactionsByGrowId(growId)] as const)
+      );
+      const reductionsByGrowId = Object.fromEntries(reductionTransactionEntries);
+      const operationalReductionsByGrowId: Record<number, { mortality: number; thinning: number; takeOut: number }> = {};
+
+      growIds.forEach((growId) => {
+        const logValues: Record<string, number> = {};
+        const logDayTypeByKey: Record<string, string> = {};
+        Object.values(latestLogByGrowDayAndCage).forEach((row) => {
+          if (row.growId !== growId) return;
+          const values = [
+            ["mortality", row.mortality],
+            ["thinning", row.thinning],
+            ["take_out", row.takeOut],
+          ] as const;
+          values.forEach(([type, value]) => {
+            const key = `${row.dayKey}-${row.cageId}-${type}`;
+            logValues[key] = value;
+            logDayTypeByKey[key] = `${row.dayKey}-${type}`;
+          });
+        });
+
+        const transactionValues: Record<string, number> = {};
+        const transactionDayTypes = new Set<string>();
+        (reductionsByGrowId[growId] ?? [])
+          .filter(
+            (row) =>
+              isOnOrAfterGrowStart(growId, row.createdAt) &&
+              dayjs.utc(row.createdAt).valueOf() < dayjs.utc(selectedDayEnd).valueOf()
+          )
+          .sort((a, b) => dayjs.utc(b.createdAt).valueOf() - dayjs.utc(a.createdAt).valueOf())
+          .forEach((row) => {
+            if (row.subbuildingId == null) return;
+            if (row.reductionType !== "mortality" && row.reductionType !== "thinning" && row.reductionType !== "take_out") return;
+            const dayKey = dayjs.utc(row.createdAt).format("YYYY-MM-DD");
+            const key = `${dayKey}-${row.subbuildingId}-${row.reductionType}`;
+            if (transactionValues[key] != null) return;
+            transactionValues[key] = toNonNegativeInt(row.animalCount);
+            transactionDayTypes.add(`${dayKey}-${row.reductionType}`);
+          });
+
+        const totals = { mortality: 0, thinning: 0, takeOut: 0 };
+        const addValue = (key: string, value: number) => {
+          if (key.endsWith("-mortality")) totals.mortality += value;
+          if (key.endsWith("-thinning")) totals.thinning += value;
+          if (key.endsWith("-take_out")) totals.takeOut += value;
+        };
+        Object.entries(transactionValues).forEach(([key, value]) => addValue(key, value));
+        Object.entries(logValues).forEach(([key, value]) => {
+          if (transactionDayTypes.has(logDayTypeByKey[key])) return;
+          addValue(key, value);
+        });
+        operationalReductionsByGrowId[growId] =
+          totals.mortality > 0 || totals.thinning > 0 || totals.takeOut > 0
+            ? totals
+            : latestMetricFallbackByGrowId[growId] ?? totals;
+      });
+
       const nextCurrentTotals = Object.fromEntries(
-        buildings.map((building) => [
-          building.id,
-          latestGrowLogByGrowId[building.growId] ?? building.total,
-        ])
+        buildings.map((building) => {
+          const growId = building.growId;
+          const grossLoaded = grossLoadedByGrowId[growId] ?? building.total;
+          const adjustedTotal = Math.max(
+            0,
+            grossLoaded - (doaByGrowId[growId] ?? 0) - (culledByGrowId[growId] ?? 0)
+          );
+          const reductions = operationalReductionsByGrowId[growId] ?? { mortality: 0, thinning: 0, takeOut: 0 };
+          const current = Math.max(
+            0,
+            adjustedTotal - reductions.mortality - reductions.thinning - reductions.takeOut - (transferByGrowId[growId] ?? 0)
+          );
+          return [building.id, current];
+        })
       );
 
       setCurrentTotalByBuildingId(nextCurrentTotals);
