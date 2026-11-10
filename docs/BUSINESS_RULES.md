@@ -86,6 +86,15 @@ grow total     = max(0, loaded animals - DOA total)
 
 `Grows.total_animals` stores the resulting non-negative grow total.
 
+Per the client-defined dashboard rule, the Active Buildings card labeled **Total Birds Loaded** displays the gross loading total after DOA and culling deductions:
+
+```text
+gross birds loaded = sum(LoadTransactions.animal_count)
+total birds loaded = max(0, gross birds loaded - DOA total - culling total)
+```
+
+Recording or correcting DOA or culling changes the displayed Total Birds Loaded value. The original gross loading total remains available from the load transactions.
+
 ### Daily reduction total
 
 Daily grow reductions use these types:
@@ -103,16 +112,30 @@ cumulative reductions = sum(latest value for each daily reduction key)
 
 ### Current animal total
 
-The displayed current animal total is calculated as:
+The Active Buildings dashboard calculates Current from its client-defined Total Birds Loaded value:
 
 ```text
 current animals = max(
   0,
-  grow total - cumulative grow reductions - cumulative culled total
+  total birds loaded - mortality - thinning - take-out - outbound transfer
 )
 ```
 
+DOA and culling are not subtracted again in this formula because the dashboard's Total Birds Loaded value already deducts both categories.
+
 The application clamps bird balances to zero; negative remaining-bird totals are not displayed or saved by these calculations.
+
+On the Active Buildings dashboard, the Reduction card is the overall total of all six Metric History categories through the selected date:
+
+```text
+dashboard reduction = mortality + thinning + take-out + transfer + DOA + culling
+```
+
+The Reduction card is therefore an operational metric total. It is not calculated as `total birds loaded - current animals` and does not need to equal that balance difference.
+
+When a corrected reduction transaction exists for a date and metric type, its cage values replace the grow-log values for that same date and type. The dashboard and Metric History use the same replacement rule so their category totals and overall Reduction total agree.
+
+Dashboard metric totals include only records dated on or after the active grow's start date. Records attached to the grow ID but dated before that start date are excluded.
 
 ### Corrections
 
