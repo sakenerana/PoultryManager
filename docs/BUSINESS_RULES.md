@@ -143,6 +143,8 @@ Editing an existing daily metric replaces the value represented by that date/cag
 
 Only Admin can edit supported previous-date grow activity. Current-day entry remains available according to role and building access.
 
+For mortality, Day 32 and later are Admin-only. Supervisors and Staff cannot open, add, or edit mortality entries after Day 31. Existing harvested-grow restrictions still apply.
+
 ### Transfers
 
 Transfer transactions are considered when loading and reporting grow balances. A transfer must retain its source/destination and effective date so that it affects the correct grow. Because transfer direction can alter more than one building, reconcile both sides after any correction.

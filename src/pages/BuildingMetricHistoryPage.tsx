@@ -686,9 +686,11 @@ export default function BuildingMetricHistoryPage() {
   const handleSignOut = () => {
     void signOutAndRedirect(navigate);
   };
-  const showHarvestReadyNotification = () => {
+  const showLockedMetricNotification = () => {
     setToastMessage(
-      "You're now unable to add reduction since this grow is already ready for harvested. Please go to harvested section for harvested reductions."
+      metricKey === "mortality" && userRole !== "Admin"
+        ? "Only Admin can add or edit mortality from Day 32 onward."
+        : "You're now unable to add reduction since this grow is already ready for harvested. Please go to harvested section for harvested reductions."
     );
     setIsToastOpen(true);
   };
@@ -2526,7 +2528,9 @@ export default function BuildingMetricHistoryPage() {
 
             <div className="mt-4 flex flex-col gap-3">
               {historyRows.map((row) => {
-                const isLockedForHarvestReady = row.dayNumber >= REDUCTION_LOCK_DAY;
+                const isAdminMortalityOverride = metricKey === "mortality" && userRole === "Admin";
+                const isLockedForHarvestReady =
+                  row.dayNumber >= REDUCTION_LOCK_DAY && !isAdminMortalityOverride;
 
                 return (
                 <div
@@ -2536,7 +2540,7 @@ export default function BuildingMetricHistoryPage() {
                   aria-disabled={isLockedForHarvestReady}
                   onClick={() => {
                     if (isLockedForHarvestReady) {
-                      showHarvestReadyNotification();
+                      showLockedMetricNotification();
                       return;
                     }
                     if (metricKey === "reduction") {
@@ -2557,7 +2561,7 @@ export default function BuildingMetricHistoryPage() {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       if (isLockedForHarvestReady) {
-                        showHarvestReadyNotification();
+                        showLockedMetricNotification();
                         return;
                       }
                       if (metricKey === "reduction") {

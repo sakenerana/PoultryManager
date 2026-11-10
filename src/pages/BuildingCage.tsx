@@ -68,6 +68,7 @@ const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTIONS_TABLE ?? "CulledTransactions";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
+const ADMIN_ONLY_MORTALITY_DAY = 32;
 
 type UserAccess = {
   role: "Admin" | "Supervisor" | "Staff" | null;
@@ -382,6 +383,7 @@ export default function BuildingCage() {
   const [isLatestGrowHarvested, setIsLatestGrowHarvested] = useState(false);
   const [growLogPreview, setGrowLogPreview] = useState<GrowLogPreview>(null);
   const [userRole, setUserRole] = useState<UserAccess["role"]>(null);
+  const [selectedGrowDayNumber, setSelectedGrowDayNumber] = useState<number | null>(null);
 
   const fetchSelectedBuildingName = async () => {
     const buildingId = Number(id);
@@ -538,6 +540,12 @@ export default function BuildingCage() {
 
   const isPreviousDateSelected = dayjs(selectedDate).isBefore(dayjs().format("YYYY-MM-DD"), "day");
   const canEditSelectedDate = !isPreviousDateSelected || userRole === "Admin";
+  const isAdminOnlyMortalityDay =
+    activeMetric === "mortality" &&
+    selectedGrowDayNumber != null &&
+    selectedGrowDayNumber >= ADMIN_ONLY_MORTALITY_DAY;
+  const canEditActiveMetric =
+    canEditSelectedDate && (!isAdminOnlyMortalityDay || userRole === "Admin");
   const selectedDateTimestamp = dayjs.utc(selectedDate, "YYYY-MM-DD")
     .hour(12)
     .minute(0)
@@ -618,6 +626,16 @@ export default function BuildingCage() {
   };
 
   const openMetricModal = (metric: EditableMetric, cageId: string, current: number) => {
+    if (
+      metric === "mortality" &&
+      selectedGrowDayNumber != null &&
+      selectedGrowDayNumber >= ADMIN_ONLY_MORTALITY_DAY &&
+      userRole !== "Admin"
+    ) {
+      setToastMessage("Only Admin can add or edit mortality from Day 32 onward.");
+      setIsToastOpen(true);
+      return;
+    }
     const existingRemarks = metricRemarksByType[metric][selectedDate]?.[cageId] ?? "";
     setActiveMetric(metric);
     setActiveCageId(cageId);
@@ -727,12 +745,16 @@ export default function BuildingCage() {
 
   const fetchReductionMetricsByDate = async () => {
     const buildingId = Number(id);
-    if (!Number.isFinite(buildingId)) return;
+    if (!Number.isFinite(buildingId)) {
+      setSelectedGrowDayNumber(null);
+      return;
+    }
 
     try {
       const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
 
       if (!latestGrow) {
+        setSelectedGrowDayNumber(null);
         setGrowLogPreview(null);
         setMetricOverrides((prev) => ({
           ...prev,
@@ -748,6 +770,16 @@ export default function BuildingCage() {
         }));
         return;
       }
+
+      setSelectedGrowDayNumber(
+        Math.max(
+          0,
+          dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day").diff(
+            dayjs.utc(latestGrow.createdAt).startOf("day"),
+            "day"
+          )
+        )
+      );
 
       const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
       const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
@@ -961,6 +993,22 @@ export default function BuildingCage() {
       const latestGrow = await resolveGrowForDate(buildingId, selectedDate);
       if (!latestGrow) {
         setToastMessage("No grow record found for this building/date.");
+        setIsToastOpen(true);
+        return;
+      }
+      const selectedGrowDay = Math.max(
+        0,
+        dayjs.utc(selectedDate, "YYYY-MM-DD").startOf("day").diff(
+          dayjs.utc(latestGrow.createdAt).startOf("day"),
+          "day"
+        )
+      );
+      if (
+        activeMetric === "mortality" &&
+        selectedGrowDay >= ADMIN_ONLY_MORTALITY_DAY &&
+        userRole !== "Admin"
+      ) {
+        setToastMessage("Only Admin can add or edit mortality from Day 32 onward.");
         setIsToastOpen(true);
         return;
       }
@@ -1547,6 +1595,11 @@ export default function BuildingCage() {
               Only Admin can update previous dates.
             </div>
           )}
+          {isAdminOnlyMortalityDay && userRole !== "Admin" && (
+            <div className="text-amber-600 text-xs mt-1">
+              Only Admin can add or edit mortality from Day 32 onward.
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-50 rounded-lg p-3">
@@ -1554,7 +1607,7 @@ export default function BuildingCage() {
           <div className="flex items-center gap-3">
               <Button
                 onClick={() => setMetricDraft((v) => Math.max(0, (v || 0) - 1))}
-                disabled={!canEditSelectedDate}
+                disabled={!canEditActiveMetric}
               >
                 -
               </Button>
@@ -1566,11 +1619,11 @@ export default function BuildingCage() {
               inputMode="numeric"
               className="!w-full"
               styles={{ input: { fontSize: 16 } }}
-              disabled={!canEditSelectedDate}
+              disabled={!canEditActiveMetric}
             />
             <Button
               onClick={() => setMetricDraft((v) => (v || 0) + 1)}
-              disabled={!canEditSelectedDate}
+              disabled={!canEditActiveMetric}
             >
               +
             </Button>
@@ -1583,10 +1636,10 @@ export default function BuildingCage() {
               onChange={(e) => setMetricRemarksDraft(e.target.value)}
               placeholder="Add remarks (optional)"
               className="!text-base"
-              disabled={!canEditSelectedDate}
+              disabled={!canEditActiveMetric}
             />
           </div>
-          {canEditSelectedDate && !isMetricValid && (
+          {canEditActiveMetric && !isMetricValid && (
             <div className="text-xs text-red-500 mt-2">
               {metricMeta[activeMetric].label} is required.
             </div>
@@ -1602,7 +1655,7 @@ export default function BuildingCage() {
             className="!flex-1"
             style={{ backgroundColor: SECONDARY, borderColor: SECONDARY }}
             onClick={handleUpdateMetric}
-            disabled={!canEditSelectedDate || !isMetricValid}
+            disabled={!canEditActiveMetric || !isMetricValid}
             loading={isMetricSubmitting}
           >
             Update
