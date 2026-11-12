@@ -8,6 +8,8 @@ import { IoHome } from "react-icons/io5";
 import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import { updateGrow } from "../controller/growsCrud";
@@ -48,7 +50,7 @@ const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
-type UserRole = "Admin" | "Supervisor" | "Staff" | null;
+type UserRole = Role | null;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -299,7 +301,7 @@ function TruckRow({
 
 export default function HarvestTruckPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const { id: buildingIdParam } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const screens = useBreakpoint();
@@ -325,7 +327,7 @@ export default function HarvestTruckPage() {
   const loadFormValues = Form.useWatch([], loadForm);
 
   const isTodaySelected = selectedDate === dayjs().format("YYYY-MM-DD");
-  const canManageTruckLoads = currentGrowStatus !== "Harvested" && (isTodaySelected || userRole === "Admin" || userRole === "Supervisor");
+  const canManageTruckLoads = canWrite && currentGrowStatus !== "Harvested" && (isTodaySelected || userRole === "Admin" || userRole === "Supervisor");
   const isLoadFormValid =
     Number(loadFormValues?.weightLoad) > 0 &&
     Number(loadFormValues?.birdsLoad) > 0;
@@ -653,13 +655,14 @@ export default function HarvestTruckPage() {
         return;
       }
 
-      setUserRole(data?.role === "Admin" || data?.role === "Supervisor" ? data.role : "Staff");
+      setUserRole(toRole(data?.role));
     };
 
     void resolveUserRole();
   }, [user?.id]);
 
   const handleOpenAdd = () => {
+    if (!canWrite) return;
     if (currentGrowStatus === "Harvested") return;
     setActiveEditTruckId(null);
     const nextIndex = filteredTrucks.length + 1;
@@ -710,6 +713,7 @@ export default function HarvestTruckPage() {
   };
 
   const handleSubmitAdd = async () => {
+    if (!canWrite) return;
     let createdTruckId: string | null = null;
     setIsSavingAdd(true);
     try {
@@ -841,6 +845,7 @@ export default function HarvestTruckPage() {
   };
 
   const handleSubmitLoad = async () => {
+    if (!canWrite) return;
     setIsSavingLoad(true);
     try {
       if (!activeTruckId) return;
@@ -1032,7 +1037,7 @@ export default function HarvestTruckPage() {
                   <div className="mt-3 text-xs text-slate-500">
                     Showing data for {dayjs(selectedDate).format("MMMM D, YYYY")}
                   </div>
-                  {isTodaySelected && currentGrowStatus !== "Harvested" && (
+                  {canWrite && isTodaySelected && currentGrowStatus !== "Harvested" && (
                     <Button
                       type="primary"
                       icon={<PlusOutlined />}
@@ -1084,7 +1089,7 @@ export default function HarvestTruckPage() {
               </div>
             </div>
 
-            {isMobile && isTodaySelected && currentGrowStatus !== "Harvested" && (
+            {canWrite && isMobile && isTodaySelected && currentGrowStatus !== "Harvested" && (
               <div className={["fixed z-50", "bottom-6 right-6"].join(" ")}>
                 <Button
                   type="primary"

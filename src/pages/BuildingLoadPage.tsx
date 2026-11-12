@@ -8,6 +8,8 @@ import { FiEdit2, FiTrash2, FiX, FiCheck } from "react-icons/fi";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import { signOutAndRedirect } from "../utils/auth";
 import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import supabase from "../utils/supabase";
@@ -19,7 +21,7 @@ const BRAND = "#008822";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 type UserAccess = {
-  role: "Admin" | "Supervisor" | "Staff" | null;
+  role: Role | null;
   isActive: boolean;
 };
 
@@ -45,7 +47,7 @@ type TransferEntry = {
 export default function BuildingLoadPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const { id } = useParams();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -132,7 +134,7 @@ export default function BuildingLoadPage() {
     }
 
     const normalizedRole =
-      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+      toRole(data.role);
 
     return {
       role: normalizedRole,
@@ -534,6 +536,7 @@ export default function BuildingLoadPage() {
   };
 
   const handleSaveOrUpdate = async () => {
+    if (!canWrite) return;
     const parsed = Number(totalInput);
     if (!Number.isFinite(parsed) || parsed < 0) return;
     const buildingId = Number(id);
@@ -865,6 +868,7 @@ export default function BuildingLoadPage() {
   const isTotalValid =
     !isCompleted && totalInput.trim() !== "" && Number.isFinite(Number(totalInput)) && Number(totalInput) >= 0;
   const handleComplete = async () => {
+    if (!canWrite) return;
     const buildingId = Number(id);
     if (!Number.isFinite(buildingId)) {
       setToastType("error");
@@ -1330,7 +1334,7 @@ export default function BuildingLoadPage() {
             </div>
 
             <div className="bg-white rounded-sm shadow-sm p-4 mt-auto">
-              {!isCompleted && (
+              {!isCompleted && canWrite && (
                 <input
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
                   placeholder="Enter total count"
@@ -1343,11 +1347,11 @@ export default function BuildingLoadPage() {
                 type="button"
                 className="text-base mt-3 w-full rounded-lg h-11 bg-[#008822] text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                 onClick={handleSaveOrUpdate}
-                disabled={!isTotalValid || isSaving}
+                disabled={!canWrite || !isTotalValid || isSaving}
               >
                 {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
               </button>
-              {!isCompleted && history.length > 0 && (
+              {!isCompleted && canWrite && history.length > 0 && (
                 <button
                   type="button"
                   className="text-base mt-3 w-full rounded-lg h-11 border border-[#008822] text-[#008822] font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1409,7 +1413,7 @@ export default function BuildingLoadPage() {
                     <div className="text-xs text-slate-500">Today Total</div>
                     <div className="mt-1 text-2xl font-bold text-slate-900">{todayTotal.toLocaleString()}</div>
                   </div>
-                  {!isCompleted && (
+                  {!isCompleted && canWrite && (
                     <input
                       className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-base outline-none focus:ring-2 focus:ring-[#008822]/30"
                       placeholder="Enter total count"
@@ -1422,11 +1426,11 @@ export default function BuildingLoadPage() {
                     type="button"
                     className="mt-4 h-11 w-full rounded-lg bg-[#008822] text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={handleSaveOrUpdate}
-                    disabled={!isTotalValid || isSaving}
+                    disabled={!canWrite || !isTotalValid || isSaving}
                   >
                     {isCompleted ? "Completed" : isSaving ? "Saving..." : hasTodayRecord ? "Update" : "Save"}
                   </button>
-                  {!isCompleted && history.length > 0 && (
+                  {!isCompleted && canWrite && history.length > 0 && (
                     <button
                       type="button"
                       className="mt-3 h-11 w-full rounded-lg border border-[#008822] bg-white text-base font-semibold text-[#008822] disabled:cursor-not-allowed disabled:opacity-60"

@@ -9,6 +9,7 @@ import dayjs from "dayjs";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { useAuth } from "../context/AuthContext";
 import { getHarvestById, loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
 import { updateGrow } from "../controller/growsCrud";
 import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
@@ -446,6 +447,7 @@ function BuildingRow({
 }
 
 export default function HarvestBuildingPage() {
+  const { canWrite } = useAuth();
   const navigate = useNavigate();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -1269,6 +1271,7 @@ export default function HarvestBuildingPage() {
   };
 
   const openMetricModal = (metric: EditableMetric, buildingId: string, current: number) => {
+    if (!canWrite) return;
     const selectedBuilding = buildings.find((item) => item.id === buildingId);
     if (selectedBuilding?.growStatus === "Harvested") {
       setToastMessage("This building is already harvested and cannot be edited.");
@@ -1330,6 +1333,7 @@ export default function HarvestBuildingPage() {
   };
 
   const handleUpdateMetric = async () => {
+    if (!canWrite) return;
     if (!activeBuildingId) return;
     const nextValue = Math.max(0, Math.floor(metricDraft || 0));
     if (nextValue <= 0) return;
@@ -1979,7 +1983,7 @@ export default function HarvestBuildingPage() {
               ))}
             </div>
 
-            {activeReductionBuildingId !== null && (
+            {canWrite && activeReductionBuildingId !== null && (
               <div className="mt-4">
                 <Button
                   type="primary"

@@ -13,6 +13,8 @@ import { signOutAndRedirect } from "../utils/auth";
 import { loadSubBuildingsByBuildingId } from "../controller/subbuildingsCrud";
 import type { SubBuildingRecord } from "../type/subbuildings.type";
 import supabase from "../utils/supabase";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import {
   addBodyWeightLog,
   loadBodyWeightLogsByBuildingIdAndDate,
@@ -71,7 +73,7 @@ const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const ADMIN_ONLY_MORTALITY_DAY = 32;
 
 type UserAccess = {
-  role: "Admin" | "Supervisor" | "Staff" | null;
+  role: Role | null;
   isActive: boolean;
 };
 
@@ -339,7 +341,7 @@ export default function BuildingCage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -511,7 +513,7 @@ export default function BuildingCage() {
     }
 
     const normalizedRole =
-      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+      toRole(data.role);
 
     return {
       role: normalizedRole,
@@ -539,7 +541,7 @@ export default function BuildingCage() {
   };
 
   const isPreviousDateSelected = dayjs(selectedDate).isBefore(dayjs().format("YYYY-MM-DD"), "day");
-  const canEditSelectedDate = !isPreviousDateSelected || userRole === "Admin";
+  const canEditSelectedDate = canWrite && (!isPreviousDateSelected || userRole === "Admin");
   const isAdminOnlyMortalityDay =
     activeMetric === "mortality" &&
     selectedGrowDayNumber != null &&
@@ -626,6 +628,7 @@ export default function BuildingCage() {
   };
 
   const openMetricModal = (metric: EditableMetric, cageId: string, current: number) => {
+    if (!canWrite) return;
     if (
       metric === "mortality" &&
       selectedGrowDayNumber != null &&
@@ -645,6 +648,7 @@ export default function BuildingCage() {
   };
 
   const openWeightModal = (cageId: string) => {
+    if (!canWrite) return;
     setActiveCageId(cageId);
     const existing = weightOverrides[selectedDate]?.[cageId];
     setWeightDraft(

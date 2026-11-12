@@ -134,6 +134,7 @@ The `Users` table links an application profile to Supabase Auth through `user_uu
 | Admin | Full operational access, restricted reports, corrections, and account administration |
 | Supervisor | Approved current operations and reports without Admin-only corrections |
 | Staff | Daily operations for the assigned building |
+| Viewer | Read-only operational data and reports across all buildings; no create, edit, or delete access |
 
 Account status is separate from the Auth account:
 
@@ -145,7 +146,7 @@ Recommended invariants:
 - `Users.user_uuid` is unique and non-null for every usable profile.
 - Every active Auth user has exactly one current application profile.
 - Staff profiles have one valid `building_id`.
-- Admin and Supervisor building assignment is null unless policy defines another meaning.
+- Admin, Supervisor, and Viewer building assignment is null unless policy defines another meaning.
 - Users cannot update their own role, status, building assignment, or `user_uuid`.
 
 `AdminOnlyRoute` currently selects the newest matching profile if duplicates exist. Database uniqueness is safer than relying on ordering.
@@ -158,9 +159,9 @@ Route groups currently provide:
 - Admin-only protection for income-report routes.
 - Active-role checks for feed and electricity routes.
 
-Important current gap:
+The `/accounts` route uses `AdminOnlyRoute`. Viewer cannot access account administration or income reports.
 
-- `/accounts` is inside `ProtectedRoute` but not `AdminOnlyRoute`, even though account management is intended for Admin only.
+Viewer support requires [sql/viewer-role.sql](../sql/viewer-role.sql). It adds operational reads, restricts Viewer profiles to self-read, and applies restrictive write policies plus statement triggers to deny data changes, including existing security-definer write RPCs. See [Viewer setup](VIEWER_ROLE.md) for rollout and isolated regression tests. Frontend implementation does not prove the migration is deployed.
 
 Other building and harvest permissions are partly enforced inside pages. Every sensitive route must be tested through direct navigation, not only dashboard links.
 

@@ -17,6 +17,8 @@ import { loadBodyWeightLogsByBuildingId } from "../controller/bodyWeightCrud";
 import { loadGrowLogsByGrowId, loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import { resolveBodyWeightAverage } from "../utils/bodyWeight";
 import supabase from "../utils/supabase";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -34,7 +36,7 @@ const CULLED_TRANSACTIONS_TABLE = import.meta.env.VITE_SUPABASE_CULLED_TRANSACTI
 const TRANSFER_TRANSACTIONS_TABLE =
   import.meta.env.VITE_SUPABASE_TRANSFER_TRANSACTIONS_TABLE ?? "TransferTransactions";
 
-type UserRole = "Admin" | "Supervisor" | "Staff" | null;
+type UserRole = Role | null;
 
 type MetricKey = "mortality" | "thinning" | "takeOut" | "reduction" | "doa" | "culled";
 
@@ -113,7 +115,7 @@ const METRIC_CARDS: Array<{
     borderColor: "#0ea5e9",
     accent: "text-[#0284c7]",
     icon: <img src="/img/chicken-doa.svg" alt="DOA" className="h-10 w-10" />,
-    enabledRoles: ["Admin", "Supervisor"],
+    enabledRoles: ["Admin", "Supervisor", "Viewer"],
   },
   {
     key: "culled",
@@ -121,7 +123,7 @@ const METRIC_CARDS: Array<{
     borderColor: "#8b5cf6",
     accent: "text-[#7c3aed]",
     icon: <img src="/img/chicken-doa.svg" alt="Culling" className="h-10 w-10" />,
-    enabledRoles: ["Admin", "Supervisor"],
+    enabledRoles: ["Admin", "Supervisor", "Viewer"],
   },
 ];
 
@@ -243,7 +245,7 @@ const isSpecialMetric = (metricKey: MetricKey): metricKey is "doa" | "culled" =>
 
 export default function BuildingMetricHistoryPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const { id, metric } = useParams();
   const [searchParams] = useSearchParams();
   const screens = useBreakpoint();
@@ -329,7 +331,7 @@ export default function BuildingMetricHistoryPage() {
         return;
       }
 
-      setUserRole(data?.role === "Admin" || data?.role === "Supervisor" ? data.role : "Staff");
+      setUserRole(toRole(data?.role));
     };
 
     void resolveUserRole();
@@ -1358,6 +1360,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleSaveTransfer = async () => {
+    if (!canWrite) return;
     if (isSavingTransfer) return;
     const sourceBuildingId = Number(id);
     if (!Number.isFinite(sourceBuildingId)) {
@@ -1492,6 +1495,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleSaveEditedTransfer = async (entry: TransferTransactionRow) => {
+    if (!canWrite) return;
     if (isEditingTransfer) return;
     if (editingTransferCount <= 0) {
       setToastMessage("Transfer Count is required.");
@@ -1601,6 +1605,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleDeleteTransferEntry = async (entry: TransferTransactionRow) => {
+    if (!canWrite) return;
     if (isEditingTransfer) return;
     if (entry.targetBuildingId == null) {
       setToastMessage("Transfer destination building is missing on this record.");
@@ -1729,6 +1734,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleSaveDoa = async () => {
+    if (!canWrite) return;
     if (isSavingDoa) return;
     if (doaCount < 0) {
       setToastMessage("DOA Count cannot be negative.");
@@ -1820,6 +1826,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleSaveEditedDoa = async (entry: DoaTransactionRow) => {
+    if (!canWrite) return;
     if (isEditingDoa) return;
     if (editingDoaCount < 0) {
       setToastMessage("DOA Count cannot be negative.");
@@ -1900,6 +1907,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleDeleteDoaEntry = async (entry: DoaTransactionRow) => {
+    if (!canWrite) return;
     if (isEditingDoa) return;
 
     const confirmed = await new Promise<boolean>((resolve) => {
@@ -2017,6 +2025,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleSaveCulled = async () => {
+    if (!canWrite) return;
     if (isSavingCulled) return;
     if (culledCount < 0) {
       setToastMessage("Culling Count cannot be negative.");
@@ -2104,6 +2113,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleSaveEditedCulled = async (entry: DoaTransactionRow) => {
+    if (!canWrite) return;
     if (isEditingCulled) return;
     if (editingCulledCount < 0) {
       setToastMessage("Culling Count cannot be negative.");
@@ -2181,6 +2191,7 @@ export default function BuildingMetricHistoryPage() {
   };
 
   const handleDeleteCulledEntry = async (entry: DoaTransactionRow) => {
+    if (!canWrite) return;
     if (isEditingCulled) return;
 
     const confirmed = await new Promise<boolean>((resolve) => {
@@ -2530,7 +2541,7 @@ export default function BuildingMetricHistoryPage() {
               {historyRows.map((row) => {
                 const isAdminMortalityOverride = metricKey === "mortality" && userRole === "Admin";
                 const isLockedForHarvestReady =
-                  row.dayNumber >= REDUCTION_LOCK_DAY && !isAdminMortalityOverride;
+                  canWrite && row.dayNumber >= REDUCTION_LOCK_DAY && !isAdminMortalityOverride;
 
                 return (
                 <div
@@ -2724,7 +2735,7 @@ export default function BuildingMetricHistoryPage() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="mt-2 flex justify-end">
+                      <div className={canWrite ? "mt-2 flex justify-end" : "hidden"}>
                         {isEditing ? (
                           <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
                             <button
@@ -2780,7 +2791,7 @@ export default function BuildingMetricHistoryPage() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
+          <div className={canWrite ? "mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm" : "hidden"}>
             <div className="flex items-center gap-3">
               <div className="w-full">
                 <div className="mb-2 text-xs font-medium text-slate-500">Transfer Count</div>
@@ -2914,7 +2925,7 @@ export default function BuildingMetricHistoryPage() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="mt-2 flex justify-end">
+                      <div className={canWrite ? "mt-2 flex justify-end" : "hidden"}>
                         {isEditing ? (
                           <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
                             <button
@@ -2970,7 +2981,7 @@ export default function BuildingMetricHistoryPage() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
+          <div className={canWrite ? "mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm" : "hidden"}>
             <div className="flex items-center gap-3">
               <div className="w-full">
                 <div className="mb-2 text-xs font-medium text-slate-500">DOA Count</div>
@@ -3088,7 +3099,7 @@ export default function BuildingMetricHistoryPage() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="mt-2 flex justify-end">
+                      <div className={canWrite ? "mt-2 flex justify-end" : "hidden"}>
                         {isEditing ? (
                           <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
                             <button
@@ -3144,7 +3155,7 @@ export default function BuildingMetricHistoryPage() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm">
+          <div className={canWrite ? "mt-4 rounded-sm border border-emerald-200 bg-white p-5 shadow-sm" : "hidden"}>
             <div className="flex items-center gap-3">
               <div className="w-full">
                 <div className="mb-2 text-xs font-medium text-slate-500">Culling Count</div>

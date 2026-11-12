@@ -62,7 +62,7 @@ Before the first production deployment:
 4. Create the initial authorized administrator account and matching `Users` record.
 5. Configure Auth email delivery and password-reset behavior.
 6. Add the production domain to the allowed Site URL and redirect URL settings.
-7. Test Admin, Supervisor, and Staff permissions independently.
+7. Apply [sql/viewer-role.sql](../sql/viewer-role.sql) before assigning Viewer accounts, then test Admin, Supervisor, Staff, and Viewer permissions independently. See [Viewer setup](VIEWER_ROLE.md).
 
 See [DATABASE_GUIDE.md](DATABASE_GUIDE.md) for application-used tables and columns. The repository does not contain an authoritative SQL migration history, so compare the live Supabase schema before every structural change.
 

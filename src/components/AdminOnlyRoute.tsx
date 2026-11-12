@@ -6,7 +6,7 @@ import supabase from "../utils/supabase";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 type AccessState = "checking" | "allowed" | "denied";
-type AppRole = "Admin" | "Supervisor" | "Staff";
+type AppRole = "Admin" | "Supervisor" | "Staff" | "Viewer";
 const ADMIN_ROLES: AppRole[] = ["Admin"];
 
 type AdminOnlyRouteProps = {

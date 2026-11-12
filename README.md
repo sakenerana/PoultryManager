@@ -27,7 +27,8 @@ GGDC Poultry Management System is a React, TypeScript, Vite, Ant Design, Tailwin
 - Supabase Auth handles sign-in, sign-out, password reset, and active sessions.
 - `ProtectedRoute` requires a valid Supabase session before opening operational pages.
 - `AdminOnlyRoute` checks the `Users` table for role and status before opening restricted pages.
-- Supported roles are `Admin`, `Supervisor`, and `Staff`.
+- Supported roles are `Admin`, `Supervisor`, `Staff`, and `Viewer`.
+- `Viewer` accounts can browse operational records and reports across all buildings, with no create, edit, or delete access. Run [the Viewer database migration](sql/viewer-role.sql) before assigning this role; see [Viewer setup](docs/VIEWER_ROLE.md).
 - `Staff` users can be assigned to a specific building; Admin and Supervisor users have wider access.
 - Inactive users are denied role-protected access.
 

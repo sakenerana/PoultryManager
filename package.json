@@ -8,6 +8,7 @@
     "prebuild": "node scripts/increment-build-version.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:viewer": "node --test scripts/viewer-access.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

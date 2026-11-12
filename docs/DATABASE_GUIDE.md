@@ -54,7 +54,7 @@ Application profile and authorization metadata linked to Supabase Auth.
 | --- | --- |
 | `id` | Application user record identifier |
 | `full_name` | User's display name |
-| `role` | `Admin`, `Supervisor`, or `Staff` |
+| `role` | `Admin`, `Supervisor`, `Staff`, or `Viewer`; see [Viewer migration](../sql/viewer-role.sql) |
 | `building_id` | Building assigned to a Staff account; normally null for wider-access roles |
 | `status` | `Active` or `Inactive` |
 | `user_uuid` | UUID of the related `auth.users` account |

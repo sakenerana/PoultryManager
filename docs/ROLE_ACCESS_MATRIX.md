@@ -1,8 +1,8 @@
 # Role and Access Matrix
 
-This document defines intended access for `Admin`, `Supervisor`, and `Staff` users and records how the current application enforces that access.
+This document defines intended access for `Admin`, `Supervisor`, `Staff`, and `Viewer` users and records how the current application enforces that access. See [Viewer setup](VIEWER_ROLE.md) for migration and verification steps.
 
-Last reviewed: 2026-09-23
+Last reviewed: 2026-11-12
 
 ## Reading the Matrix
 
@@ -11,7 +11,7 @@ Last reviewed: 2026-09-23
 | Allow | The role is intended to use the capability within its approved data scope. |
 | Assigned only | Staff access is limited to the building assigned in the `Users` profile and records belonging to that building. |
 | Deny | The role is not intended to use the capability. |
-| Session guard | `ProtectedRoute` checks only for a valid Supabase Auth session. |
+| Session guard | `ProtectedRoute` checks the session and requires a recognized active application profile. |
 | Active-role guard | `AdminOnlyRoute` checks the latest `Users` profile role and denies an `Inactive` profile. |
 | Page check | Visibility or mutation rules are implemented within a page rather than at the route boundary. |
 | RLS | Supabase Row Level Security; the required final authorization boundary for frontend database requests. |
@@ -35,7 +35,7 @@ UI visibility <= route permission <= RLS permission
 | Staff profile without a valid building assignment | Building-scoped operations must be denied until corrected. |
 | Duplicate profiles for one Auth user | Treat as a data-integrity defect; the active-role guard currently selects the newest profile. |
 
-`ProtectedRoute` does not load role, status, or building assignment. Any route using only this guard must rely on page checks and RLS for finer authorization.
+`ProtectedRoute` requires an active recognized role. Page checks and RLS enforce individual actions and building scope. The shared Supabase write guard checks the current profile before mutations.
 
 ## Role Scope
 
@@ -44,31 +44,32 @@ UI visibility <= route permission <= RLS permission
 | Admin | Full approved operational access, historical corrections, restricted reports, and account administration. |
 | Supervisor | Approved current operations and operational reports without Admin-only historical corrections or account administration. |
 | Staff | Current daily operations and operational reports for the assigned building only. |
+| Viewer | View operational data and reports across all buildings. No create, edit, or delete access; no account administration or income reports. |
 
 ## Capability Matrix
 
-| Capability | Admin | Supervisor | Staff |
-| --- | --- | --- | --- |
-| Sign in with an active account | Allow | Allow | Allow |
-| View operational data | Allow | Allow | Assigned only |
-| Create and manage buildings | Allow | Allow | Deny |
-| Load a new grow | Allow | Allow | Deny unless approved policy says otherwise |
-| Enter current daily grow activity | Allow | Allow | Assigned only |
-| Edit previous grow dates | Allow | Deny | Deny |
-| Edit or delete load history | Allow | Deny | Deny |
-| Undo completed loading | Allow | Deny | Deny |
-| Enter current daily feed usage | Allow | Allow | Assigned only |
-| Edit or delete saved feed usage | Allow | Deny | Deny |
-| Enter a new electricity reading | Allow | Allow | Assigned only |
-| Edit a saved electricity reading | Allow | Deny | Deny |
-| Manage current-date harvest truck loading | Allow | Allow | Deny unless explicitly approved |
-| Edit loaded birds or delete truck records | Allow | Deny | Deny |
-| View active and harvested grow reports | Allow | Allow | Assigned only |
-| View feed and electricity reports | Allow | Allow | Assigned only |
-| View or manage income summaries | Allow | Deny | Deny |
-| View or manage user accounts | Allow | Deny | Deny |
-| Change another user's role, status, or building | Allow | Deny | Deny |
-| Use personal settings and sign out | Allow | Allow | Allow |
+| Capability | Admin | Supervisor | Staff | Viewer |
+| --- | --- | --- | --- | --- |
+| Sign in with an active account | Allow | Allow | Allow | Allow |
+| View operational data | Allow | Allow | Assigned only | All buildings |
+| Create and manage buildings | Allow | Allow | Deny | Deny |
+| Load a new grow | Allow | Allow | Deny unless approved policy says otherwise | Deny |
+| Enter current daily grow activity | Allow | Allow | Assigned only | Deny |
+| Edit previous grow dates | Allow | Deny | Deny | Deny |
+| Edit or delete load history | Allow | Deny | Deny | Deny |
+| Undo completed loading | Allow | Deny | Deny | Deny |
+| Enter current daily feed usage | Allow | Allow | Assigned only | Deny |
+| Edit or delete saved feed usage | Allow | Deny | Deny | Deny |
+| Enter a new electricity reading | Allow | Allow | Assigned only | Deny |
+| Edit a saved electricity reading | Allow | Deny | Deny | Deny |
+| Manage current-date harvest truck loading | Allow | Allow | Deny unless explicitly approved | Deny |
+| Edit loaded birds or delete truck records | Allow | Deny | Deny | Deny |
+| View active and harvested grow reports | Allow | Allow | Assigned only | Allow |
+| View feed and electricity reports | Allow | Allow | Assigned only | Allow |
+| View or manage income summaries | Allow | Deny | Deny | Deny |
+| View or manage user accounts | Allow | Deny | Deny | Deny |
+| Change another user's role, status, or building | Allow | Deny | Deny | Deny |
+| Use personal settings and sign out | Allow | Allow | Allow | Allow |
 
 Capabilities marked **Assigned only** require RLS to derive building ownership from `building_id` or from the record's parent grow, harvest, cage, or other related row.
 
@@ -84,7 +85,7 @@ Capabilities marked **Assigned only** require RLS to derive building ownership f
 
 ### General Protected Routes
 
-These routes are inside `ProtectedRoute`. The route boundary verifies a session but does not itself verify profile role, status, or building assignment.
+These routes are inside `ProtectedRoute`, which verifies a session and active recognized profile. Viewer can read operational pages in this group; all data changes remain blocked. Building scope for other roles depends on page checks and RLS.
 
 | Route | Intended access | Current frontend enforcement | Required database boundary |
 | --- | --- | --- | --- |
@@ -105,11 +106,11 @@ These routes are inside `ProtectedRoute`. The route boundary verifies a session 
 | `/reports/harvested` | Admin, Supervisor, assigned Staff | Session guard | `Buildings` and `Grows` RLS must limit visible rows. |
 | `/reports/grow/:id/history` | Admin, Supervisor, assigned Staff | Session guard | All grow, harvest, and reduction source tables must enforce parent building. |
 | `/reports/harvested/grow/:id/history` | Admin, Supervisor, assigned Staff | Session guard | All grow, harvest, and reduction source tables must enforce parent building. |
-| `/accounts` | Admin only | Session guard only | Current gap: non-admin direct access must be denied by RLS; successful access or mutation is a release blocker. |
+| `/accounts` | Admin only | Session guard and Admin-only active-role guard | Users RLS and Viewer read/write restrictions. |
 
 ### Active-Role Routes
 
-These routes use `AdminOnlyRoute` with `Admin`, `Supervisor`, and `Staff` allowed. The route checks role and rejects an `Inactive` profile, but Staff building scope still depends on page behavior and RLS.
+These routes use `AdminOnlyRoute` with `Admin`, `Supervisor`, `Staff`, and `Viewer` allowed. Viewer has read-only access throughout this group. The route checks role and rejects an `Inactive` profile, but Staff building scope still depends on page behavior and RLS.
 
 | Route | Intended access | Additional restriction |
 | --- | --- | --- |
@@ -164,7 +165,7 @@ Where a child table does not contain `building_id`, its policy must resolve owne
 
 ## Known Authorization Risks
 
-1. `/accounts` is intended for Admin only but currently has only a session route guard.
+1. Viewer database protection requires deployment of `sql/viewer-role.sql`; frontend controls alone do not enforce direct API requests.
 2. Most building, harvest, and operational report routes are session-protected and depend on page checks plus RLS.
 3. A hidden or disabled dashboard tile does not prevent direct route navigation.
 4. Active-role guards select the newest matching user profile when duplicates exist; database uniqueness is preferable.
@@ -175,7 +176,8 @@ See [Security Guide](SECURITY_GUIDE.md) for control requirements and incident ha
 
 ## Verification Checklist
 
-- [ ] Test with separate active Admin, Supervisor, and assigned Staff accounts.
+- [ ] Test with separate active Admin, Supervisor, assigned Staff, and Viewer accounts.
+- [ ] Verify Viewer can browse all operational modules and reports but cannot INSERT, UPDATE, DELETE, change roles, or invoke write RPCs directly.
 - [ ] Test an inactive account and a session with no usable application profile.
 - [ ] Open every restricted route directly, not only through dashboard tiles.
 - [ ] Verify Staff cannot read or write another building by changing route IDs or request payload parent IDs.

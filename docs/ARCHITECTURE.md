@@ -227,7 +227,7 @@ Several pages load the `Users` profile to enforce building visibility and mutati
 
 Frontend guards improve navigation and feedback, but they are not a security boundary. Supabase RLS must independently enforce role, status, and assigned-building access for every table and RPC.
 
-Current authorization is mixed between routes and pages. For example, `/accounts` is session-protected but not wrapped in the Admin-only route guard even though account management is intended for Admin. The testing guide treats non-admin direct access as release-blocking.
+Authorization combines `ProtectedRoute` active-profile checks, role-specific route guards, page controls, a shared Supabase mutation guard, and database permissions. `/accounts` and income reports use the Admin-only route guard. Viewer can read operational pages but cannot change records; see [Viewer setup](VIEWER_ROLE.md).
 
 ## Data Access Architecture
 

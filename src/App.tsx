@@ -34,7 +34,7 @@ import PublicRoute from "./components/PublicRoute";
 import AdminOnlyRoute from "./components/AdminOnlyRoute";
 import AppUpdateIndicator from "./components/AppUpdateIndicator";
 
-const ALL_ACTIVE_ROLES = ["Admin", "Supervisor", "Staff"] as const;
+const ALL_ACTIVE_ROLES = ["Admin", "Supervisor", "Staff", "Viewer"] as const;
 
 function HiddenFeedSectionRedirect() {
   const { buildingId } = useParams();
@@ -73,6 +73,7 @@ function App() {
             <Route path="/reports/grows" element={<GrowsReportPage />} />
             <Route path="/reports/harvested" element={<HarvestedReportPage />} />
             <Route element={<AdminOnlyRoute />}>
+              <Route path="/accounts" element={<AccountsPage />} />
               <Route path="/reports/income" element={<IncomeReportPage />} />
               <Route path="/reports/income/new" element={<IncomeSummaryFormPage />} />
             </Route>
@@ -92,7 +93,6 @@ function App() {
             <Route path="/reports/grow/:id/history" element={<ReportGrowHistoryPage />} />
             <Route path="/reports/harvested/grow/:id/history" element={<HarvestedReportHistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/accounts" element={<AccountsPage />} />
           </Route>
 
           {/* Redirect unknown routes */}

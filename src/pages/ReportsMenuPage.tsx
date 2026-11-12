@@ -7,13 +7,15 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 
 const BRAND = "#008822";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 const FEEDS_TABLE = import.meta.env.VITE_SUPABASE_FEEDS_CONSUMPTION_TABLE ?? "FeedsConsumption";
 const { Header, Content } = Layout;
 const { Title } = Typography;
-type UserRole = "Admin" | "Supervisor" | "Staff" | null;
+type UserRole = Role | null;
 
 type ReportTile = {
   key: "grows" | "harvested" | "income" | "electricity" | "feeds";
@@ -117,7 +119,7 @@ export default function ReportsMenuPage() {
         return;
       }
 
-      setUserRole(data?.role === "Admin" || data?.role === "Supervisor" ? data.role : "Staff");
+      setUserRole(toRole(data?.role));
     };
 
     void loadRole();

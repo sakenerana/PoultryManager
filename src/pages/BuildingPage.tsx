@@ -17,6 +17,8 @@ import { useAuth } from "../context/AuthContext";
 import { resolveBodyWeightAverage } from "../utils/bodyWeight";
 import { loadGrowReductionTransactionsByGrowId } from "../controller/growLogsCrud";
 import supabase from "../utils/supabase";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 
 dayjs.extend(utc);
 
@@ -122,7 +124,7 @@ const TRANSFER_TRANSACTIONS_TABLE =
   import.meta.env.VITE_SUPABASE_TRANSFER_TRANSACTIONS_TABLE ?? "TransferTransactions";
 
 type UserAccess = {
-  role: "Admin" | "Supervisor" | "Staff" | null;
+  role: Role | null;
   buildingId: number | null;
   isActive: boolean;
 };
@@ -499,7 +501,7 @@ export default function BuildingOverviewPage() {
     }
 
     const normalizedRole =
-      data.role === "Admin" || data.role === "Supervisor" ? data.role : "Staff";
+      toRole(data.role);
 
     return {
       role: normalizedRole,

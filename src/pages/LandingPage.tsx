@@ -10,6 +10,8 @@ import { addSubBuildings } from "../controller/subbuildingsCrud";
 import type { BuildingRecord } from "../type/building.type";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import { checkForAppUpdate } from "../serviceWorkerRegistration";
 import { APP_VERSION } from "../generated/appVersion";
 
@@ -167,7 +169,7 @@ const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildi
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
 const INCOME_SUMMARY_TABLE = import.meta.env.VITE_SUPABASE_INCOME_SUMMARY_TABLE ?? "IncomeSummary";
 const ELECTRICITY_TABLE = import.meta.env.VITE_SUPABASE_ELECTRICITY_CONSUMPTION_TABLE ?? "ElectricityConsumption";
-type AppRole = "Admin" | "Supervisor" | "Staff" | null;
+type AppRole = Role | null;
 type DashboardStats = {
     buildings: number;
     activeGrows: number;
@@ -224,13 +226,7 @@ export default function LandingPage() {
             }
 
             if (!isMounted) return;
-            if (data?.role === "Admin" || data?.role === "Supervisor") {
-                setRole(data.role);
-            } else if (data?.role === "Staff") {
-                setRole("Staff");
-            } else {
-                setRole(null);
-            }
+            setRole(toRole(data?.role));
         };
 
         void loadRole();

@@ -34,6 +34,7 @@ const roleColors: Record<Role, string> = {
   Admin: "red",
   Supervisor: "blue",
   Staff: "green",
+  Viewer: "purple",
 };
 
 const statusColors: Record<Status, string> = {
@@ -654,6 +655,7 @@ export default function AccountsPage() {
                 { label: "Admin", value: "Admin" },
                 { label: "Supervisor", value: "Supervisor" },
                 { label: "Staff", value: "Staff" },
+                { label: "Viewer (view only)", value: "Viewer" },
               ]}
             />
           </Form.Item>
@@ -670,6 +672,12 @@ export default function AccountsPage() {
                 placeholder="Select building access"
               />
             </Form.Item>
+          )}
+
+          {selectedRole === "Viewer" && (
+            <div className="mb-5 rounded-md border border-sky-100 bg-sky-50 p-3 text-sm text-sky-800">
+              Can view operational records and reports for all buildings. Cannot create, edit, or delete records.
+            </div>
           )}
 
           <Form.Item

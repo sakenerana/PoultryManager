@@ -10,6 +10,8 @@ import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import { signOutAndRedirect } from "../utils/auth";
 import { FEED_CODE_OPTIONS } from "../utils/feedCodes";
 import { createGrowSequenceMap } from "../utils/growSequence";
@@ -27,7 +29,7 @@ const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
 type SectionKey = "received" | "transfer-in" | "transfer-out";
-type AppRole = "Admin" | "Supervisor" | "Staff" | null;
+type AppRole = Role | null;
 
 type MovementRow = {
   key: string;
@@ -105,7 +107,7 @@ export default function FeedsConsumptionMovementPage() {
   const navigate = useNavigate();
   const { buildingId, section } = useParams();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -231,7 +233,7 @@ export default function FeedsConsumptionMovementPage() {
         return;
       }
 
-      const role = data?.role === "Admin" || data?.role === "Supervisor" || data?.role === "Staff" ? data.role : null;
+      const role = toRole(data?.role);
       setUserRole(data?.status === "Inactive" ? null : role);
     };
 
@@ -251,6 +253,7 @@ export default function FeedsConsumptionMovementPage() {
   }, [loadRows]);
 
   const openEntryModal = (row?: MovementRow) => {
+    if (!canWrite) return;
     if (row && !canManageExistingFeedEntries) {
       setToastMessage("Only Admin users can edit feed entries.");
       setIsToastOpen(true);
@@ -277,6 +280,7 @@ export default function FeedsConsumptionMovementPage() {
   };
 
   const saveEntry = async () => {
+    if (!canWrite) return;
     if (safeBuildingId == null || growId == null) return;
     if (editingRow && !canManageExistingFeedEntries) {
       setToastMessage("Only Admin users can edit feed entries.");
@@ -474,7 +478,7 @@ export default function FeedsConsumptionMovementPage() {
                 <div className="text-base font-semibold text-slate-900">{meta.title} List</div>
                 <div className="mt-1 text-sm text-slate-500">{buildingName} | Grow {growSequenceNumber ? `#${growSequenceNumber}` : "-"}</div>
               </div>
-              <Button type="primary" disabled={growId == null} onClick={() => openEntryModal()}>
+              <Button type="primary" disabled={!canWrite || growId == null} onClick={() => openEntryModal()}>
                 {meta.addLabel}
               </Button>
             </div>

@@ -11,6 +11,8 @@ import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 
@@ -41,7 +43,7 @@ type ElectricityEntry = {
   remarks: string;
 };
 
-type AppRole = "Admin" | "Supervisor" | "Staff" | null;
+type AppRole = Role | null;
 
 const toNumberOrNull = (value: unknown): number | null => {
   if (value === null || value === undefined || value === "") return null;
@@ -93,7 +95,7 @@ const setMeterResetNote = (remarks: string, checked: boolean): string => {
 export default function ElectricityConsumptionFormPage() {
   const navigate = useNavigate();
   const { growId, buildingId } = useParams();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -156,7 +158,7 @@ export default function ElectricityConsumptionFormPage() {
         return;
       }
 
-      const role = data?.role === "Admin" || data?.role === "Supervisor" || data?.role === "Staff" ? data.role : null;
+      const role = toRole(data?.role);
       setUserRole(data?.status === "Inactive" ? null : role);
     };
 
@@ -340,6 +342,7 @@ export default function ElectricityConsumptionFormPage() {
   };
 
   const handleSaveEntry = async (entry: ElectricityEntry) => {
+    if (!canWrite) return;
     const resolvedGrowId = growInfo?.id;
     if (resolvedGrowId == null || !Number.isFinite(resolvedGrowId)) return;
     if (entry.id && !canEditExistingElectricityEntries) {
@@ -573,6 +576,7 @@ export default function ElectricityConsumptionFormPage() {
                   type="button"
                   className="w-full rounded-sm border border-emerald-100 bg-white p-3 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40"
                   onClick={() => {
+                    if (!canWrite) return;
                     if (entry.id && !canEditExistingElectricityEntries) {
                       setToastMessage("Only Admin users can edit saved electricity readings.");
                       setIsToastOpen(true);
@@ -621,7 +625,7 @@ export default function ElectricityConsumptionFormPage() {
                   <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
                     <span className="line-clamp-2 text-slate-500">Remarks: {entry.remarks.trim() || "-"}</span>
                     <span className="shrink-0 font-medium text-emerald-700">
-                      {entry.id ? (canEditExistingElectricityEntries ? "Tap to edit" : "Saved") : "Tap to add reading"}
+                      {!canWrite ? "View only" : entry.id ? (canEditExistingElectricityEntries ? "Tap to edit" : "Saved") : "Tap to add reading"}
                     </span>
                   </div>
                 </button>

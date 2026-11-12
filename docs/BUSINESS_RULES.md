@@ -432,6 +432,7 @@ Supabase Auth session validity and application profile status are separate. An A
 | --- | --- |
 | Admin | Full operational oversight, historical corrections, account management, and restricted reports |
 | Supervisor | Current operational management and approved reports without Admin-only corrections |
+| Viewer | Operational records and reports for all buildings; viewing only, with no create, edit, or delete access |
 | Staff | Daily work for the specifically assigned building |
 
 Important restrictions:

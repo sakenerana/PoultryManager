@@ -9,6 +9,7 @@ import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import { updateGrow } from "../controller/growsCrud";
+import { useAuth } from "../context/AuthContext";
 import { loadHarvestReductionTransactionsByHarvestId } from "../controller/harvestLogsCrud";
 import { loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
 
@@ -136,6 +137,7 @@ function ChickenState({
 }
 
 export default function HarvestMetricHistoryPage() {
+  const { canWrite } = useAuth();
   const navigate = useNavigate();
   const { id, metric } = useParams<{ id: string; metric?: string }>();
   const [searchParams] = useSearchParams();
@@ -412,6 +414,7 @@ export default function HarvestMetricHistoryPage() {
   const dayMaxAllowed = Math.max(0, currentRemaining + dayPreviousValue);
 
   const openDayDrawer = (row: ReductionHistoryRow) => {
+    if (!canWrite) return;
     setActiveDayRow(row);
     setDayCountDraft(row.value);
     setDayPreviousValue(row.value);
@@ -428,6 +431,7 @@ export default function HarvestMetricHistoryPage() {
   };
 
   const handleSaveDay = async () => {
+    if (!canWrite) return;
     if (!selectedMetric || !activeDayRow || activeHarvestId == null || activeGrowId == null) return;
 
     const nextValue = Math.max(0, Math.floor(dayCountDraft || 0));
@@ -718,8 +722,8 @@ export default function HarvestMetricHistoryPage() {
               {activeHistoryRows.map((row) => (
                 <div
                   key={`${selectedMetric}-${row.date}`}
-                  role="button"
-                  tabIndex={0}
+                  role={canWrite ? "button" : undefined}
+                  tabIndex={canWrite ? 0 : undefined}
                   onClick={() => openDayDrawer(row)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {

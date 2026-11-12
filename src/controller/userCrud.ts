@@ -1,4 +1,5 @@
 import supabase from "../utils/supabase";
+import { createClient } from "@supabase/supabase-js";
 import type { CreateUserInput, Role, UpdateUserInput, UserAccount } from "../type/user.types";
 
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
@@ -14,7 +15,7 @@ type UserRow = {
 };
 
 function normalizeRole(role?: string): Role {
-  if (role === "Admin" || role === "Supervisor") return role;
+  if (role === "Admin" || role === "Supervisor" || role === "Viewer") return role;
   return "Staff";
 }
 
@@ -40,7 +41,18 @@ export async function loadUsers(): Promise<UserAccount[]> {
 }
 
 export async function addUser(input: CreateUserInput): Promise<UserAccount> {
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  const { data: sessionData } = await supabase.auth.getUser();
+  if (!sessionData.user) throw new Error("Only Admin can manage accounts.");
+  const { data: adminProfile } = await supabase.from(USERS_TABLE).select("role,status")
+    .eq("user_uuid", sessionData.user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (adminProfile?.role !== "Admin" || adminProfile.status === "Inactive") {
+    throw new Error("Only Admin can manage accounts.");
+  }
+  // Creating an account must not replace the administrator's active session.
+  const signupClient = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data: authData, error: authError } = await signupClient.auth.signUp({
     email: input.email.trim(),
     password: input.password,
     options: {

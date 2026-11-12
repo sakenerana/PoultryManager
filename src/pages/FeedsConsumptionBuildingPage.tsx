@@ -9,6 +9,8 @@ import { MdOutlinePictureAsPdf } from "react-icons/md";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import NotificationToast from "../components/NotificationToast";
 import { useAuth } from "../context/AuthContext";
+import { toRole } from "../type/user.types";
+import type { Role } from "../type/user.types";
 import { signOutAndRedirect } from "../utils/auth";
 import { FEED_CODE_OPTIONS } from "../utils/feedCodes";
 import { getDailyFeedTarget, type DailyFeedTarget } from "../utils/feedTargets";
@@ -25,7 +27,7 @@ const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
-type AppRole = "Admin" | "Supervisor" | "Staff" | null;
+type AppRole = Role | null;
 
 type FeedSetupRow = {
   key: string;
@@ -123,7 +125,7 @@ export default function FeedsConsumptionBuildingPage() {
   const navigate = useNavigate();
   const { buildingId } = useParams();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
@@ -478,7 +480,7 @@ export default function FeedsConsumptionBuildingPage() {
         return;
       }
 
-      const role = data?.role === "Admin" || data?.role === "Supervisor" || data?.role === "Staff" ? data.role : null;
+      const role = toRole(data?.role);
       setUserRole(data?.status === "Inactive" ? null : role);
     };
 
@@ -553,6 +555,7 @@ export default function FeedsConsumptionBuildingPage() {
   }, [buildingId]);
 
   const handleOpenFeedModal = (dayRow: FeedDayRow) => {
+    if (!canWrite) return;
     if (dayRow.entry && !canManageExistingFeedEntries) {
       setToastMessage("Only Admin users can edit feed entries.");
       setIsToastOpen(true);
@@ -586,6 +589,7 @@ export default function FeedsConsumptionBuildingPage() {
   };
 
   const handleSaveFeedEntry = async () => {
+    if (!canWrite) return;
     if (!selectedSetupRow) return;
     if (activeFeedDay?.entry && !canManageExistingFeedEntries) {
       setToastMessage("Only Admin users can edit feed entries.");
@@ -858,8 +862,8 @@ export default function FeedsConsumptionBuildingPage() {
                           return (
                             <div
                               key={dayRow.ageDay}
-                              role="button"
-                              tabIndex={0}
+                              role={canWrite ? "button" : undefined}
+                              tabIndex={canWrite ? 0 : undefined}
                               className={[
                                 "group",
                                 "w-full rounded-lg border p-3 text-left shadow-sm transition",

@@ -1,4 +1,8 @@
-export type Role = "Admin" | "Supervisor" | "Staff";
+export type Role = "Admin" | "Supervisor" | "Staff" | "Viewer";
+
+export function toRole(value: unknown): Role | null {
+  return value === "Admin" || value === "Supervisor" || value === "Staff" || value === "Viewer" ? value : null;
+}
 export type Status = "Active" | "Inactive";
 
 export type UserAccount = {
