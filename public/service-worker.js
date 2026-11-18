@@ -1,6 +1,6 @@
-const STATIC_CACHE = "ggdc-static-v4";
-const RUNTIME_CACHE = "ggdc-runtime-v4";
-const PRECACHE_URLS = ["/", "/index.html", "/manifest.webmanifest"];
+const STATIC_CACHE = "ggdc-static-v5";
+const RUNTIME_CACHE = "ggdc-runtime-v5";
+const PRECACHE_URLS = ["/", "/index.html", "/manifest.webmanifest", "/pwa-install.js", "/icons/balao-pwa-192.png", "/icons/balao-pwa-512.png"];
 
 function isHttpRequest(request) {
   return request.url.startsWith("http");

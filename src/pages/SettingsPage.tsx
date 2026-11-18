@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Layout, Typography, Button, Divider, Grid, Slider, Card } from "antd";
 import { FaSignOutAlt } from "react-icons/fa";
 import { IoMdArrowRoundBack } from "react-icons/io";
@@ -8,33 +8,25 @@ import { applyUserSettings, DEFAULT_USER_SETTINGS, loadUserSettings, saveUserSet
 import type { UserSettings } from "../utils/userSettings";
 import NotificationToast from "../components/NotificationToast";
 import { signOutAndRedirect } from "../utils/auth";
+import { usePwaInstall } from "../hooks/usePwaInstall";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 const PRIMARY = "#008822";
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
 export default function SettingsPage() {
   const navigate = useNavigate();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileSafeAreaTop = "env(safe-area-inset-top, 0px)";
-  const isStandalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    ((window.navigator as Navigator & { standalone?: boolean }).standalone ?? false);
-  const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  const { canInstall, isInstalled, isPrompting, isSecureContext, platform, isEmbedded, install } = usePwaInstall();
 
   const [settings, setSettings] = useState<UserSettings>(() => loadUserSettings());
   const [isDirty, setIsDirty] = useState(false);
   const [isToastOpen, setIsToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [canInstall, setCanInstall] = useState(false);
+  const [toastType, setToastType] = useState<"success" | "info" | "error">("success");
 
   const previewStyle = useMemo(
     () => ({
@@ -64,6 +56,7 @@ export default function SettingsPage() {
     saveUserSettings(settings);
     setIsDirty(false);
     setToastMessage("Settings saved successfully.");
+    setToastType("success");
     setIsToastOpen(true);
   };
 
@@ -72,44 +65,56 @@ export default function SettingsPage() {
   };
 
   const handleInstallApp = async () => {
-    if (!deferredPrompt) return;
-
-    await deferredPrompt.prompt();
-    const result = await deferredPrompt.userChoice;
-
+    const result = await install();
     if (result.outcome === "accepted") {
       setToastMessage("App installation started.");
-    } else {
+      setToastType("success");
+    } else if (result.outcome === "dismissed") {
       setToastMessage("App installation was canceled.");
+      setToastType("info");
+    } else if (result.outcome === "error") {
+      setToastMessage("The install prompt could not open. Use your browser menu to install the app.");
+      setToastType("error");
+    } else {
+      setToastMessage("Use your browser menu to install the app, or open the app from your home screen if it is already installed.");
+      setToastType("info");
     }
-
     setIsToastOpen(true);
-    setDeferredPrompt(null);
-    setCanInstall(false);
   };
 
-  useEffect(() => {
-    const onBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      setDeferredPrompt(event as BeforeInstallPromptEvent);
-      setCanInstall(true);
-    };
-
-    const onAppInstalled = () => {
-      setDeferredPrompt(null);
-      setCanInstall(false);
-      setToastMessage("App installed successfully.");
-      setIsToastOpen(true);
-    };
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    window.addEventListener("appinstalled", onAppInstalled);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onAppInstalled);
-    };
-  }, []);
+  const installInstructions = !isSecureContext
+    ? "Open this site using HTTPS to install the app. Installation is unavailable on an unsecured connection."
+    : isEmbedded
+      ? "Open this site in the Chrome app first. Installation may not be available inside Facebook, Messenger, or other in-app browsers."
+      : platform === "ios"
+        ? "On iPhone or iPad, open this site in Safari, tap Share, then Add to Home Screen."
+        : platform === "android"
+          ? "In Chrome, tap the three-dot menu, then Install and create shortcut, then Install. On some versions, choose Install app or Add to Home screen."
+          : "In Chrome, use the install icon in the address bar or open the browser menu and choose Install this page as an app.";
+  const installContent = isInstalled ? (
+    <div className="text-xs text-slate-500">This app is running in installed mode.</div>
+  ) : (
+    <div className="space-y-3">
+      {canInstall || isPrompting ? (
+        <Button
+          type="primary"
+          className="!rounded-lg !h-10"
+          style={{ backgroundColor: PRIMARY, borderColor: PRIMARY }}
+          onClick={() => void handleInstallApp()}
+          loading={isPrompting}
+          disabled={isPrompting}
+        >
+          Install App
+        </Button>
+      ) : null}
+      <p className="text-xs leading-relaxed text-slate-600">{installInstructions}</p>
+      {!canInstall && isSecureContext && !isEmbedded && platform !== "ios" && (
+        <p className="text-xs leading-relaxed text-slate-500">
+          If no install option appears, use a regular browser tab instead of Incognito. If the app is already installed, open it from your home screen or app launcher.
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <Layout className="min-h-screen bg-slate-100">
@@ -196,26 +201,7 @@ export default function SettingsPage() {
             <Card className="!rounded-sm !border-0 shadow-sm !mt-2" bodyStyle={{ padding: 12 }}>
               <div className="text-sm font-semibold mb-2">Install App</div>
 
-              {isStandalone ? (
-                <div className="text-xs text-slate-500">App is already installed on this device.</div>
-              ) : canInstall ? (
-                <Button
-                  type="primary"
-                  className="!rounded-sm"
-                  style={{ backgroundColor: "#008822", borderColor: "#008822" }}
-                  onClick={() => void handleInstallApp()}
-                >
-                  Install App
-                </Button>
-              ) : isIos ? (
-                <div className="text-xs text-slate-500">
-                  On iPhone, open Share and choose Add to Home Screen.
-                </div>
-              ) : (
-                <div className="text-xs text-slate-500">
-                  Install button appears when your browser makes this app installable.
-                </div>
-              )}
+              {installContent}
             </Card>
 
             <div className="flex gap-2 mt-4">
@@ -248,12 +234,12 @@ export default function SettingsPage() {
                   <div className="mt-1 text-xl font-bold text-slate-900">{isDirty ? "Unsaved" : "Saved"}</div>
                 </div>
                 <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500">Installable</div>
-                  <div className="mt-1 text-xl font-bold text-slate-900">{canInstall ? "Yes" : "No"}</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">Install Prompt</div>
+                  <div className="mt-1 text-xl font-bold text-slate-900">{isInstalled ? "Installed" : isPrompting ? "Opening" : canInstall ? "Ready" : !isSecureContext ? "HTTPS needed" : "Browser menu"}</div>
                 </div>
                 <div className="rounded-sm bg-white/90 px-4 py-3 border border-emerald-100">
                   <div className="text-[11px] uppercase tracking-wide text-slate-500">PWA Status</div>
-                  <div className="mt-1 text-xl font-bold text-slate-900">{isStandalone ? "Installed" : "Web"}</div>
+                  <div className="mt-1 text-xl font-bold text-slate-900">{isInstalled ? "Installed" : "Web"}</div>
                 </div>
               </div>
             </div>
@@ -284,26 +270,7 @@ export default function SettingsPage() {
               <div className="col-span-5 space-y-4">
                 <Card className="!rounded-sm !border !border-slate-200 !shadow-sm" bodyStyle={{ padding: 20 }}>
                   <div className="text-sm font-semibold mb-2">Install App</div>
-                  {isStandalone ? (
-                    <div className="text-xs text-slate-500">App is already installed on this device.</div>
-                  ) : canInstall ? (
-                    <Button
-                      type="primary"
-                      className="!rounded-lg !h-10"
-                      style={{ backgroundColor: "#008822", borderColor: "#008822" }}
-                      onClick={() => void handleInstallApp()}
-                    >
-                      Install App
-                    </Button>
-                  ) : isIos ? (
-                    <div className="text-xs text-slate-500">
-                      On iPhone, open Share and choose Add to Home Screen.
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500">
-                      Install button appears when your browser makes this app installable.
-                    </div>
-                  )}
+                  {installContent}
                 </Card>
 
                 <Card className="!rounded-sm !border !border-slate-200 !shadow-sm !mt-4" bodyStyle={{ padding: 20 }}>
@@ -331,7 +298,7 @@ export default function SettingsPage() {
       <NotificationToast
         open={isToastOpen}
         message={toastMessage}
-        type="success"
+        type={toastType}
         onClose={() => setIsToastOpen(false)}
       />
     </Layout>

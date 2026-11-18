@@ -198,16 +198,22 @@ The application registers `/service-worker.js` and uses `/manifest.webmanifest`.
 
 The service worker:
 
-- Pre-caches `/`, `/index.html`, and `/manifest.webmanifest`.
+- Pre-caches `/`, `/index.html`, `/manifest.webmanifest`, `/pwa-install.js`, and the 192px/512px installation icons.
 - Uses network-first behavior for page navigation with an offline `index.html` fallback.
 - Uses runtime caching for same-origin static assets.
 - Bypasses caching for Supabase and JSON/API requests.
 - Removes older cache names during activation.
 - Supports a user-triggered update through `SKIP_WAITING`.
 
-Current cache names are `ggdc-static-v4` and `ggdc-runtime-v4`. When changing cache strategy or pre-cached content, increment the cache version so stale caches are removed on activation.
+Current cache names are `ggdc-static-v5` and `ggdc-runtime-v5`. When changing cache strategy or pre-cached content, increment the cache version so stale caches are removed on activation.
 
 PWA installation and service-worker behavior require HTTPS in production. Localhost is the browser-supported development exception.
+
+`index.html` loads `/pwa-install.js` before the React bundle. This captures and retains Chrome's one-use install event while users sign in or navigate to Settings. Deploy this script along with the entire build. The manifest points to `/icons/balao-pwa-192.png` and `/icons/balao-pwa-512.png`; these files have the exact declared pixel dimensions. The original logo files are preserved. Windows maintainers can reproduce the exports with `powershell.exe -File scripts/export-pwa-icons.ps1`.
+
+Serve `manifest.webmanifest` as `application/manifest+json` (or `application/json`), installation scripts as JavaScript, and icons as `image/png`. Revalidate the manifest and `/pwa-install.js` rather than caching these non-hashed files indefinitely. The HTML manifest link cannot set the server's response Content-Type; apply this setting in the actual web-server configuration.
+
+Settings shows **Ready** when Chrome has supplied an install prompt, or **Browser menu** with platform-specific installation steps when it has not. Missing a prompt does not prove the browser cannot install the app. Test a regular Android Chrome tab, because in-app browsers and Incognito may not offer installation. Browser engagement, an existing installation, and browser decisions can affect whether a native prompt is offered.
 
 After deployment, users can select **Sync latest update** in the application. When a waiting service worker is found, the app offers **Update now** and reloads after activation.
 
@@ -301,7 +307,7 @@ Verify that the new `service-worker.js` and `index.html` are not held by a long-
 
 ### The PWA cannot be installed
 
-Confirm HTTPS, a valid `/manifest.webmanifest`, reachable 192x192 and 512x512 icons, and successful service-worker registration. Installation support also varies by browser and device.
+Confirm HTTPS, a valid `/manifest.webmanifest`, reachable icons whose actual dimensions are 192x192 and 512x512, and successful service-worker registration. Confirm `/pwa-install.js` returns JavaScript and loads before the React bundle. Installation support also varies by browser and device. If the in-app button is unavailable, follow Settings' browser-menu instructions. After deploying, activate the waiting update through **Sync latest update / Update now**, close old tabs, and reopen the site in Chrome. Validate installation on a physical Android device before claiming device readiness.
 
 ### Password-reset links fail
 

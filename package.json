@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:viewer": "node --test scripts/viewer-access.test.mjs",
+    "test:pwa-install": "node --test scripts/pwa-install.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

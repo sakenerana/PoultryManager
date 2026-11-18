@@ -461,6 +461,8 @@ On each viewport verify:
 9. Temporarily disconnect the network and confirm the cached application shell loads.
 10. Confirm Supabase data writes do not falsely appear successful while offline.
 
+Run `npm.cmd run test:pwa-install` for regression tests covering an install event before Settings mounts, navigation/subscription changes, one-use prompts, cancellation/retry, prompt failure, `appinstalled`, standalone detection, older media-query listeners, insecure origins, and icon dimensions. In the browser, confirm both desktop and mobile Settings show **Install App** after a prompt arrives before visiting Settings. With no prompt, Android should show Chrome menu instructions; iOS should show Share/Add to Home Screen instructions. A dismissed prompt must not produce an unhandled error or an incorrect Installed state. An accepted prompt should show installation started; only `appinstalled` or installed display mode confirms completion.
+
 Expected: static shell caching works, API responses are not served as stale cached data, and updates do not leave mixed-build assets.
 
 ## Data Integrity Reconciliation

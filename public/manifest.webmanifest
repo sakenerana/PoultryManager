@@ -10,12 +10,12 @@
   "theme_color": "#008822",
   "icons": [
     {
-      "src": "/icons/balao-logo-192.png",
+      "src": "/icons/balao-pwa-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icons/balao-logo-512.png",
+      "src": "/icons/balao-pwa-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
