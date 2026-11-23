@@ -13,6 +13,7 @@ import type { Role } from "../type/user.types";
 import { signOutAndRedirect } from "../utils/auth";
 import supabase from "../utils/supabase";
 import { updateGrow } from "../controller/growsCrud";
+import { loadGrowCurrentForHarvest } from "../controller/growBirdBalance";
 import { loadHarvestReductionTransactionsByHarvestId } from "../controller/harvestLogsCrud";
 import {
   addHarvest,
@@ -47,7 +48,6 @@ type GrowStatus = "Growing" | "Harvested";
 const PRIMARY = "#008822";
 const SECONDARY = "#ffa600";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
-const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const USERS_TABLE = import.meta.env.VITE_SUPABASE_USERS_TABLE ?? "Users";
 
 type UserRole = Role | null;
@@ -405,56 +405,9 @@ export default function HarvestTruckPage() {
   }, [filteredTrucks, totals.totalBirdsLoad, totals.totalWeightLoad]);
 
   const getGrowTotalAnimals = async (growId: number | null, fallbackBuildingId: number): Promise<number | null> => {
-    if (growId !== null) {
-      const { startIso: selectedDayStart, endIso: selectedDayEnd } = getLocalDayBounds(selectedDate);
-
-      const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
-        .from(GROW_LOGS_TABLE)
-        .select("actual_total_animals, created_at")
-        .eq("grow_id", growId)
-        .gte("created_at", selectedDayStart)
-        .lt("created_at", selectedDayEnd)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (selectedDayGrowLogsError) throw selectedDayGrowLogsError;
-      if (selectedDayGrowLogs && selectedDayGrowLogs.length > 0) {
-        return Math.max(0, Math.floor(Number(selectedDayGrowLogs[0]?.actual_total_animals ?? 0)));
-      }
-
-      const { data: previousGrowLogs, error: previousGrowLogsError } = await supabase
-        .from(GROW_LOGS_TABLE)
-        .select("actual_total_animals, created_at")
-        .eq("grow_id", growId)
-        .lt("created_at", selectedDayStart)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (previousGrowLogsError) throw previousGrowLogsError;
-      if (previousGrowLogs && previousGrowLogs.length > 0) {
-        return Math.max(0, Math.floor(Number(previousGrowLogs[0]?.actual_total_animals ?? 0)));
-      }
-
-      const { data, error } = await supabase
-        .from(GROWS_TABLE)
-        .select("total_animals")
-        .eq("id", growId)
-        .single();
-
-      if (error) throw error;
-      return Math.max(0, Math.floor(Number(data?.total_animals ?? 0)));
-    }
-
-    const { data, error } = await supabase
-      .from(GROWS_TABLE)
-      .select("total_animals, created_at")
-      .eq("building_id", fallbackBuildingId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (error) throw error;
-    if (!data || data.length === 0) return null;
-    return Math.max(0, Math.floor(Number(data[0]?.total_animals ?? 0)));
+    if (growId != null) return loadGrowCurrentForHarvest(growId, selectedDate);
+    const grow = await resolveCurrentGrowForBuilding(fallbackBuildingId);
+    return grow ? loadGrowCurrentForHarvest(grow.id, selectedDate) : null;
   };
 
   const resolveCurrentGrowForBuilding = async (

@@ -12,6 +12,7 @@ import { updateGrow } from "../controller/growsCrud";
 import { useAuth } from "../context/AuthContext";
 import { loadHarvestReductionTransactionsByHarvestId } from "../controller/harvestLogsCrud";
 import { loadHarvests, loadHarvestTrucks, updateHarvest } from "../controller/harvestCrud";
+import { loadGrowCurrentForHarvest } from "../controller/growBirdBalance";
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -20,7 +21,6 @@ const { useBreakpoint } = Grid;
 const PRIMARY = "#008822";
 const BUILDINGS_TABLE = import.meta.env.VITE_SUPABASE_BUILDINGS_TABLE ?? "Buildings";
 const GROWS_TABLE = import.meta.env.VITE_SUPABASE_GROWS_TABLE ?? "Grows";
-const GROW_LOGS_TABLE = import.meta.env.VITE_SUPABASE_GROW_LOGS_TABLE ?? "GrowLogs";
 const HARVEST_LOGS_TABLE = import.meta.env.VITE_SUPABASE_HARVEST_LOGS_TABLE ?? "HarvestLogs";
 const HARVEST_REDUCTION_TRANSACTIONS_TABLE =
   import.meta.env.VITE_SUPABASE_HARVEST_REDUCTION_TRANSACTIONS_TABLE ?? "HarvestReductionTransactions";
@@ -231,7 +231,6 @@ export default function HarvestMetricHistoryPage() {
 
       setIsLoading(true);
       try {
-        const selectedDayStart = `${selectedDate}T00:00:00+00:00`;
         const selectedDayEnd = `${dayjs(selectedDate).add(1, "day").format("YYYY-MM-DD")}T00:00:00+00:00`;
 
         const [{ data: buildingRow, error: buildingError }, { data: growRows, error: growError }] = await Promise.all([
@@ -253,39 +252,9 @@ export default function HarvestMetricHistoryPage() {
         const latestGrow = ((growRows ?? []) as Array<{ id: number | null; total_animals?: number | null }>)[0] ?? null;
         const activeGrowId = latestGrow?.id ?? null;
         setActiveGrowId(activeGrowId);
-        const growFallbackTotal = Math.max(0, Math.floor(Number(latestGrow?.total_animals ?? 0)));
-        let resolvedSelectedDayTotal = growFallbackTotal;
-
-        if (activeGrowId != null) {
-          const { data: selectedDayGrowLogs, error: selectedDayGrowLogsError } = await supabase
-            .from(GROW_LOGS_TABLE)
-            .select("actual_total_animals, created_at")
-            .eq("grow_id", activeGrowId)
-            .gte("created_at", selectedDayStart)
-            .lt("created_at", selectedDayEnd)
-            .order("created_at", { ascending: false })
-            .limit(1);
-          if (selectedDayGrowLogsError) throw selectedDayGrowLogsError;
-
-          const selectedDayGrowLog = ((selectedDayGrowLogs ?? []) as Array<{ actual_total_animals: number | null }>)[0] ?? null;
-          if (selectedDayGrowLog) {
-            resolvedSelectedDayTotal = Math.max(0, Math.floor(Number(selectedDayGrowLog.actual_total_animals ?? 0)));
-          } else {
-            const { data: previousGrowLogs, error: previousGrowLogsError } = await supabase
-              .from(GROW_LOGS_TABLE)
-              .select("actual_total_animals, created_at")
-              .eq("grow_id", activeGrowId)
-              .lt("created_at", selectedDayStart)
-              .order("created_at", { ascending: false })
-              .limit(1);
-            if (previousGrowLogsError) throw previousGrowLogsError;
-
-            const previousGrowLog = ((previousGrowLogs ?? []) as Array<{ actual_total_animals: number | null }>)[0] ?? null;
-            if (previousGrowLog) {
-              resolvedSelectedDayTotal = Math.max(0, Math.floor(Number(previousGrowLog.actual_total_animals ?? 0)));
-            }
-          }
-        }
+        const resolvedSelectedDayTotal = activeGrowId != null
+          ? await loadGrowCurrentForHarvest(activeGrowId, selectedDate)
+          : 0;
 
         setSelectedDayTotalAnimals(resolvedSelectedDayTotal);
         if (activeGrowId == null) {
@@ -544,7 +513,9 @@ export default function HarvestMetricHistoryPage() {
         (sum, row) => sum + Math.max(0, Math.floor(Number(row.animalCount ?? 0))),
         0
       );
-      const remainingAfterSave = Math.max(0, selectedDayTotalAnimals - refreshedSummary.totalAnimalsOut - refreshedReductionTotal);
+      const startingTotal = await loadGrowCurrentForHarvest(activeGrowId, selectedDate);
+      setSelectedDayTotalAnimals(startingTotal);
+      const remainingAfterSave = Math.max(0, startingTotal - refreshedSummary.totalAnimalsOut - refreshedReductionTotal);
 
       if (remainingAfterSave <= 0) {
         await Promise.all(
@@ -563,15 +534,17 @@ export default function HarvestMetricHistoryPage() {
         });
 
         if (updateGrowResult.error) {
-          const { error: growUpdateError } = await supabase
+          const { data: updatedGrows, error: growUpdateError } = await supabase
             .from(GROWS_TABLE)
             .update({
               status: "Harvested",
               is_harvested: true,
             })
-            .eq("id", activeGrowId);
+            .eq("id", activeGrowId)
+            .select("id");
 
           if (growUpdateError) throw growUpdateError;
+          if (!updatedGrows?.length) throw new Error("The reduction was saved, but the grow status could not be updated.");
         }
       }
 

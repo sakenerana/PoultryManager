@@ -393,6 +393,20 @@ Expected: only intended roles can perform each mutation, and RLS rejects unautho
 
 Expected: animal totals agree across harvest, truck history, and reports.
 
+### Closeout with an outdated grow-log snapshot
+
+Use a test database or mocked API for these scenarios.
+
+1. Set up calculated Grow Current of 102,387, a saved `GrowLogs.actual_total_animals` snapshot of 102,488, 100,792 harvested, and 1,311 harvest mortality.
+2. Confirm the overview, Defect history drawer, and truck-loading drawer show 284 remaining.
+3. Save 284 in Defect. Confirm there is one 284-bird `HarvestReductionTransactions` entry, Current is zero, `Harvest.status` is `Completed`, `Grows.status` is `Harvested`, and `Grows.is_harvested` is true after reload.
+4. Repeat from the starting fixture using Mortality instead of Defect. Both must close automatically.
+5. Repeat with 283 Defect. One bird must remain and the grow must stay open.
+6. Complete the last 284 birds through truck loading and check the same statuses.
+7. Sign in as Viewer and confirm reduction history remains view-only.
+
+The production-browser regression suite intercepts every API request and uses in-memory records; it does not change farm data. Build the app, serve it with `npm run preview`, then run `node scripts/harvest-closeout.browser-test.mjs`. It requires Playwright and Chromium. If they are available elsewhere, set `HARVEST_PLAYWRIGHT_MODULE` to the Playwright module's file URL and `HARVEST_CHROMIUM_EXECUTABLE` to the browser executable. `HARVEST_TEST_URL` overrides the default `http://127.0.0.1:4173` preview URL.
+
 ## Reports and PDF Tests
 
 For each report, compare at least one row and total with source records:

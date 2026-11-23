@@ -1,2 +1,2 @@
-export const APP_VERSION = "1.0.0+build.211";
-export const APP_BUILD_NUMBER = 211;
+export const APP_VERSION = "1.0.0+build.212";
+export const APP_BUILD_NUMBER = 212;

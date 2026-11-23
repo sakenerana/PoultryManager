@@ -365,7 +365,7 @@ This prevents an edited truck from being counted twice.
 
 ### Harvest remaining birds
 
-The Harvest page uses the Grow page's calculated Current as its starting Total Birds. It does not use a separate grow-log snapshot.
+The Harvest overview, reduction-history entry limits, and truck-loading completion checks use the Grow page's calculated Current as their starting Total Birds. All three use the shared `growBirdBalance` loader. Saved `GrowLogs.actual_total_animals` snapshots are not used as the starting balance. The balance is fetched again when checking completion after a save.
 
 ```text
 harvest total birds = grow page current
@@ -377,6 +377,8 @@ harvest remaining = max(
 ```
 
 Harvest reductions can include mortality, thinning, take-out, and defect records.
+
+For example, a starting balance of 102,387 birds, 100,792 harvested, and 1,595 reductions leaves zero birds. The reductions can include 1,311 mortality and 284 defect. Saving the final 284 defect must complete the harvest just as saving the final mortality would. A stale grow-log snapshot of 102,488 must not leave a false balance of 101 birds.
 
 When harvest remaining reaches zero:
 
